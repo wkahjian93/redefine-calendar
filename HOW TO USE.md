@@ -1,3 +1,5 @@
+**App link:** https://wkahjian93.github.io/redefine-calendar/
+
 # REDEFINE Calendar: how to use
 
 **The problem it fixes:** you had to ask each agent one by one when they're busy and what they're doing. Now everyone's schedule and activity is on one calendar you can open any time, and private things stay private.
@@ -28,6 +30,11 @@ You stay signed in on that phone for good, like WhatsApp. Only two things sign y
   - **Anyone else's event:** only the owner (plus anyone tagged on it). When the owner replies, only the people who commented get it. Nobody else is disturbed.
   - Under every comment box, the app shows exactly who will be notified.
 - **🔔 Comments tab:** every comment and cheer meant for you, newest first, with an unread count.
+
+## Team events (meeting, training, roadshow)
+- Create the event with **👥 Everyone's in it** switched on. It appears on everyone's calendar and everyone gets a pop-up asking **Going?**
+- Open the event and tap **✅ Going** or **❌ Can't go**. The card lists who is going, who can't, and who hasn't replied. On **Team day** each person's row shows ✅ / ❌ / ⏳.
+- **1 hour before**, everyone gets a pop-up with the count, e.g. "✅ 8 going, ❌ 2 can't, ⏳ 3 no reply".
 
 ## Leaders
 - **Calendar → Team day:** one row per person for the day. Grey = private busy, blank = free. The top line says who is **free right now**. Tap a person's event and leave a comment to set a time; only they get the pop-up.
