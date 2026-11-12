@@ -1,0 +1,4 @@
+test/fixtures/
+.claude/
+node_modules/
+samples/

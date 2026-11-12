@@ -1,0 +1,19 @@
+# Test run (12 Nov 2026, local preview, SAMPLE team of 10 made-up people)
+
+**Pain point:** "I don't know my agents' schedules or activities unless I ask each one."
+
+| Step | What happened | Result |
+|---|---|---|
+| 1. Leader opens **Team day** | Showed 10 rows, one per person, 7am–11pm, with "Free now: Me, Alicia, Daniel…, busy: 0". Private events were grey **Busy** with no title. | ✅ Saw everyone's day in one screen, without asking anyone |
+| 2. Comment pop-ups (re-tested after chat was removed) | With Marcus's app open: Siti commented on **Alicia's** event → Marcus got nothing, and the server sent the pop-up to Alicia only. Leader commented on **Marcus's** event → Marcus got the banner. Siti commented on the **whole-team** Wednesday training → Marcus got the banner, and the server sent it to all 9 other members. | ✅ Exactly the agreed rule |
+| 2b. Close later | Marcus opened a presentation already marked Done, tapped 💰 Closed, entered NOC 2 and ANP RM7,200. The event shows "NOC: 2 cases · ANP: RM7,200" and the team got "🎉 Marcus Lim closed 2 cases!". | ✅ |
+| 2c. Plan details + team totals | Marcus closed a follow-up as 2 cases: "Medical plan (test)", M, RM3,600 and "Savings plan (test)", Y, ANP blank. The app showed "NOC 2 · Total ANP RM3,600 (1 without ANP)" and the event lists both lines. On the Activity tab, Marcus (an agent) saw team tiles: 197 activities, NOC 29, ANP RM97,000, average case RM4,042, plus a Team total row. The ANP is one sum from the server: no other agent's ANP reached his phone. | ✅ |
+| 2d. ANP column + close case list | Marcus closed a presentation as "GMS", ANP RM1,507.65, Y. On the team board every agent now shows NOC **and ANP** (Marcus RM23,107.65, Team total RM94,907.65), and it all fits a phone screen without swiping. The close case list read "🔥NOVEMBER CLOSE CASE LIST🔥 … 17. 9/11 Marcus GMS 1507.65/Y … Total ANP: 94,907.65", in your format with sen kept. | ✅ |
+| 3. Marcus adds "签单 Mr Ooi savings plan" | The app spotted **✍️ Closing** from the Chinese title and saved it to the team calendar. | ✅ Activity type detected automatically |
+| 4. Marcus imports a diary photo | AI (stand-in reply) found 6 events. 4 clear rows were ticked. "Approach USM booth" (no time) and "Sign case Puan Rosnah" (smudged date) were **red and unticked**. Forcing the smudged row in was refused ("needs a date and time first"). After the date was fixed, a confirm box said "Add 5 events? 4 team, 1 only you". Added 5. | ✅ Messy data handled safely, with a confirm before saving |
+| 5. Activity tab (agent) | Marcus saw his own A/O/P/F/C, O/A, P/O, F/P, NOC/P, MAE and ANP, and the team board with **counts only**: no other agent's ANP. | ✅ Peer motivation without exposing income |
+| 6. Activity tab (leader) | Full table with ANP, average case, all ratios, unconfirmed count and last seen. "Needs a check-in" list. Copy WhatsApp report and CSV (see `samples/`). | ✅ Leader tracks everyone from one screen |
+| 7. Stay signed in | Server unreachable → still signed in, last copy shown. Page reloaded → still signed in. Automated tests: 2 years later plus a changed team code → still signed in; 9 wrong tries on other phones → no effect; only Sign out on that phone, or a leader removing the member, ends it. | ✅ Works like WhatsApp |
+| 8. Automated rules | `node test.js`: **110 passed, 0 failed**. Includes comment pop-up rules, whole-team events, NOC, later close, plan name / ANP / payment mode per case, and team totals. Covers privacy (private text never sent to others), counting only confirmed events, ANP never guessed, reminders once only, 8am/9pm pop-ups, import duplicates, .ics parsing, permissions. | ✅ |
+
+**Not yet tested:** real AI reading your real photos (needs the live server and OpenAI key), real phone pop-ups when the app is closed (needs Firebase), and real iPhone or Android devices.
