@@ -1,6 +1,6 @@
 // Network first and always revalidated, so phones get updates as soon as they are online; falls back to the cache offline.
 // When Firebase is set up (config.js), this also receives the phone pop-ups while the app is closed.
-const CACHE = 'rcal-v1';
+const CACHE = 'rcal-v2';
 const FILES = ['./', 'index.html', 'style.css', 'app.js', 'core.js', 'config.js', 'manifest.webmanifest', 'icons/icon.svg', 'icons/icon-192.png'];
 try { importScripts('config.js'); } catch (e) {}
 const CFG = self.RCAL_CONFIG || {};
