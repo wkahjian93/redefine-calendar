@@ -365,7 +365,7 @@ var CORE = (function () {
     var m = {id: newId(store, 10), to: to, from: me.id, kind: kind, text: text, created: nowIso(store)};
     msgs.push(m); if (msgs.length > 20000) msgs = msgs.slice(-20000);
     store.save('msgs', msgs); store.version(true);
-    if (targets.length) store.push(targets, {title: kind === 'cheer' ? me.name + ' cheered 👏' : me.name + ' 💬 ' + ev.title, body: kind === 'cheer' ? 'on ' + ev.title : text, tag: 'ev-' + ev.id, url: '#/e/' + ev.id});
+    if (targets.length) store.push(targets, {title: kind === 'cheer' ? me.name + ' cheered 👏' : me.name + ' 💬 ' + ev.title, body: kind === 'cheer' ? 'on ' + ev.title : text, tag: 'ev-' + ev.id, url: '#/e/' + ev.id + '/c'});
     return {msg: m};
   }
   function delMsg(q, store, me, leader) {

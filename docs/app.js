@@ -7,6 +7,7 @@
   var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   var MONTH = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   var DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  var APP_VERSION = '5';
   var H8 = 8 * 3600e3, DAY = 864e5, SELLING = {approach: 1, open: 1, present: 1, followup: 1, close: 1, recruit: 1};
 
   /* ---------- storage (each phone) ---------- */
@@ -108,6 +109,7 @@
       LS.set('cache', j);
       if (!LS.get('since', '')) LS.set('since', j.now);
       notifyNew(old, j);
+      if (pushOn() && j.me.devices === 0 && !S.repairTried) { S.repairTried = true; repairPush(false); }   // server lost this phone: reconnect quietly
       render();
       return true;
     }, function (e) { syncing = null; if (e.code === 'network') render(); throw e; });
@@ -159,7 +161,7 @@
     var wins = now.events.filter(function (e) { return e.out === 'closed' && was[e.id] !== undefined && was[e.id] !== 'closed' && e.ownerId !== now.me.id; });
     if (wins.length) { var w = wins[0], wm = mem(w.ownerId); banner(wm, '🎉 ' + wm.name + ' closed ' + (w.noc > 1 ? w.noc + ' cases' : 'a case') + '!', 'Tap to cheer them on 👏', '#/e/' + w.id); }
     var last = fresh[fresh.length - 1]; if (!last) return;
-    var url = '#/e/' + last.to.slice(3); if (location.hash === url) { markRead(); return; }
+    var url = '#/e/' + last.to.slice(3) + '/c'; if (location.hash.indexOf('#/e/' + last.to.slice(3)) === 0) { markRead(); return; }
     var e = evById(last.to.slice(3), now), who = mem(last.from);
     banner(who, (last.kind === 'cheer' ? who.name + ' cheered 👏' : who.name + ' 💬 ' + (e ? e.title : '')) + (fresh.length > 1 ? ' (+' + (fresh.length - 1) + ')' : ''), last.kind === 'cheer' ? 'on ' + (e ? e.title : 'your event') : last.text, url);
   }
@@ -217,6 +219,25 @@
         return api('pushreg', {pushToken: t}).then(function () { LS.set('pushToken', t); toast('Pop-ups are on for this phone 🔔', 'good'); return api('pushtest'); });
       }).then(function () { quietSync(true); }, function (e) { toast('Could not turn on pop-ups: ' + errText(e), 'bad'); });
     });
+  }
+  /* Make a brand-new registration: drop the old one (it may have been cancelled by Apple / Google) and ask again. */
+  var repairing = false;
+  function repairPush(loud) {
+    if (repairing || !CFG.firebase || !('Notification' in window) || Notification.permission !== 'granted') { if (loud) enablePush(); return Promise.resolve(); }
+    repairing = true;
+    if (loud) toast('Reconnecting pop-ups…');
+    return navigator.serviceWorker.ready.then(function (reg) {
+      return firebaseMessaging().then(function (m) {
+        return m.deleteToken().catch(function () {}).then(function () { return reg.pushManager.getSubscription(); })
+          .then(function (sub) { return sub ? sub.unsubscribe().catch(function () {}) : null; })
+          .then(function () { return m.getToken({vapidKey: CFG.vapidKey, serviceWorkerRegistration: reg}); });
+      });
+    }).then(function (t) {
+      if (!t) throw {code: 'no_token'};
+      return api('pushreg', {pushToken: t}).then(function () { LS.set('pushToken', t); });
+    }).then(function () {
+      repairing = false; if (loud) toast('Pop-ups reconnected 🔔 Try the 15-second test.', 'good'); return quietSync(true);
+    }, function (e) { repairing = false; if (loud) toast('Could not reconnect: ' + errText(e), 'bad'); });
   }
   function refreshPush() {   // tokens can change; re-register quietly on each start
     if (!CFG.firebase || !LS.get('pushToken', '') || !('Notification' in window) || Notification.permission !== 'granted') return;
@@ -701,7 +722,7 @@
   }
   function meScreen() {
     var m = me(), perm = 'Notification' in window ? Notification.permission : 'unsupported';
-    var push = pushOn() ? '<p class="ok-t">🔔 Pop-ups are ON for this phone, even when the app is closed.</p><div class="row"><button class="btn ghost" data-act="pushtest">Send me a test</button><button class="btn ghost" data-act="pushtest15">Test in 15 s (lock phone)</button><button class="btn ghost" data-act="pushoff">Turn off</button></div>'
+    var push = pushOn() ? (me().devices ? '<p class="ok-t">🔔 Pop-ups are ON for this phone, even when the app is closed.</p>' : '<p class="warn-t">⚠️ The server lost this phone\'s pop-up registration. Tap Reconnect.</p>') + '<div class="row"><button class="btn primary" data-act="pushfix">Reconnect pop-ups</button><button class="btn ghost" data-act="pushtest">Send me a test</button><button class="btn ghost" data-act="pushtest15">Test in 15 s (lock phone)</button><button class="btn ghost" data-act="pushoff">Turn off</button></div>'
       : perm === 'granted' && !CFG.firebase ? '<p class="muted">Banners and sound work while the app is open. Pop-ups when closed will work once your leader finishes the Firebase setup.</p>'
       : perm === 'denied' ? '<p class="warn-t">Notifications are blocked for this app. Turn them on in your phone Settings → Notifications.</p>'
       : '<p class="muted">Get a WhatsApp-style pop-up for comments on your events, cheers, team wins and event reminders.</p><button class="btn primary" data-act="push">🔔 Turn on notifications</button>';
@@ -712,6 +733,7 @@
       (!standalone() ? '<div class="card"><h4>Install</h4><p class="muted">Add REDEFINE Calendar to your home screen so it opens like an app.</p><button class="btn ghost" data-act="install">How?</button></div>' : '') +
       (m.leader ? '<div class="card"><h4>Leader</h4><a class="btn ghost" href="#/members">👥 Manage members</a></div>' : '') +
       '<div class="card"><h4>How counting works</h4><p class="tiny muted">Each event has a type (👋 Approach, ☕ Open, 📊 Present, 🔁 Follow-up, ✍️ Closing, 🌱 Recruit, 👥 Meeting, 🛠️ Service, 🎁 CRM, 📝 Paperwork, 🏠 Personal). The app guesses it from the title. After the event, tap ✓ Done, 💰 Closed (with ANP) or ✕ Didn\'t happen. Only confirmed events count. O/A = prospecting, P/O = presentation, F/P = follow-up, NOC/P = closing ratio. Personal events never count.</p></div>' +
+      '<p class="center tiny muted">App version ' + APP_VERSION + ' · ' + (isIOS() ? 'iPhone' : 'Android / other') + (standalone() ? ' · home-screen app' : ' · browser') + ' · notifications: ' + ('Notification' in window ? Notification.permission : 'not supported') + ' · server has ' + (me().devices || 0) + ' phone(s) for you</p>' +
       '<p class="center"><button class="link danger" data-act="signout">Sign out of this phone</button></p></main>' + tabs('me');
   }
   function membersScreen() {
@@ -859,6 +881,7 @@
     var y = r === lastRoute ? window.scrollY : 0;
     $app.innerHTML = html; lastRoute = r;
     window.scrollTo(0, y);
+    if (parts[0] === 'e' && parts[2] === 'c' && y === 0) { var cm = $app.querySelector('.comments'); if (cm) setTimeout(function () { cm.scrollIntoView({block: 'start'}); }, 30); }
   }
 
   /* ---------- taps ---------- */
@@ -882,6 +905,7 @@
     if (a === 'csv') return downloadCsv();
     if (a === 'copy-close') { var dd = statsData(S.statsPeriod); if (!dd.events) return; var txt = closeList(dd.events, dd.r).text; return (navigator.clipboard ? navigator.clipboard.writeText(txt) : Promise.reject()).then(function () { toast('Close case list copied. Paste it in WhatsApp.', 'good'); }, function () { modal('<h3>Copy this</h3><textarea rows="12" style="width:100%">' + esc(txt) + '</textarea><div class="row end"><button class="btn" data-act="close-modal">Done</button></div>'); }); }
     if (a === 'push') return enablePush();
+    if (a === 'pushfix') return repairPush(true).then(render);
     if (a === 'pushtest15') { toast('Lock your phone now. A pop-up should arrive in about 15 seconds.'); return api('pushtest', {delay: 15}).catch(function () {}); }
     if (a === 'pushtest') return api('pushtest').then(function () { toast('Sent. It should pop up in a few seconds.'); }, function (e) { toast(errText(e), 'bad'); });
     if (a === 'pushoff') return api('pushoff', {pushToken: LS.get('pushToken', '')}).then(function () { LS.del('pushToken'); toast('Pop-ups off for this phone'); render(); });

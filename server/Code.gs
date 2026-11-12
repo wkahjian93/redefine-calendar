@@ -368,7 +368,7 @@ var CORE = (function () {
     var m = {id: newId(store, 10), to: to, from: me.id, kind: kind, text: text, created: nowIso(store)};
     msgs.push(m); if (msgs.length > 20000) msgs = msgs.slice(-20000);
     store.save('msgs', msgs); store.version(true);
-    if (targets.length) store.push(targets, {title: kind === 'cheer' ? me.name + ' cheered 👏' : me.name + ' 💬 ' + ev.title, body: kind === 'cheer' ? 'on ' + ev.title : text, tag: 'ev-' + ev.id, url: '#/e/' + ev.id});
+    if (targets.length) store.push(targets, {title: kind === 'cheer' ? me.name + ' cheered 👏' : me.name + ' 💬 ' + ev.title, body: kind === 'cheer' ? 'on ' + ev.title : text, tag: 'ev-' + ev.id, url: '#/e/' + ev.id + '/c'});
     return {msg: m};
   }
   function delMsg(q, store, me, leader) {
@@ -733,13 +733,16 @@ var GAS = (function () {
                 fcm_options: base ? {link: base + (n.note.url || '#/')} : undefined}}})});
         });
       });
-      if (!reqs.length) return;
-      var dead = [];
+      if (!reqs.length) { console.log('pop-up "' + list[0].note.title + '": no registered phone for ' + list.map(function (n) { return n.ids.join(','); }).join(' | ')); return; }
+      var dead = [], ok = 0;
       for (var i = 0; i < reqs.length; i += 50) UrlFetchApp.fetchAll(reqs.slice(i, i + 50)).forEach(function (r, k) {
         var code = r.getResponseCode();
-        if (code === 404 || (code === 400 && /UNREGISTERED|INVALID_ARGUMENT/.test(r.getContentText()))) dead.push(tokens[i + k]);
-        else if (code !== 200) console.warn('fcm ' + code + ' ' + r.getContentText().slice(0, 200));
+        var body = r.getContentText();
+        if (code === 200) ok++;
+        else if (code === 404 || code === 410 || /UNREGISTERED/.test(body)) { dead.push(tokens[i + k]); console.warn('phone no longer registered (removed): fcm ' + code + ' ' + body.slice(0, 200)); }
+        else console.warn('fcm ' + code + ' ' + body.slice(0, 300));   // e.g. INVALID_ARGUMENT: keep the phone, log the reason
       });
+      console.log('pop-ups: ' + ok + ' of ' + reqs.length + ' accepted by Firebase');
       if (dead.length) withLock(function () { save('devices', load('devices').filter(function (d) { return dead.indexOf(d.token) < 0; })); });   // phone uninstalled / signed out
     } catch (e) { console.error('push failed: ' + (e && e.stack)); }
   }
