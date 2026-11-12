@@ -228,8 +228,8 @@ main { padding: 12px 14px; }
 #toasts { position: fixed; left: 0; right: 0; bottom: calc(90px + var(--safe-b)); z-index: 60; display: flex; flex-direction: column; align-items: center; gap: 6px; pointer-events: none; }
 .toast { background: #1F2937; color: #fff; padding: 10px 16px; border-radius: 12px; font-size: 14px; max-width: 90%; box-shadow: 0 6px 18px rgba(0, 0, 0, .25); transition: opacity .4s; }
 .toast.good { background: #065F46; } .toast.bad { background: #991B1B; } .toast.out { opacity: 0; }
-#banner { position: fixed; top: calc(6px + var(--safe-t)); left: 8px; right: 8px; z-index: 70; max-width: 520px; margin: 0 auto; transform: translateY(-140%); transition: transform .3s ease; cursor: pointer; }
-#banner.show { transform: none; }
+#banner { position: fixed; top: calc(6px + var(--safe-t)); left: 8px; right: 8px; z-index: 70; max-width: 520px; margin: 0 auto; transform: translateY(calc(-100% - 20px - var(--safe-t))); opacity: 0; visibility: hidden; pointer-events: none; transition: transform .3s ease, opacity .3s ease, visibility 0s linear .3s; cursor: pointer; }
+#banner.show { transform: none; opacity: 1; visibility: visible; pointer-events: auto; transition: transform .3s ease, opacity .2s ease; }
 .bn { display: flex; gap: 10px; align-items: center; background: rgba(255, 255, 255, .97); color: #111; border-radius: 16px; padding: 10px 12px; box-shadow: 0 10px 30px rgba(0, 0, 0, .25); }
 .bn .av { width: 38px; height: 38px; font-size: 14px; }
 .bn-t { min-width: 0; } .bn-t b { display: block; font-size: 14px; } .bn-t span { display: block; font-size: 13px; color: #444; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

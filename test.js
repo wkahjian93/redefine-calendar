@@ -281,6 +281,9 @@ function fresh() {
   ok(h({op: 'delmsg', token: mar.token, id: m.id}).deleted === m.id, 'can delete own comment');
   h({op: 'pushreg', token: ali.token, pushToken: 'x'.repeat(40)}); h({op: 'pushreg', token: ali.token, pushToken: 'x'.repeat(40)});
   ok(s.load('devices').length === 1, 'same phone registered once');
+  s.pushes.length = 0; let slept = 0; s.sleep = ms => { slept = ms; };
+  ok(h({op: 'pushtest', token: ali.token, delay: 15}).sent && slept === 15000 && s.pushes[0].ids[0] === ali.me.id, 'test in 15 s: waits, then pops up on my phone only');
+  throws(() => h({op: 'pushtest', token: 'nobody', delay: 15}), 'signed_out', 'delayed test needs sign-in');
   ok(h({op: 'sync', token: ali.token, force: true}).me.devices === 1, 'app knows pop-ups are on');
   h({op: 'signout', token: ali.token, pushToken: 'x'.repeat(40)});
   ok(s.load('devices').length === 0, 'sign out stops pop-ups on that phone');

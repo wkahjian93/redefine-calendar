@@ -594,6 +594,12 @@ var CORE = (function () {
         return {ok: true, me: {id: r.me.id, name: r.me.name, leader: r.me.role === 'leader'}, created: !!r.created, token: newSession(store, r.me, q.device)};
       });
     }
+    if (q.op === 'pushtest' && q.delay) {   // "test in 15 s": wait OUTSIDE the lock so nobody else is blocked
+      var who1 = store.withLock(function () { return who(q, store).me; });
+      if (store.sleep) store.sleep(Math.max(1, Math.min(20, +q.delay || 15)) * 1000);
+      store.push([who1.id], {title: 'REDEFINE Calendar 🔔', body: 'Pop-ups work even when the app is closed. 👍', tag: 'test', url: '#/me'});
+      return {ok: true, sent: true};
+    }
     if (q.op === 'read') {   // counted under the lock; the AI call (10-30 s) runs outside it. The photo is not kept.
       if (!b64ok(q.image, MAX_READ_B64)) fail('bad_photo');
       store.withLock(function () { countRead(store, who(q, store).me); });
@@ -745,6 +751,7 @@ var GAS = (function () {
     prop: function (k) { return P.getProperty(k) || ''; },
     fails: function (add) { var c = CacheService.getScriptCache(), n = +(c.get('fails') || 0); if (add) { c.put('fails', String(n + add), 900); Utilities.sleep(800); } return n; },
     now: function () { return new Date(); },
+    sleep: function (ms) { Utilities.sleep(ms); },
     random: Math.random,
     hash: function (t) { return Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, t, Utilities.Charset.UTF_8).map(function (b) { return ('0' + (b & 255).toString(16)).slice(-2); }).join(''); },
     version: function (bump) { var v = +(P.getProperty('VER') || 1); if (bump) { v++; P.setProperty('VER', String(v)); } return v; }

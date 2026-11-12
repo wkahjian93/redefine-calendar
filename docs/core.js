@@ -591,6 +591,12 @@ var CORE = (function () {
         return {ok: true, me: {id: r.me.id, name: r.me.name, leader: r.me.role === 'leader'}, created: !!r.created, token: newSession(store, r.me, q.device)};
       });
     }
+    if (q.op === 'pushtest' && q.delay) {   // "test in 15 s": wait OUTSIDE the lock so nobody else is blocked
+      var who1 = store.withLock(function () { return who(q, store).me; });
+      if (store.sleep) store.sleep(Math.max(1, Math.min(20, +q.delay || 15)) * 1000);
+      store.push([who1.id], {title: 'REDEFINE Calendar 🔔', body: 'Pop-ups work even when the app is closed. 👍', tag: 'test', url: '#/me'});
+      return {ok: true, sent: true};
+    }
     if (q.op === 'read') {   // counted under the lock; the AI call (10-30 s) runs outside it. The photo is not kept.
       if (!b64ok(q.image, MAX_READ_B64)) fail('bad_photo');
       store.withLock(function () { countRead(store, who(q, store).me); });

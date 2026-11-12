@@ -133,6 +133,8 @@
     var el = document.getElementById('banner');
     el.innerHTML = '<div class="bn">' + (who ? avatar(who) : '<span class="av" style="background:#14213D">🔔</span>') + '<div class="bn-t"><b>' + esc(title) + '</b><span>' + esc(body) + '</span></div></div>';
     el.className = 'show'; el.onclick = function () { el.className = ''; if (url) location.hash = url; };
+    var y0 = null; el.ontouchstart = function (t) { y0 = t.touches[0].clientY; };
+    el.ontouchmove = function (t) { if (y0 != null && y0 - t.touches[0].clientY > 25) { el.className = ''; y0 = null; } };
     clearTimeout(bannerTimer); bannerTimer = setTimeout(function () { el.className = ''; }, 5500);
     ding();
     if (document.hidden && 'Notification' in window && Notification.permission === 'granted' && !pushOn()) {
@@ -195,7 +197,6 @@
       .then(function () {
         if (!firebase.apps.length) firebase.initializeApp(CFG.firebase);
         var m = firebase.messaging();
-        m.onMessage(function (p) { var d = p.data || {}, n = p.notification || {}; banner(null, n.title || d.title || 'REDEFINE', n.body || d.body || '', d.url || ''); quietSync(); });
         return m;
       });
     return fbReady;
@@ -223,6 +224,13 @@
       return firebaseMessaging().then(function (m) { return m.getToken({vapidKey: CFG.vapidKey, serviceWorkerRegistration: reg}); });
     }).then(function (t) { if (t && t !== LS.get('pushToken', '')) return api('pushreg', {pushToken: t}).then(function () { LS.set('pushToken', t); }); }).catch(function () {});
   }
+
+  // A pop-up arrived while the app is on screen: show the in-app banner (iPhone already shows its own notification).
+  if ('serviceWorker' in navigator) navigator.serviceWorker.addEventListener('message', function (ev) {
+    var m = ev.data && ev.data.rcalPush; if (!m) return;
+    if (!isIOS()) banner(null, m.title, m.body, m.url);
+    quietSync(true);
+  });
 
   /* ---------- modal ---------- */
   function modal(html, onMount) {
@@ -693,7 +701,7 @@
   }
   function meScreen() {
     var m = me(), perm = 'Notification' in window ? Notification.permission : 'unsupported';
-    var push = pushOn() ? '<p class="ok-t">🔔 Pop-ups are ON for this phone, even when the app is closed.</p><div class="row"><button class="btn ghost" data-act="pushtest">Send me a test</button><button class="btn ghost" data-act="pushoff">Turn off</button></div>'
+    var push = pushOn() ? '<p class="ok-t">🔔 Pop-ups are ON for this phone, even when the app is closed.</p><div class="row"><button class="btn ghost" data-act="pushtest">Send me a test</button><button class="btn ghost" data-act="pushtest15">Test in 15 s (lock phone)</button><button class="btn ghost" data-act="pushoff">Turn off</button></div>'
       : perm === 'granted' && !CFG.firebase ? '<p class="muted">Banners and sound work while the app is open. Pop-ups when closed will work once your leader finishes the Firebase setup.</p>'
       : perm === 'denied' ? '<p class="warn-t">Notifications are blocked for this app. Turn them on in your phone Settings → Notifications.</p>'
       : '<p class="muted">Get a WhatsApp-style pop-up for comments on your events, cheers, team wins and event reminders.</p><button class="btn primary" data-act="push">🔔 Turn on notifications</button>';
@@ -874,6 +882,7 @@
     if (a === 'csv') return downloadCsv();
     if (a === 'copy-close') { var dd = statsData(S.statsPeriod); if (!dd.events) return; var txt = closeList(dd.events, dd.r).text; return (navigator.clipboard ? navigator.clipboard.writeText(txt) : Promise.reject()).then(function () { toast('Close case list copied. Paste it in WhatsApp.', 'good'); }, function () { modal('<h3>Copy this</h3><textarea rows="12" style="width:100%">' + esc(txt) + '</textarea><div class="row end"><button class="btn" data-act="close-modal">Done</button></div>'); }); }
     if (a === 'push') return enablePush();
+    if (a === 'pushtest15') { toast('Lock your phone now. A pop-up should arrive in about 15 seconds.'); return api('pushtest', {delay: 15}).catch(function () {}); }
     if (a === 'pushtest') return api('pushtest').then(function () { toast('Sent. It should pop up in a few seconds.'); }, function (e) { toast(errText(e), 'bad'); });
     if (a === 'pushoff') return api('pushoff', {pushToken: LS.get('pushToken', '')}).then(function () { LS.del('pushToken'); toast('Pop-ups off for this phone'); render(); });
     if (a === 'install') return modal(installHelp(false));
