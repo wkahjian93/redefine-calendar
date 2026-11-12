@@ -37,6 +37,7 @@ var CORE = (function () {
   var COLORS = ['#E8505B', '#2E86DE', '#10AC84', '#F39C12', '#8E44AD', '#16A085', '#D35400', '#C0392B', '#2C3E50', '#E84393', '#00B894', '#6C5CE7', '#FDCB6E', '#0984E3', '#B33771', '#3B3B98'];
   var ID_CHARS = 'abcdefghijkmnpqrstuvwxyz23456789';
   var MODES = {M: 'Monthly', Q: 'Quarterly', HY: 'Half-yearly', Y: 'Yearly'};
+  var TEAM_REMIND = 60;   // minutes before a whole-team event that everyone gets a pop-up
   var MAX_NOC = 50, MAX_IMPORT = 300, MAX_READ_B64 = 4 * 1024 * 1024, MAX_RANGE_DAYS = 400, DAILY_READS = 40;
   var REMIND = ['', '0', '10', '30', '60', '120', '1440'];
 
@@ -68,7 +69,7 @@ var CORE = (function () {
     else {
       var core = [e.ownerId].concat(withList(e));
       ids = core.slice();
-      if (core.indexOf(from) >= 0) earlier.forEach(function (m) { if (m.kind !== 'cheer' && ids.indexOf(m.from) < 0) ids.push(m.from); });
+      if (core.indexOf(from) >= 0) earlier.forEach(function (m) { if ((m.kind === 'text' || !m.kind) && ids.indexOf(m.from) < 0) ids.push(m.from); });
     }
     return ids.filter(function (x, i, a) { return x !== from && a.indexOf(x) === i; });
   }
@@ -294,7 +295,7 @@ var CORE = (function () {
     store.save('events', rows); store.version(true);
     var added = withList(old).filter(function (x) { return before.indexOf(x) < 0; });
     if (isAll(old) && !wasAll) added = activeIds(members).filter(function (x) { return x !== me.id; });   // new team-wide event: tell everyone
-    if (added.length) store.push(added, {title: me.name + ' added you 📅', body: old.title + ' · ' + whenText(old), tag: 'ev-' + old.id, url: '#/e/' + old.id});
+    if (added.length) store.push(added, {title: me.name + (isAll(old) ? ' 📣 Team event' : ' added you 📅'), body: old.title + ' · ' + whenText(old) + (isAll(old) ? ' · Going? Tap to answer' : ''), tag: 'ev-' + old.id, url: '#/e/' + old.id});
     return {event: viewEvent(old, me, true)};
   }
   function delEvent(q, store, me) {
@@ -375,6 +376,25 @@ var CORE = (function () {
     if (!m) fail('not_found'); if (m.from !== me.id && !leader) fail('not_yours');
     store.save('msgs', msgs.filter(function (x) { return x.id !== m.id; })); store.version(true);
     return {deleted: m.id};
+  }
+
+  /* ---------- attendance for whole-team events: Going / Can't go / (no reply) ---------- */
+  function attendance(ev, msgs, members) {
+    var ans = {}; msgs.forEach(function (m) { if (m.to === 'ev:' + ev.id && m.kind === 'rsvp') ans[m.from] = m.text; });
+    var o = {yes: [], no: [], none: []};
+    activeIds(members).forEach(function (id) { o[ans[id] === 'yes' ? 'yes' : ans[id] === 'no' ? 'no' : 'none'].push(id); });
+    return o;
+  }
+  function rsvp(q, store, me) {
+    var ev = store.load('events').filter(function (e) { return e.id === q.id; })[0];
+    if (!ev || !isAll(ev)) fail('not_team_event');
+    if (ev.out === 'cancel') fail('cancelled');
+    if (endMs(ev) <= store.now().getTime()) fail('ended');
+    var ans = q.answer === 'yes' || q.answer === 'no' ? q.answer : '', to = 'ev:' + ev.id;
+    var msgs = store.load('msgs').filter(function (m) { return !(m.to === to && m.from === me.id && m.kind === 'rsvp'); });
+    if (ans) msgs.push({id: newId(store, 10), to: to, from: me.id, kind: 'rsvp', text: ans, created: nowIso(store)});
+    store.save('msgs', msgs); store.version(true);
+    return {answer: ans};
   }
 
   /* ---------- phone notifications (Firebase) ---------- */
@@ -522,13 +542,15 @@ var CORE = (function () {
 
   /* ---------- timed jobs (Google trigger every 5 minutes / 8am / 9pm) ---------- */
   function tick(store) {
-    var now = store.now().getTime(), rows = store.load('events'), members = store.load('members'), sent = 0;
+    var now = store.now().getTime(), rows = store.load('events'), members = store.load('members'), msgs = null, sent = 0;
     rows.forEach(function (e) {
-      if (e.out === 'cancel' || e.remSent || e.remind === '' || e.allDay === 'true') return;
-      var st = startMs(e), r = +e.remind; if (!isFinite(r)) return;
+      var all = isAll(e);
+      if (e.out === 'cancel' || e.remSent || (e.remind === '' && !all) || e.allDay === 'true') return;
+      var st = startMs(e), r = all ? TEAM_REMIND : +e.remind; if (!isFinite(r)) return;   // whole-team events: always 1 hour before, to everyone
       if (now >= st - r * 60e3 && now < st + 10 * 60e3) {
-        var lead = Math.round((st - now) / 60e3);
-        store.push(peopleOf(e, members), {title: '⏰ ' + e.title, body: (lead > 1 ? 'In ' + (lead >= 120 ? Math.round(lead / 60) + ' hours' : lead + ' min') : 'Starting now') + ' · ' + whenText(e) + (e.place ? ' · ' + e.place : ''), tag: 'ev-' + e.id, url: '#/e/' + e.id});
+        var lead = Math.round((st - now) / 60e3), extra = '';
+        if (all) { var at = attendance(e, msgs || (msgs = store.load('msgs')), members); extra = ' · ✅ ' + at.yes.length + ' going, ❌ ' + at.no.length + ' can\'t, ⏳ ' + at.none.length + ' no reply'; }
+        store.push(peopleOf(e, members), {title: '⏰ ' + e.title, body: (lead > 1 ? 'In ' + (lead >= 120 ? Math.round(lead / 60) + ' hours' : lead + ' min') : 'Starting now') + ' · ' + whenText(e) + (e.place ? ' · ' + e.place : '') + extra, tag: 'ev-' + e.id, url: '#/e/' + e.id});
         e.remSent = nowIso(store); sent++;
       } else if (now >= st + 10 * 60e3) { e.remSent = 'past'; sent++; }
     });
@@ -563,7 +585,7 @@ var CORE = (function () {
   }
 
   var OPS = {sync: sync, save: saveEvent, del: delEvent, outcome: outcome, import: importEvents, send: send, delmsg: delMsg,
-    pushreg: pushReg, pushoff: pushOff, pushtest: pushTest, teamtotals: teamTotals, member: member, profile: profile, signout: signOut};
+    pushreg: pushReg, pushoff: pushOff, pushtest: pushTest, teamtotals: teamTotals, rsvp: rsvp, member: member, profile: profile, signout: signOut};
   function handle(q, store) {
     if (!q || typeof q !== 'object') fail('bad_request');
     if (q.op === 'signin') {
@@ -582,7 +604,7 @@ var CORE = (function () {
   }
 
   return {TABLES: TABLES, TYPES: TYPES, TYPE_ORDER: TYPE_ORDER, PROSPECT: PROSPECT, COLORS: COLORS, REMIND: REMIND,
-    handle: handle, tick: tick, cents: cents, MODES: MODES, casesOf: casesOf, commentTargets: commentTargets, isAll: isAll, MAX_NOC: MAX_NOC, morning: morning, evening: evening, detectType: detectType, stats: stats, addStats: addStats,
+    handle: handle, tick: tick, attendance: attendance, TEAM_REMIND: TEAM_REMIND, cents: cents, MODES: MODES, casesOf: casesOf, commentTargets: commentTargets, isAll: isAll, MAX_NOC: MAX_NOC, morning: morning, evening: evening, detectType: detectType, stats: stats, addStats: addStats,
     ratios: ratios, parseRead: parseRead, parseICS: parseICS, readPrompt: readPrompt, startMs: startMs, endMs: endMs, myt: myt, whenText: whenText};
 })();
 

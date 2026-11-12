@@ -102,15 +102,38 @@ function fresh() {
   // whole-team event: everyone
   s.pushes.length = 0;
   const meet = h({op: 'save', token: boss.token, event: {title: 'Monday team meeting', start: iso(NOW + 30 * H), end: iso(NOW + 31 * H), all: true}}).event;
-  ok(meet.all && last().ids.length === 4 && /added you/.test(last().note.title), 'new whole-team event appears for everyone (+ pop-up)');
+  ok(meet.all && last().ids.length === 4 && /Team event/.test(last().note.title) && /Going\?/.test(last().note.body), 'new whole-team event: everyone gets a pop-up asking Going?');
   h({op: 'send', token: dan.token, to: 'ev:' + meet.id, text: 'Can I bring a recruit?'});
   ok(ids() === [boss.me.id, ali.me.id, mar.me.id, siti.me.id].sort().join(','), 'comment on whole-team event -> every member except the writer');
   const pv = h({op: 'save', token: boss.token, event: {title: 'Private all?', start: iso(NOW + 30 * H), end: iso(NOW + 31 * H), all: true, vis: 'private'}}).event;
   ok(!pv.all, 'a private event can never be whole-team');
   ok(CORE.commentTargets({ownerId: 'a', with: ['b'], vis: 'team'}, [{from: 'c', kind: 'text'}, {from: 'd', kind: 'cheer'}], 'a', [{id: 'a'}, {id: 'b'}, {id: 'c'}, {id: 'd'}]).sort().join() === 'b,c', 'phone uses the same rule (cheerers are not commenters)');
-  // reminders for whole-team events go to everyone
-  s.pushes.length = 0; s.setNow(NOW + 30 * H - 20 * 60e3); CORE.tick(s);
-  ok(s.pushes.some(p => p.ids.length === 5 && /Monday team meeting/.test(p.note.title)), 'whole-team event reminder reaches everyone');
+  // attendance: Going / Can't go / no reply
+  h({op: 'rsvp', token: ali.token, id: meet.id, answer: 'yes'});
+  h({op: 'rsvp', token: mar.token, id: meet.id, answer: 'no'});
+  h({op: 'rsvp', token: siti.token, id: meet.id, answer: 'yes'});
+  h({op: 'rsvp', token: siti.token, id: meet.id, answer: 'no'});   // changed her mind: only the last answer counts
+  let at = CORE.attendance(s.load('events').find(e => e.id === meet.id), s.load('msgs'), s.load('members'));
+  ok(at.yes.join() === ali.me.id && at.no.sort().join() === [mar.me.id, siti.me.id].sort().join() && at.none.length === 2, 'attendance: 1 going, 2 can\'t, 2 no reply');
+  h({op: 'rsvp', token: mar.token, id: meet.id, answer: ''});
+  at = CORE.attendance(s.load('events').find(e => e.id === meet.id), s.load('msgs'), s.load('members'));
+  ok(at.none.includes(mar.me.id), 'clearing an answer puts you back to no reply');
+  const pushesBefore = s.pushes.length;
+  h({op: 'rsvp', token: dan.token, id: meet.id, answer: 'yes'});
+  ok(s.pushes.length === pushesBefore, 'answering does not pop up on anyone\'s phone');
+  ok(h({op: 'sync', token: boss.token, force: true}).msgs.filter(m => m.kind === 'rsvp').length === 3, 'everyone can see the answers');
+  throws(() => h({op: 'rsvp', token: ali.token, id: joint.id, answer: 'yes'}), 'not_team_event', 'attendance only on whole-team events');
+  const comm = h({op: 'send', token: boss.token, to: 'ev:' + meet.id, text: 'See you all'});
+  ok(!last().ids.includes(boss.me.id) && last().ids.length === 4, 'answers are not treated as comments (comment rule unchanged)');
+  // 1 hour before: pop-up to everyone with the attendance count
+  s.pushes.length = 0; s.setNow(NOW + 30 * H - 61 * 60e3); CORE.tick(s);
+  ok(!s.pushes.some(p => /Monday team meeting/.test(p.note.title)), 'no team reminder 61 min before');
+  s.setNow(NOW + 30 * H - 59 * 60e3); CORE.tick(s);
+  const rp = s.pushes.find(p => /Monday team meeting/.test(p.note.title));
+  ok(rp && rp.ids.length === 5 && /In 59 min/.test(rp.note.body) && /✅ 2 going, ❌ 1 can't, ⏳ 2 no reply/.test(rp.note.body), 'whole-team event: everyone gets a pop-up 1 hour before, with the count');
+  CORE.tick(s); ok(s.pushes.filter(p => /Monday team meeting/.test(p.note.title)).length === 1, 'team reminder sent once');
+  s.setNow(NOW + 32 * H);
+  throws(() => h({op: 'rsvp', token: ali.token, id: meet.id, answer: 'no'}), 'ended', 'cannot answer after the event ended');
 }
 
 /* ---------- outcomes + counting (MAE) ---------- */

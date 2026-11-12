@@ -75,7 +75,7 @@
     ai_unreadable: 'The AI reply was messy. Please try that photo again.', no_api_key: 'Photo reading is not set up on the server yet.',
     no_credit: 'The AI account has no credit left. Tell your leader.', rate_limited: 'AI is busy. Try again in a minute.', ai_unavailable: 'AI is not available right now.',
     bad_api_key: 'The AI key on the server is wrong.', too_long: 'An event can be at most 14 days.', leader_only: 'Only leaders can do that.',
-    network: 'No connection. Check your internet.', too_many: 'Too many events at once (max 300).', cannot_close: 'Only open / present / follow-up / closing can be closed.', bad_noc: 'NOC must be 1 to 50 cases.', plan_needed: 'Please type the plan name for each case.', mode_needed: 'Please pick M / Q / HY / Y for each case.', cases_needed: 'Add at least one case.'
+    network: 'No connection. Check your internet.', too_many: 'Too many events at once (max 300).', cannot_close: 'Only open / present / follow-up / closing can be closed.', bad_noc: 'NOC must be 1 to 50 cases.', plan_needed: 'Please type the plan name for each case.', mode_needed: 'Please pick M / Q / HY / Y for each case.', cases_needed: 'Add at least one case.', not_team_event: 'Attendance is only for whole-team events.', ended: 'This event has ended.', cancelled: 'This event was cancelled.'
   };
   function errText(e) { return ERR[e && e.code] || ERR[e && e.message] || 'Something went wrong (' + ((e && (e.code || e.message)) || 'error') + ')'; }
 
@@ -142,7 +142,7 @@
   function evById(id, data) { return ((data || S.data).events || []).filter(function (x) { return x.id === id; })[0]; }
   /* Is this comment / cheer meant for me? Same rule as the server's pop-ups (core.js commentTargets). */
   function forMe(m, data) {
-    data = data || S.data; var my = data.me.id; if (m.from === my) return false;
+    data = data || S.data; var my = data.me.id; if (m.from === my || m.kind === 'rsvp') return false;
     var e = evById(m.to.slice(3), data); if (!e || e.busy) return false;
     if (m.kind === 'cheer') return e.ownerId === my;
     var earlier = data.msgs.filter(function (x) { return x.to === m.to && x.created < m.created; });
@@ -167,8 +167,8 @@
     var now = Date.now(), my = me().id, changed = false;
     events().forEach(function (e) {
       if (e.busy || e.allDay || e.out === 'cancel' || !involves(e, my) || S.reminded[e.id]) return;
-      var lead = e.ownerId === my && e.remind !== '' && e.remind != null ? +e.remind : 15, st = sMs(e);
-      if (e.ownerId === my && e.remind === '') return;
+      var lead = e.all ? C.TEAM_REMIND : e.ownerId === my && e.remind !== '' && e.remind != null ? +e.remind : 15, st = sMs(e);
+      if (!e.all && e.ownerId === my && e.remind === '') return;
       if (now >= st - lead * 60e3 && now < st + 5 * 60e3) {
         S.reminded[e.id] = 1; changed = true;
         banner(mem(e.ownerId), '⏰ ' + e.title, (st > now ? 'In ' + Math.max(1, Math.round((st - now) / 60e3)) + ' min' : 'Starting now') + ' · ' + hm(st) + (e.place ? ' · ' + e.place : ''), '#/e/' + e.id);
@@ -325,7 +325,7 @@
   }
   function evRow(e, showDay) {
     var o = mem(e.ownerId), cls = 'ev' + (e.busy ? ' busy' : '') + (e.out === 'cancel' ? ' x' : '');
-    var tag = e.busy ? '<span class="pill grey">🔒 Private</span>' : (e.vis === 'private' ? '<span class="pill grey">🔒 Only me</span>' : '') + (e.all ? '<span class="pill navy">👥 Everyone</span>' : '') + (e.out === 'closed' ? '<span class="pill gold">💰 Closed' + (e.noc > 1 ? ' ×' + e.noc : '') + '</span>' : e.out === 'done' ? '<span class="pill green">✓ Done</span>' : e.out === 'cancel' ? '<span class="pill grey">Didn\'t happen</span>' : needsConfirm(e) ? '<span class="pill warn">Confirm?</span>' : '');
+    var tag = e.busy ? '<span class="pill grey">🔒 Private</span>' : (e.vis === 'private' ? '<span class="pill grey">🔒 Only me</span>' : '') + (e.all ? '<span class="pill navy">👥 ✅' + attendOf(e).yes.length + ' ❌' + attendOf(e).no.length + ' ⏳' + attendOf(e).none.length + '</span>' + (!myAnswer(e) && eMs(e) > Date.now() ? '<span class="pill warn">Going?</span>' : '') : '') + (e.out === 'closed' ? '<span class="pill gold">💰 Closed' + (e.noc > 1 ? ' ×' + e.noc : '') + '</span>' : e.out === 'done' ? '<span class="pill green">✓ Done</span>' : e.out === 'cancel' ? '<span class="pill grey">Didn\'t happen</span>' : needsConfirm(e) ? '<span class="pill warn">Confirm?</span>' : '');
     var w = (e.with || []).length ? '<span class="with">' + (e.with || []).slice(0, 4).map(function (id) { return avatar(mem(id), 'xs'); }).join('') + ((e.with || []).length > 4 ? '<small>+' + ((e.with || []).length - 4) + '</small>' : '') + '</span>' : '';
     return '<a class="' + cls + '" href="#/e/' + e.id + '" style="--c:' + esc(o.color) + '"><span class="et">' + (showDay ? esc(dayLabel(dayKey(sMs(e)))) + '<br>' : '') + esc(evTime(e)) + '</span>' +
       '<span class="eb"><b>' + esc(evTitle(e)) + '</b><small>' + avatar(o, 'xs') + ' ' + esc(o.name) + (e.place && !e.busy ? ' · ' + esc(e.place) : '') + '</small>' + tag + '</span>' + w + '</a>';
@@ -342,6 +342,7 @@
     }
     return html || '<p class="empty">Nothing in the next 3 weeks.</p>';
   }
+  function rsvpMark(e, id) { var at = attendOf(e); return at.yes.indexOf(id) >= 0 ? '✅' : at.no.indexOf(id) >= 0 ? '❌' : '⏳'; }
   /* Team day: one row per person, 7am–11pm. This is the "when is he free?" answer. */
   function teamDay() {
     var k = S.dayView, a = keyMs(k), H0 = 7, H1 = 23, span = (H1 - H0) * 3600e3, now = Date.now(), my = me().id;
@@ -355,7 +356,7 @@
       var blocks = mine.filter(function (e) { return !e.allDay; }).map(function (e) {
         var s = Math.max(sMs(e), a + H0 * 3600e3), en = Math.min(eMs(e), a + H1 * 3600e3); if (en <= s) return '';
         var l = (s - a - H0 * 3600e3) / span * 100, w = Math.max(1.6, (en - s) / span * 100), o = mem(e.ownerId);
-        return '<a class="blk' + (e.busy ? ' busy' : '') + '" href="#/e/' + e.id + '" style="left:' + l + '%;width:' + w + '%;--c:' + esc(o.color) + '" title="' + esc(evTime(e) + ' ' + evTitle(e)) + '">' + esc(e.busy ? 'Busy' : T(e.type).emoji + ' ' + e.title) + '</a>';
+        return '<a class="blk' + (e.busy ? ' busy' : '') + '" href="#/e/' + e.id + '" style="left:' + l + '%;width:' + w + '%;--c:' + esc(o.color) + '" title="' + esc(evTime(e) + ' ' + evTitle(e)) + '">' + (e.all ? rsvpMark(e, m.id) : '') + esc(e.busy ? 'Busy' : T(e.type).emoji + ' ' + e.title) + '</a>';
       }).join('');
       return '<div class="tr"><div class="tn">' + avatar(m, 'xs') + '<span>' + esc(m.id === my ? 'Me' : m.name.split(' ')[0]) + '</span></div><div class="tl">' +
         (allDay.length ? '<span class="allday">' + esc(allDay.map(function (e) { return e.busy ? 'Busy (all day)' : e.title; }).join(', ')) + '</span>' : '') + blocks + '</div></div>';
@@ -374,7 +375,7 @@
     var o = mem(e.ownerId), mine = e.ownerId === me().id;
     if (e.busy) return topbar('Busy', {back: '#/'}) + '<main><div class="card evhead" style="--c:' + esc(o.color) + '"><h2>🔒 Busy</h2><p>' + esc(dayLabel(dayKey(sMs(e)), true)) + '<br>' + esc(evTime(e)) + '</p><p>' + avatar(o, 'sm') + ' ' + esc(o.name) + '</p><p class="muted">This is private. Only ' + esc(o.name.split(' ')[0]) + ' can see the details.</p></div></main>' + tabs('cal');
     var thread = (S.data.msgs || []).filter(function (m) { return m.to === 'ev:' + e.id; });
-    var cheers = thread.filter(function (m) { return m.kind === 'cheer'; }), comments = thread.filter(function (m) { return m.kind !== 'cheer'; });
+    var cheers = thread.filter(function (m) { return m.kind === 'cheer'; }), comments = thread.filter(function (m) { return m.kind !== 'cheer' && m.kind !== 'rsvp'; });
     var iCheered = cheers.some(function (m) { return m.from === me().id; });
     var out = '';
     if (mine && isWork(e) && sMs(e) <= Date.now()) {
@@ -395,12 +396,25 @@
       '<p>' + avatar(o, 'sm') + ' ' + esc(o.name) + ((e.with || []).length ? ' <span class="muted">with</span> ' + e.with.map(function (id) { return avatar(mem(id), 'sm') + ' ' + esc(mem(id).name.split(' ')[0]); }).join(' ') : '') + '</p>' +
       (e.notes ? '<p class="notes">' + esc(e.notes) + '</p>' : '') +
       '<p class="muted tiny">' + (e.all ? '👥 Whole-team event: on everyone\'s calendar.' : e.vis === 'private' ? '🔒 Only ' + (mine ? 'you' : o.name.split(' ')[0]) + (e.with.length ? ' and the people tagged' : '') + ' can see this. Others see "Busy".' + (isWork(e) ? ' It still counts in the activity numbers.' : '') : '👥 The whole team can see this.') + (e.type === 'approach' ? ' · ' + (e.count || 1) + ' new friend(s)' : '') + '</p></div>' +
-      out +
+      out + (e.all ? attendCard(e) : '') +
       '<div class="cheers"><button class="cheer' + (iCheered ? ' on' : '') + '" data-act="cheer" data-id="' + e.id + '">👏 ' + (cheers.length || 'Cheer') + '</button><span class="muted tiny">' + esc(cheers.map(function (m) { return mem(m.from).name.split(' ')[0]; }).join(', ')) + '</span>' +
       '</div>' +
       '<section class="comments"><h4>Comments</h4><div data-live="comments">' + commentList(comments) + '</div>' +
       '<form class="composer" data-act="comment" data-id="' + e.id + '"><input name="t" maxlength="1000" placeholder="Write a comment…" autocomplete="off"><button class="btn primary">Send</button></form>' +
       '<p class="tiny muted">🔔 ' + esc(whoHears(e, comments)) + '</p></section></main>' + tabs('cal');
+  }
+  /* whole-team event: Going / Can't go / No reply, with names */
+  function attendOf(e) { return C.attendance(e, S.data.msgs || [], members()); }
+  function myAnswer(e) { var at = attendOf(e), my = me().id; return at.yes.indexOf(my) >= 0 ? 'yes' : at.no.indexOf(my) >= 0 ? 'no' : ''; }
+  function attendCard(e) {
+    var at = attendOf(e), mine = myAnswer(e), open = eMs(e) > Date.now() && e.out !== 'cancel';
+    var names = function (ids) { return ids.length ? ids.map(function (id) { return '<span class="who">' + avatar(mem(id), 'xs') + esc(id === me().id ? 'Me' : mem(id).name.split(' ')[0]) + '</span>'; }).join('') : '<span class="muted tiny">nobody</span>'; };
+    return '<div class="card attend"><h4>Attendance</h4>' +
+      (open ? '<div class="outs"><button class="out' + (mine === 'yes' ? ' on' : '') + '" data-act="rsvp" data-id="' + e.id + '" data-v="' + (mine === 'yes' ? '' : 'yes') + '">✅ Going</button><button class="out grey' + (mine === 'no' ? ' on' : '') + '" data-act="rsvp" data-id="' + e.id + '" data-v="' + (mine === 'no' ? '' : 'no') + '">❌ Can\'t go</button></div>' + (!mine ? '<p class="tiny warn-t">You haven\'t answered yet.</p>' : '') : '') +
+      '<div class="alist"><b>✅ Going (' + at.yes.length + ')</b>' + names(at.yes) + '</div>' +
+      '<div class="alist"><b>❌ Can\'t go (' + at.no.length + ')</b>' + names(at.no) + '</div>' +
+      '<div class="alist"><b>⏳ No reply (' + at.none.length + ')</b>' + names(at.none) + '</div>' +
+      '<p class="tiny muted">🔔 Everyone gets a pop-up 1 hour before.</p></div>';
   }
   /* tells the writer exactly who will get the pop-up */
   function whoHears(e, comments) {
@@ -438,7 +452,7 @@
       '<label>Notes<textarea name="notes" maxlength="1500" rows="2" placeholder="optional. Use client initials, not full details">' + esc(e.notes) + '</textarea></label>' +
       '<div class="lbl">Who can see it?</div><div class="vis"><button type="button" class="vb' + (e.vis !== 'private' ? ' on' : '') + '" data-v="team">👥 Team</button><button type="button" class="vb' + (e.vis === 'private' ? ' on' : '') + '" data-v="private">🔒 Only me</button></div>' +
       '<p class="tiny muted" id="vis-help"></p>' +
-      '<label class="switch" id="all-row"><input type="checkbox" name="all"' + (e.all ? ' checked' : '') + '> 👥 Everyone\'s in it (team meeting, training, roadshow)</label><p class="tiny muted" id="all-help">Shows on every member\'s calendar, and everyone gets a pop-up for comments.</p>' +
+      '<label class="switch" id="all-row"><input type="checkbox" name="all"' + (e.all ? ' checked' : '') + '> 👥 Everyone\'s in it (team meeting, training, roadshow)</label><p class="tiny muted" id="all-help">Shows on every member\'s calendar. Everyone answers Going / Can\'t go, gets a pop-up for comments, and a reminder 1 hour before.</p>' +
       '<div class="lbl">With (optional)</div><div class="withpick">' + members().filter(function (m) { return m.id !== me().id && m.active !== false; }).map(function (m) { return '<button type="button" class="wp' + ((e.with || []).indexOf(m.id) >= 0 ? ' on' : '') + '" data-id="' + m.id + '">' + avatar(m, 'xs') + esc(m.name.split(' ')[0]) + '</button>'; }).join('') + '</div>' +
       '<label>Remind me<select name="remind">' + [['', 'No reminder'], ['0', 'At start'], ['10', '10 min before'], ['30', '30 min before'], ['60', '1 hour before'], ['120', '2 hours before'], ['1440', '1 day before']].map(function (r) { return '<option value="' + r[0] + '"' + (String(e.remind) === r[0] ? ' selected' : '') + '>' + r[1] + '</option>'; }).join('') + '</select></label>' +
       '<div class="row end sticky-actions">' + (!isNew ? '<button type="button" class="btn danger ghost" data-x="del">Delete</button>' : '') + '<button class="btn primary big" type="submit">' + (isNew ? 'Add to calendar' : 'Save') + '</button></div></form>';
@@ -823,7 +837,7 @@
     var active = document.activeElement, typing = active && /INPUT|TEXTAREA|SELECT/.test(active.tagName) && $app.contains(active);
     if (typing && r === lastRoute) {   // don't wipe what someone is typing: only refresh the live lists
       var live = $app.querySelector('[data-live]');
-      if (live && live.dataset.live === 'comments') live.innerHTML = commentList((S.data.msgs || []).filter(function (m) { return m.to === 'ev:' + parts[1] && m.kind !== 'cheer'; }));
+      if (live && live.dataset.live === 'comments') live.innerHTML = commentList((S.data.msgs || []).filter(function (m) { return m.to === 'ev:' + parts[1] && m.kind !== 'cheer' && m.kind !== 'rsvp'; }));
       return;
     }
     if (parts[0] === 'e' && parts[1]) html = eventScreen(parts[1]);
@@ -854,6 +868,7 @@
     if (a === 'edit') return editor(events().filter(function (e) { return e.id === b.dataset.id; })[0]);
     if (a === 'out') return setOutcome(b.dataset.id, b.dataset.v);
     if (a === 'cheer') return send('send', {to: 'ev:' + b.dataset.id, kind: 'cheer'});
+    if (a === 'rsvp') return send('rsvp', {id: b.dataset.id, answer: b.dataset.v}, b.dataset.v === 'yes' ? '✅ See you there!' : b.dataset.v === 'no' ? 'Noted: can\'t go' : 'Answer cleared');
     if (a === 'period') { S.statsPeriod = b.dataset.p; LS.set('statsPeriod', S.statsPeriod); return render(); }
     if (a === 'report') return copyReport();
     if (a === 'csv') return downloadCsv();
