@@ -7,7 +7,7 @@
   var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   var MONTH = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   var DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  var APP_VERSION = '16';
+  var APP_VERSION = '17';
   var H8 = 8 * 3600e3, DAY = 864e5, SELLING = {approach: 1, open: 1, present: 1, followup: 1, close: 1, recruit: 1};
 
   /* ---------- storage (each phone) ---------- */
@@ -107,7 +107,7 @@
     ai_unreadable: 'The AI reply was messy. Please try that photo again.', no_api_key: 'Photo reading is not set up on the server yet.',
     no_credit: 'The AI account has no credit left. Tell your leader.', rate_limited: 'AI is busy. Try again in a minute.', ai_unavailable: 'AI is not available right now.',
     bad_api_key: 'The AI key on the server is wrong.', too_long: 'An event can be at most 14 days.', leader_only: 'Only leaders can do that.',
-    network: 'No connection. Check your internet.', too_many: 'Too many events at once (max 300).', cannot_close: 'Only open / present / follow-up / closing can be closed.', bad_noc: 'NOC must be 1 to 50 cases.', plan_needed: 'Please type the plan name for each case.', mode_needed: 'Please pick M / Q / HY / Y for each case.', cases_needed: 'Add at least one case.', not_team_event: 'Attendance is only for whole-team events.', ended: 'This event has ended.', cancelled: 'This event was cancelled.', already_linked: 'One of you is already linked to someone else.', no_request: 'That request is no longer there.', not_linked: 'You are not linked.', short_taken: 'Someone already uses that short name. Try another.', bad_short: 'Use letters and numbers only.'
+    network: 'No connection. Check your internet.', busy: 'The server is busy right now. Please try again in a moment.', too_many: 'Too many events at once (max 300).', cannot_close: 'Only open / present / follow-up / closing can be closed.', bad_noc: 'NOC must be 1 to 50 cases.', plan_needed: 'Please type the plan name for each case.', mode_needed: 'Please pick M / Q / HY / Y for each case.', cases_needed: 'Add at least one case.', not_team_event: 'Attendance is only for whole-team events.', ended: 'This event has ended.', cancelled: 'This event was cancelled.', already_linked: 'One of you is already linked to someone else.', no_request: 'That request is no longer there.', not_linked: 'You are not linked.', short_taken: 'Someone already uses that short name. Try another.', bad_short: 'Use letters and numbers only.'
   };
   function errText(e) { return ERR[e && e.code] || ERR[e && e.message] || 'Something went wrong (' + ((e && (e.code || e.message)) || 'error') + ')'; }
 
@@ -155,12 +155,18 @@
     var backup = JSON.stringify(S.data);
     if (apply) { try { apply(S.data); } catch (x) {} }
     mutSeq++; pendingOps++; ansCache.ver = -2; S.stats = {}; LS.set('cache', S.data); render();
-    return api(op, body).then(function (j) {
+    return apiRetry(op, body, 0).then(function (j) {
       pendingOps--; if (ok) toast(ok, 'good'); if (after) { try { after(j); } catch (x) {} render(); }
       quietSync(true); return j;
     }, function (e) {
       pendingOps--; mutSeq++; S.data = JSON.parse(backup); ansCache.ver = -2; S.stats = {}; render();
       toast('Not saved: ' + errText(e), 'bad'); quietSync(true); throw e;
+    });
+  }
+  function apiRetry(op, body, n) {
+    return api(op, body).catch(function (e) {
+      if (e && e.code === 'busy' && n < 3) return new Promise(function (ok) { setTimeout(ok, 1200 * (n + 1) + Math.random() * 800); }).then(function () { return apiRetry(op, body, n + 1); });
+      throw e;
     });
   }
   function applyFor(op, q) {

@@ -144,10 +144,20 @@ var GAS = (function () {
       if (dead.length) withLock(function () { save('devices', load('devices').filter(function (d) { return dead.indexOf(d.token) < 0; })); });   // phone uninstalled / signed out
     } catch (e) { console.error('push failed: ' + (e && e.stack)); }
   }
-  function withLock(fn) { var l = LockService.getScriptLock(); l.waitLock(20000); try { cache = {}; return fn(); } finally { l.releaseLock(); } }
+  function withLock(fn) {
+    var l = LockService.getScriptLock();
+    if (!l.tryLock(28000)) { var e = new Error('busy'); e.appCode = 'busy'; throw e; }   // nothing was changed: the phone retries
+    try { cache = {}; return fn(); } finally { l.releaseLock(); }
+  }
+  /* Adds one row at the bottom (used for answers and comments): no need to read or rewrite the table. */
+  function append(name, row) {
+    var cols = CORE.TABLES[name], s = tab(name), vals = toVals(cols, [row]);
+    s.getRange(s.getLastRow() + 1, 1, 1, cols.length).setNumberFormat('@').setValues(vals);
+    if (cache[name]) cache[name].push(JSON.parse(JSON.stringify(row)));
+  }
 
   return {
-    load: load, save: save, withLock: withLock, ai: ai, flushPush: flushPush,
+    load: load, save: save, append: append, withLock: withLock, ai: ai, flushPush: flushPush,
     push: function (ids, note) { if (ids && ids.length) outbox.push({ids: ids, note: note}); },
     prop: function (k) { return P.getProperty(k) || ''; },
     fails: function (add) { var c = CacheService.getScriptCache(), n = +(c.get('fails') || 0); if (add) { c.put('fails', String(n + add), 900); Utilities.sleep(800); } return n; },

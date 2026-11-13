@@ -58,6 +58,8 @@ var CORE = (function () {
   function isAll(e) { return (e.all === 'true' || e.all === true) && e.vis !== 'private'; }   // whole-team event (meeting, training, roadshow)
   function activeIds(members) { return members.filter(function (m) { return String(m.active) !== 'false'; }).map(function (m) { return m.id; }); }
   /* People an event belongs to: owner + tagged, or everyone for a whole-team event. */
+  /* Add one message line. The Google server appends a single row (fast, short lock); other stores fall back to load + save. */
+  function addMsg(store, m) { if (store.append) store.append('msgs', m); else { var all = store.load('msgs'); all.push(m); store.save('msgs', all); } }
   function answers(evId, msgs) { var a = {}; (msgs || []).forEach(function (m) { if (m.to === 'ev:' + evId && m.kind === 'rsvp') a[m.from] = m.text; }); return a; }
   /* People an event belongs to: owner + invited people who did not reject, or everyone for a whole-team event. */
   function peopleOf(e, members, msgs) { if (isAll(e)) return activeIds(members); var a = answers(e.id, msgs); return [e.ownerId].concat(withList(e).filter(function (id) { return a[id] !== 'no'; })); }
@@ -192,13 +194,14 @@ var CORE = (function () {
     store.save('sessions', rows);
     return token;
   }
-  function who(q, store) {
+  function who(q, store, readOnly) {
     var h = store.hash('sess|' + str(q.token, 80)), rows = store.load('sessions'), s = rows.filter(function (x) { return x.token === h; })[0];
     if (!q.token || !s) fail('signed_out');
     var me = store.load('members').filter(function (a) { return a.id === s.memberId; })[0];
     if (!me || String(me.active) === 'false') fail('removed');
-    if (store.now().getTime() - Date.parse(s.lastSeen) > 30 * 60e3) { s.lastSeen = nowIso(store); store.save('sessions', rows); }   // at most one write per 30 min
-    return {me: me, leader: me.role === 'leader'};
+    var stale = store.now().getTime() - Date.parse(s.lastSeen) > 30 * 60e3;   // at most one write per 30 min
+    if (stale && !readOnly) { s.lastSeen = nowIso(store); store.save('sessions', rows); }
+    return {me: me, leader: me.role === 'leader', touch: stale};
   }
 
   /* ---------- privacy: what each person may see ---------- */
@@ -370,8 +373,7 @@ var CORE = (function () {
       targets = ev.ownerId === me.id ? [] : [ev.ownerId];
     } else targets = commentTargets(ev, earlier, me.id, members);
     var m = {id: newId(store, 10), to: to, from: me.id, kind: kind, text: text, created: nowIso(store)};
-    msgs.push(m); if (msgs.length > 20000) msgs = msgs.slice(-20000);
-    store.save('msgs', msgs); store.version(true);
+    addMsg(store, m); store.version(true);
     if (targets.length) store.push(targets, {title: kind === 'cheer' ? me.name + ' cheered 👏' : me.name + ' 💬 ' + ev.title, body: kind === 'cheer' ? 'on ' + ev.title : text, tag: 'ev-' + ev.id, url: '#/e/' + ev.id + '/c'});
     return {msg: m};
   }
@@ -396,10 +398,9 @@ var CORE = (function () {
     if (ev.out === 'cancel') fail('cancelled');
     if (endMs(ev) <= store.now().getTime()) fail('ended');
     var ans = q.answer === 'yes' || q.answer === 'no' ? q.answer : '', to = 'ev:' + ev.id;
-    var msgs = store.load('msgs').filter(function (m) { return !(m.to === to && m.from === me.id && m.kind === 'rsvp'); });
-    var before = answers(ev.id, store.load('msgs'))[me.id] || '';
-    if (ans) msgs.push({id: newId(store, 10), to: to, from: me.id, kind: 'rsvp', text: ans, created: nowIso(store)});
-    store.save('msgs', msgs); store.version(true);
+    var before = invited ? (answers(ev.id, store.load('msgs'))[me.id] || '') : '';
+    addMsg(store, {id: newId(store, 10), to: to, from: me.id, kind: 'rsvp', text: ans, created: nowIso(store)});   // one new line; the newest answer counts ('' = cleared)
+    store.version(true);
     if (invited && ans && ans !== before) store.push([ev.ownerId], {title: (ans === 'yes' ? '✅ ' + me.name + ' accepted' : '❌ ' + me.name + ' rejected'), body: ev.title + ' · ' + whenText(ev), tag: 'ev-' + ev.id, url: '#/e/' + ev.id});
     return {answer: ans};
   }
@@ -641,6 +642,7 @@ var CORE = (function () {
     return {sent: n};
   }
 
+  var READ_ONLY = {sync: 1, teamtotals: 1};
   var OPS = {sync: sync, save: saveEvent, del: delEvent, outcome: outcome, import: importEvents, send: send, delmsg: delMsg,
     pushreg: pushReg, pushoff: pushOff, pushtest: pushTest, teamtotals: teamTotals, rsvp: rsvp, member: member, partner: partner, profile: profile, signout: signOut};
   function handle(q, store) {
@@ -663,6 +665,11 @@ var CORE = (function () {
       return {ok: true, read: parseRead(store.ai(readPrompt(mytDay(store.now().getTime())), q.image))};
     }
     var fn = OPS[q.op]; if (!fn) fail('bad_request');
+    if (READ_ONLY[q.op]) {
+      var wr = who(q, store, true);
+      if (wr.touch) { try { store.withLock(function () { who(q, store); }); } catch (x) {} }   // last-seen update is optional
+      var rr = fn(q, store, wr.me, wr.leader); rr.ok = true; return rr;
+    }
     return store.withLock(function () { var w = who(q, store); var r = fn(q, store, w.me, w.leader); r.ok = true; return r; });
   }
 
@@ -818,10 +825,20 @@ var GAS = (function () {
       if (dead.length) withLock(function () { save('devices', load('devices').filter(function (d) { return dead.indexOf(d.token) < 0; })); });   // phone uninstalled / signed out
     } catch (e) { console.error('push failed: ' + (e && e.stack)); }
   }
-  function withLock(fn) { var l = LockService.getScriptLock(); l.waitLock(20000); try { cache = {}; return fn(); } finally { l.releaseLock(); } }
+  function withLock(fn) {
+    var l = LockService.getScriptLock();
+    if (!l.tryLock(28000)) { var e = new Error('busy'); e.appCode = 'busy'; throw e; }   // nothing was changed: the phone retries
+    try { cache = {}; return fn(); } finally { l.releaseLock(); }
+  }
+  /* Adds one row at the bottom (used for answers and comments): no need to read or rewrite the table. */
+  function append(name, row) {
+    var cols = CORE.TABLES[name], s = tab(name), vals = toVals(cols, [row]);
+    s.getRange(s.getLastRow() + 1, 1, 1, cols.length).setNumberFormat('@').setValues(vals);
+    if (cache[name]) cache[name].push(JSON.parse(JSON.stringify(row)));
+  }
 
   return {
-    load: load, save: save, withLock: withLock, ai: ai, flushPush: flushPush,
+    load: load, save: save, append: append, withLock: withLock, ai: ai, flushPush: flushPush,
     push: function (ids, note) { if (ids && ids.length) outbox.push({ids: ids, note: note}); },
     prop: function (k) { return P.getProperty(k) || ''; },
     fails: function (add) { var c = CacheService.getScriptCache(), n = +(c.get('fails') || 0); if (add) { c.put('fails', String(n + add), 900); Utilities.sleep(800); } return n; },

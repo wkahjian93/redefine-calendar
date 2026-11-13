@@ -121,7 +121,13 @@ function fresh() {
   const pushesBefore = s.pushes.length;
   h({op: 'rsvp', token: dan.token, id: meet.id, answer: 'yes'});
   ok(s.pushes.length === pushesBefore, 'answering does not pop up on anyone\'s phone');
-  ok(h({op: 'sync', token: boss.token, force: true}).msgs.filter(m => m.kind === 'rsvp').length === 3, 'everyone can see the answers');
+  ok(new Set(h({op: 'sync', token: boss.token, force: true}).msgs.filter(m => m.kind === 'rsvp').map(m => m.from)).size === 4, 'everyone can see the answers');
+  ok(CORE.answers(meet.id, s.load('msgs'))[siti.me.id] === 'no', 'newest answer wins when someone changes their mind');
+  const before = s.load('msgs').length; h({op: 'rsvp', token: ali.token, id: meet.id, answer: 'yes'});
+  ok(s.load('msgs').length === before + 1, 'an answer adds exactly one line (no rewrite of the messages)');
+  s.locks = 0; h({op: 'sync', token: ali.token, force: true}); h({op: 'teamtotals', token: ali.token, from: iso(NOW - D), to: iso(NOW + D)});
+  ok(s.locks === 0, 'phone refreshes never take the lock (cannot block someone saving)');
+  s.locks = 0; h({op: 'rsvp', token: dan.token, id: meet.id, answer: 'yes'}); ok(s.locks === 1, 'saving an answer takes the lock once');
   throws(() => h({op: 'rsvp', token: ali.token, id: joint.id, answer: 'yes'}), 'not_team_event', 'attendance only on whole-team events');
   const comm = h({op: 'send', token: boss.token, to: 'ev:' + meet.id, text: 'See you all'});
   ok(!last().ids.includes(boss.me.id) && last().ids.length === 4, 'answers are not treated as comments (comment rule unchanged)');
