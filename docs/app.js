@@ -7,7 +7,7 @@
   var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   var MONTH = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   var DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  var APP_VERSION = '20';
+  var APP_VERSION = '21';
   var H8 = 8 * 3600e3, DAY = 864e5, SELLING = {approach: 1, open: 1, present: 1, followup: 1, close: 1, recruit: 1};
 
   /* ---------- storage (each phone) ---------- */
@@ -563,7 +563,7 @@
       var at = attendOf(e), mine = myAnswer(e), own = e.ownerId === my;
       return '<div class="card tev"><a class="tev-head" href="#/e/' + e.id + '"><img class="tlogo" src="icons/team-mark.png" alt=""><b>' + esc(e.title) + '</b><small>' + esc(dayLabel(dayKey(sMs(e)), true)) + ' · ' + esc(evTime(e)) + (e.place ? ' · 📍 ' + esc(e.place) : '') + '</small><small>by ' + esc(shortName(mem(e.ownerId))) + ' · ✅ ' + at.yes.length + ' going · ❌ ' + at.no.length + ' can\'t · ⏳ ' + at.none.length + ' no reply</small></a>' +
         '<div class="outs"><button class="out' + (mine === 'yes' ? ' on' : '') + '" data-act="rsvp" data-id="' + e.id + '" data-v="' + (mine === 'yes' ? '' : 'yes') + '">✅ Going</button><button class="out grey' + (mine === 'no' ? ' on' : '') + '" data-act="rsvp" data-id="' + e.id + '" data-v="' + (mine === 'no' ? '' : 'no') + '">❌ Can\'t go</button></div>' +
-        (!mine && !own ? '<p class="tiny warn-t">You haven\'t answered yet.</p>' : own && !mine ? '<p class="tiny muted">You created this one.</p>' : '') + '<p>' + '<button class="btn wa" data-act="wa-team" data-id="' + e.id + '">Share to WhatsApp</button>' + '</p></div>';
+        (!mine && !own ? '<p class="tiny warn-t">You haven\'t answered yet.</p>' : own && !mine ? '<p class="tiny muted">You created this one.</p>' : '') + '<p>' + '<button class="btn wa" data-act="wa-team" data-id="' + e.id + '">📋 Copy for WhatsApp</button>' + '</p></div>';
     }).join('') : '<p class="empty">No upcoming team events.</p>') + '</main>' + tabs('cal');
   }
   function invitesScreen() {
@@ -584,9 +584,16 @@
       .concat(e.place ? ['📍 ' + e.place] : []).concat(e.notes ? ['', e.notes] : [])
       .concat(['', '✅ Going (' + at.yes.length + '): ' + nm(at.yes), '❌ Can\'t go (' + at.no.length + '): ' + nm(at.no), '⏳ No reply (' + at.none.length + '): ' + nm(at.none), '', 'Answer in REDEFINE Calendar 👉 ' + link]).join('\n');
   }
-  function shareWhatsApp(text) {
-    var url = 'https://wa.me/?text=' + encodeURIComponent(text);   // WhatsApp opens and asks which chat / group
-    var w = window.open(url, '_blank'); if (!w) location.href = url;
+  /* Copy the message so it can be pasted straight into the WhatsApp group (works on iPhone, Android and PC). */
+  function copyText(text) {
+    var done = function () { toast('📋 Copied! Open your WhatsApp group and paste.', 'good'); };
+    var fallback = function () {
+      var t = document.createElement('textarea'); t.value = text; t.setAttribute('readonly', ''); t.style.position = 'fixed'; t.style.opacity = '0'; document.body.appendChild(t);
+      t.select(); t.setSelectionRange(0, text.length); var ok = false; try { ok = document.execCommand('copy'); } catch (x) {} t.remove();
+      if (ok) return done();
+      modal('<h3>Copy this message</h3><p class="tiny muted">Press and hold → Select all → Copy, then paste in WhatsApp.</p><textarea rows="12" style="width:100%">' + esc(text) + '</textarea><div class="row end"><button class="btn" data-act="close-modal">Done</button></div>');
+    };
+    if (navigator.clipboard && window.isSecureContext) navigator.clipboard.writeText(text).then(done, fallback); else fallback();
   }
   function attendCard(e) {
     var at = attendOf(e), mine = myAnswer(e), open = eMs(e) > Date.now() && e.out !== 'cancel';
@@ -596,7 +603,7 @@
       '<div class="alist"><b>✅ Going (' + at.yes.length + ')</b>' + names(at.yes) + '</div>' +
       '<div class="alist"><b>❌ Can\'t go (' + at.no.length + ')</b>' + names(at.no) + '</div>' +
       '<div class="alist"><b>⏳ No reply (' + at.none.length + ')</b>' + names(at.none) + '</div>' +
-      '<p class="tiny muted">🔔 Everyone gets a pop-up 1 hour before.</p>' + '<button class="btn wa" data-act="wa-team" data-id="' + e.id + '">Share to WhatsApp</button>' + '</div>';
+      '<p class="tiny muted">🔔 Everyone gets a pop-up 1 hour before.</p>' + '<button class="btn wa" data-act="wa-team" data-id="' + e.id + '">📋 Copy for WhatsApp</button>' + '</div>';
   }
   /* tells the writer exactly who will get the pop-up */
   function whoHears(e, comments) {
@@ -1077,7 +1084,7 @@
       var iv = b.dataset.v, go = function () { return send('rsvp', {id: b.dataset.id, answer: iv}, iv === 'yes' ? '✅ Accepted. It is on your calendar.' : 'Rejected. Removed from your calendar.'); };
       return iv === 'no' ? confirmBox('Reject this invitation?', 'It will disappear from your calendar and the owner will be told. You can still accept later from the event link.', 'Reject', true).then(function (y) { if (y) go(); }) : go();
     }
-    if (a === 'wa-team') { var we = events().filter(function (x) { return x.id === b.dataset.id; })[0]; if (we) shareWhatsApp(teamShareText(we)); return; }
+    if (a === 'wa-team') { var we = events().filter(function (x) { return x.id === b.dataset.id; })[0]; if (we) copyText(teamShareText(we)); return; }
     if (a === 'rsvp') return send('rsvp', {id: b.dataset.id, answer: b.dataset.v}, b.dataset.v === 'yes' ? '✅ See you there!' : b.dataset.v === 'no' ? 'Noted: can\'t go' : 'Answer cleared');
     if (a === 'period') { S.statsPeriod = b.dataset.p; LS.set('statsPeriod', S.statsPeriod); return render(); }
     if (a === 'report') return copyReport();
