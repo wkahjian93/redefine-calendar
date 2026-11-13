@@ -266,7 +266,7 @@ main { padding: 12px 14px; }
 /* invitation not answered yet: faded */
 .bar.pend { opacity: .4; }
 .ev.pend { opacity: .55; border-left-style: dashed; }
-.blk.pend { opacity: .4; outline: 1px dashed var(--c); }
+.blk.pend { opacity: .75; outline: 2px dashed var(--c); outline-offset: 1px; }
 .confirm-bar.invite { background: #EEF2FF; color: #1E3A8A; border-color: #C7D2FE; }
 
 .chip .ctool { margin-left: 6px; padding: 0 4px; border-radius: 8px; font-size: 13px; line-height: 18px; background: rgba(0,0,0,.08); }
@@ -286,3 +286,13 @@ main { padding: 12px 14px; }
 .evhead.team { background: #000; color: #fff; border-top-color: #000; }
 .evhead.team .muted, .evhead.team p { color: #E5E7EB; }
 .evhead.team .tlogo { height: .95em; margin-right: 8px; }
+
+/* Team day: all-day events as strips across the row; timed blocks move below them */
+.adstrip { position: absolute; left: 2px; right: 2px; height: 13px; background: var(--c); color: #fff; font-size: 10px; line-height: 13px; border-radius: 4px; padding: 0 4px; white-space: nowrap; overflow: hidden; z-index: 1; }
+.adstrip.busy { background: repeating-linear-gradient(135deg, #9CA3AF 0 4px, #B6BCC6 4px 8px); color: #1F2937; }
+.adstrip.team { background: #000; color: #fff; }
+.adstrip.team .tlogo { height: 9px; margin: 0 3px 0 1px; vertical-align: -1px; }
+.adstrip.pend { opacity: .75; outline: 2px dashed var(--c); }
+.admore { position: absolute; right: 4px; top: 31px; font-size: 9px; color: var(--muted); }
+.tr.ad1 { min-height: 58px; } .tr.ad1 .blk { top: 19px; }
+.tr.ad2 { min-height: 72px; } .tr.ad2 .blk { top: 34px; }

@@ -7,7 +7,7 @@
   var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   var MONTH = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   var DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  var APP_VERSION = '12';
+  var APP_VERSION = '13';
   var H8 = 8 * 3600e3, DAY = 864e5, SELLING = {approach: 1, open: 1, present: 1, followup: 1, close: 1, recruit: 1};
 
   /* ---------- storage (each phone) ---------- */
@@ -466,10 +466,14 @@
       var blocks = mine.filter(function (e) { return !e.allDay; }).map(function (e) {
         var s = Math.max(sMs(e), a + H0 * 3600e3), en = Math.min(eMs(e), a + H1 * 3600e3); if (en <= s) return '';
         var l = (s - a - H0 * 3600e3) / span * 100, w = Math.max(1.6, (en - s) / span * 100), o = mem(e.ownerId);
-        return '<a class="blk' + (e.busy ? ' busy' : '') + (pendingFor(e, m.id) ? ' pend' : '') + (e.all ? ' team' : '') + '" href="#/e/' + e.id + '" style="left:' + l + '%;width:' + w + '%;--c:' + esc(o.color) + '" title="' + esc(evTime(e) + ' ' + evTitle(e)) + '">' + (e.all ? rsvpMark(e, m.id) + '<img class="tlogo" src="icons/team-mark.png" alt="">' : '') + esc(e.busy ? 'Busy' : (e.all ? '' : T(e.type).emoji + ' ') + e.title) + '</a>';
+        return '<a class="blk' + (e.busy ? ' busy' : '') + (pendingFor(e, m.id) ? ' pend' : '') + (e.all ? ' team' : '') + '" href="#/e/' + e.id + '" style="left:' + l + '%;width:' + w + '%;--c:' + esc(o.color) + '" title="' + esc(evTime(e) + ' ' + evTitle(e)) + '">' + (invited(e, m.id) ? (ansOf(e)[m.id] === 'yes' ? '✅' : '⏳') : '') + (e.all ? rsvpMark(e, m.id) + '<img class="tlogo" src="icons/team-mark.png" alt="">' : '') + esc(e.busy ? 'Busy' : (e.all ? '' : T(e.type).emoji + ' ') + e.title) + '</a>';
       }).join('');
-      return '<div class="tr"><div class="tn">' + avatar(m, 'xs') + '<span>' + esc(m.id === my ? 'Me' : shortName(m)) + '</span></div><div class="tl">' +
-        (allDay.length ? '<span class="allday">' + esc(allDay.map(function (e) { return e.busy ? 'Busy (all day)' : e.title; }).join(', ')) + '</span>' : '') + blocks + '</div></div>';
+      var strips = allDay.slice(0, 2).map(function (e, i) {
+        var o = mem(e.ownerId);
+        return '<a class="adstrip' + (e.busy ? ' busy' : '') + (e.all ? ' team' : '') + (pendingFor(e, m.id) ? ' pend' : '') + '" href="#/e/' + e.id + '" style="top:' + (2 + i * 15) + 'px;--c:' + esc(o.color) + '">' + (invited(e, m.id) ? (ansOf(e)[m.id] === 'yes' ? '✅' : '⏳') : '') + (e.all ? rsvpMark(e, m.id) + '<img class="tlogo" src="icons/team-mark.png" alt="">' : '') + esc(e.busy ? 'Busy (all day)' : 'All day · ' + e.title) + '</a>';
+      }).join('') + (allDay.length > 2 ? '<span class="admore">+' + (allDay.length - 2) + '</span>' : '');
+      var ad = Math.min(2, allDay.length);
+      return '<div class="tr' + (ad ? ' ad' + ad : '') + '"><div class="tn">' + avatar(m, 'xs') + '<span>' + esc(m.id === my ? 'Me' : shortName(m)) + '</span></div><div class="tl">' + strips + blocks + '</div></div>';
     }).join('');
     var hours = ''; for (var h = H0; h < H1; h += 2) hours += '<span style="left:' + ((h - H0) / (H1 - H0) * 100) + '%">' + ((h % 12) || 12) + (h < 12 ? 'a' : 'p') + '</span>';
     var nowLine = isToday && now > a + H0 * 3600e3 && now < a + H1 * 3600e3 ? '<i class="now" style="left:calc(var(--nw) + (100% - var(--nw)) * ' + ((now - a - H0 * 3600e3) / span).toFixed(4) + ')"></i>' : '';
