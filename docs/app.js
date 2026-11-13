@@ -7,7 +7,7 @@
   var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   var MONTH = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   var DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  var APP_VERSION = '14';
+  var APP_VERSION = '16';
   var H8 = 8 * 3600e3, DAY = 864e5, SELLING = {approach: 1, open: 1, present: 1, followup: 1, close: 1, recruit: 1};
 
   /* ---------- storage (each phone) ---------- */
@@ -40,10 +40,13 @@
   function money(n) { return (Math.round(n * 100) / 100).toLocaleString('en-MY', {maximumFractionDigits: 2}); }   // 23,705.65 / 93,400
   function rm(n) { return 'RM' + money(n); }
   function pct(x) { return x == null ? '–' : Math.round(x * 100) + '%'; }
-  function sMs(e) { return C.startMs(e); }
-  function eMs(e) { return C.endMs(e); }
+  var tCache = new WeakMap();
+  function times(e) { var t = tCache.get(e); if (!t || t[2] !== e.start || t[3] !== e.end) { t = [C.startMs(e), C.endMs(e), e.start, e.end]; tCache.set(e, t); } return t; }
+  function sMs(e) { return times(e)[0]; }
+  function eMs(e) { return times(e)[1]; }
   function members() { return (S.data && S.data.members) || []; }
-  function mem(id) { return members().filter(function (m) { return m.id === id; })[0] || {id: id, name: 'Former member', color: '#999'}; }
+  var memIdx = {list: null, map: {}};
+  function mem(id) { var l = members(); if (memIdx.list !== l) { memIdx = {list: l, map: {}}; l.forEach(function (m) { memIdx.map[m.id] = m; }); } return memIdx.map[id] || {id: id, name: 'Former member', color: '#999'}; }
   function me() { return (S.data && S.data.me) || {}; }
   function isLeader() { return !!me().leader; }
   function shortName(m) { return (m && (m.short || C.defaultShort(m.name))) || '?'; }
@@ -66,14 +69,30 @@
   function isWork(e) { var t = e.type || e.t; return !!(C.TYPES[t] && C.TYPES[t].work); }
   function needsConfirm(e) { return e.ownerId === me().id && !e.busy && isWork(e) && !e.out && eMs(e) <= Date.now(); }
   function events() { return (S.data && S.data.events) || []; }
+  var fCache = {k: null, v: null};
   function filtered() {
+    var key = S.filter + '|' + S.ver + '|' + mutSeq + '|' + (S.data && S.data.events && S.data.events.length);
+    if (fCache.k === key && fCache.d === S.data && fCache.e === (S.data && S.data.events)) return fCache.v;
+    fCache = {k: key, d: S.data, e: S.data && S.data.events, v: filteredRaw()};
+    return fCache.v;
+  }
+  function filteredRaw() {
     var f = S.filter, id = me().id;
     var pair = f.indexOf('me+') === 0 ? f.slice(3) : '';   // merged view: me + one teammate (e.g. husband & wife)
     return events().filter(function (e) { return f === 'all' || (f === 'me' ? involves(e, id) : pair ? involves(e, id) || involves(e, pair) : involves(e, f)); });
   }
+  var dayIdx = new WeakMap();
   function onDay(list, k) {
-    var a = keyMs(k), b = a + DAY;
-    return list.filter(function (e) { return sMs(e) < b && eMs(e) > a; }).sort(function (x, y) { return (y.allDay ? 1 : 0) - (x.allDay ? 1 : 0) || sMs(x) - sMs(y); });
+    var idx = dayIdx.get(list);
+    if (!idx) {
+      idx = {};
+      list.forEach(function (e) {
+        var s = sMs(e), en = eMs(e), kk = dayKey(s), last = dayKey(Math.max(s, en - 1));
+        for (var i = 0; i < 62; i++) { (idx[kk] = idx[kk] || []).push(e); if (kk >= last) break; kk = addDays(kk, 1); }
+      });
+      dayIdx.set(list, idx);
+    }
+    return (idx[k] || []).slice().sort(function (x, y) { return (y.allDay ? 1 : 0) - (x.allDay ? 1 : 0) || sMs(x) - sMs(y); });
   }
   function toast(msg, kind) {
     var t = document.createElement('div'); t.className = 'toast' + (kind ? ' ' + kind : ''); t.textContent = msg;
@@ -537,7 +556,7 @@
     }).join('') : '<p class="empty">No invitations waiting. 👍</p>') + '</main>' + tabs('cal');
   }
   /* whole-team event: Going / Can't go / No reply, with names */
-  function attendOf(e) { return C.attendance(e, S.data.msgs || [], members()); }
+  function attendOf(e) { var a = ansOf(e), o = {yes: [], no: [], none: []}; members().forEach(function (m) { if (m.active === false) return; o[a[m.id] === 'yes' ? 'yes' : a[m.id] === 'no' ? 'no' : 'none'].push(m.id); }); return o; }
   function myAnswer(e) { var at = attendOf(e), my = me().id; return at.yes.indexOf(my) >= 0 ? 'yes' : at.no.indexOf(my) >= 0 ? 'no' : ''; }
   function attendCard(e) {
     var at = attendOf(e), mine = myAnswer(e), open = eMs(e) > Date.now() && e.out !== 'cancel';
@@ -1091,7 +1110,19 @@
   function delMsg(id) { confirmBox('Delete this comment?', 'It will be removed for everyone.', 'Delete', true).then(function (y) { if (y) send('delmsg', {id: id}); }); }
 
   window.addEventListener('hashchange', function () { closeModal(); render(); });
-  document.addEventListener('visibilitychange', function () { if (!document.hidden) quietSync(); });
+  /* Phones keep home-screen apps paused in memory, so an update would only arrive after swiping the app away.
+     Instead: whenever the app comes back on screen, check for a newer version and reload (never mid-typing / with a form open). */
+  function checkUpdate() {
+    fetch('version.json?t=' + Date.now(), {cache: 'no-store'}).then(function (r) { return r.json(); }).then(function (j) {
+      var v = String(j.v || '');
+      if (!v || v === APP_VERSION || LS.get('reloadedFor', '') === v) return;
+      var busy = document.getElementById('modal-root').className || (document.activeElement && /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName));
+      if (busy) return;
+      LS.set('reloadedFor', v); location.reload();
+    }).catch(function () {});
+  }
+  document.addEventListener('visibilitychange', function () { if (!document.hidden) { quietSync(); checkUpdate(); } });
+  window.addEventListener('pageshow', function (e) { if (e.persisted) { quietSync(); checkUpdate(); } });
   window.addEventListener('online', function () { quietSync(); });
 
   /* ---------- start ---------- */
@@ -1100,6 +1131,7 @@
   if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(function () {});
   render();
   if (S.token) { quietSync(true); refreshPush(); }
+  setTimeout(checkUpdate, 3000);
   // keep fresh: every 6 s on an event, every 20 s elsewhere; nothing while hidden
   var lastPoll = 0;
   setInterval(function () {

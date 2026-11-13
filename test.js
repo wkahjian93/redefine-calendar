@@ -375,5 +375,9 @@ function fresh() {
   ok(Object.keys(by).length >= 9, 'every sample agent has activity');
 }
 
+/* the app checks docs/version.json to update itself: it must match APP_VERSION in docs/app.js */
+{ const fs = require('fs'), v = JSON.parse(fs.readFileSync(__dirname + '/docs/version.json', 'utf8')).v, m = /APP_VERSION = '([0-9]+)'/.exec(fs.readFileSync(__dirname + '/docs/app.js', 'utf8'));
+  ok(m && m[1] === v, 'docs/version.json (' + v + ') matches APP_VERSION (' + (m && m[1]) + ')'); }
+
 console.log(pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);
