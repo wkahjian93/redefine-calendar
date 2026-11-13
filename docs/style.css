@@ -271,3 +271,5 @@ main { padding: 12px 14px; }
 
 .chip .ctool { margin-left: 6px; padding: 0 4px; border-radius: 8px; font-size: 13px; line-height: 18px; background: rgba(0,0,0,.08); }
 .chip.on .ctool { background: rgba(255,255,255,.22); }
+
+.wp:disabled { opacity: 1; cursor: default; }

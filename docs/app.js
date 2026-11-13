@@ -7,7 +7,7 @@
   var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   var MONTH = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   var DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  var APP_VERSION = '10';
+  var APP_VERSION = '11';
   var H8 = 8 * 3600e3, DAY = 864e5, SELLING = {approach: 1, open: 1, present: 1, followup: 1, close: 1, recruit: 1};
 
   /* ---------- storage (each phone) ---------- */
@@ -579,7 +579,7 @@
       '<div class="lbl">Who can see it?</div><div class="vis"><button type="button" class="vb' + (e.vis !== 'private' ? ' on' : '') + '" data-v="team">👥 Team</button><button type="button" class="vb' + (e.vis === 'private' ? ' on' : '') + '" data-v="private">🔒 Only me</button></div>' +
       '<p class="tiny muted" id="vis-help"></p>' +
       '<label class="switch" id="all-row"><input type="checkbox" name="all"' + (e.all ? ' checked' : '') + '> 👥 Everyone\'s in it (team meeting, training, roadshow)</label><p class="tiny muted" id="all-help">Shows on every member\'s calendar. Everyone answers Going / Can\'t go, gets a pop-up for comments, and a reminder 1 hour before.</p>' +
-      '<div class="lbl">Invite (optional): they accept or reject</div><div class="withpick">' + members().filter(function (m) { return m.id !== me().id && m.active !== false; }).map(function (m) { return '<button type="button" class="wp' + ((e.with || []).indexOf(m.id) >= 0 ? ' on' : '') + '" data-id="' + m.id + '">' + avatar(m, 'xs') + esc(shortName(m)) + '</button>'; }).join('') + '</div>' +
+      '<div class="lbl" id="inv-lbl">Invite (optional): they accept or reject</div><div class="withpick">' + members().filter(function (m) { return m.id !== me().id && m.active !== false; }).map(function (m) { return '<button type="button" class="wp' + ((e.with || []).indexOf(m.id) >= 0 ? ' on' : '') + '" data-id="' + m.id + '">' + avatar(m, 'xs') + esc(shortName(m)) + '</button>'; }).join('') + '</div>' +
       '<label>Remind me<select name="remind">' + [['', 'No reminder'], ['0', 'At start'], ['10', '10 min before'], ['30', '30 min before'], ['60', '1 hour before'], ['120', '2 hours before'], ['1440', '1 day before']].map(function (r) { return '<option value="' + r[0] + '"' + (String(e.remind) === r[0] ? ' selected' : '') + '>' + r[1] + '</option>'; }).join('') + '</select></label>' +
       '<div class="row end sticky-actions">' + (!isNew ? '<button type="button" class="btn danger ghost" data-x="del">Delete</button>' : '') + '<button class="btn primary big" type="submit">' + (isNew ? 'Add to calendar' : 'Save') + '</button></div></form>';
     modal(html, function (sh) {
@@ -589,6 +589,9 @@
         sh.querySelectorAll('.vb').forEach(function (b) { b.classList.toggle('on', b.dataset.v === vis); });
         sh.querySelector('.count-row').hidden = type !== 'approach';
         sh.querySelector('#all-row').hidden = sh.querySelector('#all-help').hidden = vis === 'private';
+        var everyone = vis !== 'private' && f.all.checked;   // whole-team event: everybody is in it, so every name shows selected
+        sh.querySelectorAll('.wp').forEach(function (b) { b.classList.toggle('on', everyone || withIds.indexOf(b.dataset.id) >= 0); b.disabled = everyone; });
+        sh.querySelector('#inv-lbl').textContent = everyone ? 'Everyone is invited (all names selected)' : 'Invite (optional): they accept or reject';
         var ad = f.allDay.checked; sh.querySelectorAll('.t-only').forEach(function (x) { x.hidden = ad; }); sh.querySelectorAll('.d-only').forEach(function (x) { x.hidden = !ad; });
         sh.querySelector('#vis-help').textContent = vis === 'private' ? (type && T(type).work ? 'Team sees a grey "Busy" block. It still counts in your activity numbers (no details shown).' : 'Team sees a grey "Busy" block only.') + (me().partner ? ' Your linked partner ' + shortName(mem(me().partner)) + ' sees the details.' : '') : 'Everyone in REDEFINE can see the title, time and place.';
       }
@@ -601,7 +604,7 @@
       sh.querySelectorAll('.tp').forEach(function (b) { b.onclick = function () { type = b.dataset.t; picked = true; if (!visPicked) vis = type === 'personal' ? 'private' : 'team'; sh.querySelector('#detect').textContent = ''; paint(); }; });
       sh.querySelectorAll('.vb').forEach(function (b) { b.onclick = function () { vis = b.dataset.v; visPicked = true; paint(); }; });
       sh.querySelectorAll('.wp').forEach(function (b) { b.onclick = function () { var i = withIds.indexOf(b.dataset.id); if (i >= 0) withIds.splice(i, 1); else withIds.push(b.dataset.id); b.classList.toggle('on'); }; });
-      f.allDay.onchange = paint;
+      f.allDay.onchange = paint; f.all.onchange = paint;
       f.st.addEventListener('change', function () { var s = f.st.value.split(':'), en = f.et.value.split(':'); if (f.et.value <= f.st.value) f.et.value = pad(Math.min(23, +s[0] + 1)) + ':' + s[1]; });
       paint(); if (isNew) setTimeout(function () { f.title.focus(); }, 50);
       var del = sh.querySelector('[data-x=del]');
