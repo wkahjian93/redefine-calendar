@@ -296,3 +296,7 @@ main { padding: 12px 14px; }
 .admore { position: absolute; right: 4px; top: 31px; font-size: 9px; color: var(--muted); }
 .tr.ad1 { min-height: 58px; } .tr.ad1 .blk { top: 19px; }
 .tr.ad2 { min-height: 72px; } .tr.ad2 .blk { top: 34px; }
+
+/* team events not answered Going yet: light */
+.bar.team.pend, .blk.team.pend, .adstrip.team.pend { opacity: .38; outline: none; }
+.ev.team.pend { opacity: .5; }

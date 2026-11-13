@@ -7,7 +7,7 @@
   var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   var MONTH = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   var DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  var APP_VERSION = '13';
+  var APP_VERSION = '14';
   var H8 = 8 * 3600e3, DAY = 864e5, SELLING = {approach: 1, open: 1, present: 1, followup: 1, close: 1, recruit: 1};
 
   /* ---------- storage (each phone) ---------- */
@@ -59,6 +59,8 @@
   }
   function invited(e, id) { return !e.all && e.ownerId !== id && (e.with || []).indexOf(id) >= 0; }
   function pendingFor(e, id) { return invited(e, id) && !ansOf(e)[id]; }
+  /* light colour: an invitation not answered yet, or a team event this person has not said Going to (the creator counts as going) */
+  function faded(e, id) { return pendingFor(e, id) || (!!e.all && e.ownerId !== id && ansOf(e)[id] !== 'yes'); }
   function involves(e, id) { return e.ownerId === id || ((e.with || []).indexOf(id) >= 0 && ansOf(e)[id] !== 'no') || !!e.all; }
   function myInvites() { var my = me().id; return events().filter(function (e) { return pendingFor(e, my) && eMs(e) > Date.now() && e.out !== 'cancel'; }).sort(function (a, b) { return sMs(a) - sMs(b); }); }
   function isWork(e) { var t = e.type || e.t; return !!(C.TYPES[t] && C.TYPES[t].work); }
@@ -425,7 +427,7 @@
       for (var d = 0; d < 7; d++) {
         var k = addDays(start, w * 7 + d), p = P(keyMs(k)), evs = onDay(list, k).sort(function (x, y) { return (y.all ? 1 : 0) - (x.all ? 1 : 0); });   // team events always visible first
         html += '<button class="gd' + (p.m !== c.m ? ' dim' : '') + (k === today ? ' today' : '') + (k === S.sel ? ' sel' : '') + '" data-act="sel" data-k="' + k + '"><span class="dn">' + p.d + '</span>' +
-          evs.slice(0, 3).map(function (e) { var o = mem(e.ownerId); return '<span class="bar' + (e.busy ? ' busy' : '') + (pendingFor(e, me().id) ? ' pend' : '') + (e.out === 'cancel' ? ' x' : '') + (e.all ? ' team' : '') + '" style="--c:' + esc(o.color) + '">' + (e.all ? '<img class="tlogo" src="icons/team-mark.png" alt="">' : '') + esc(e.busy ? 'Busy' : e.title) + '</span>'; }).join('') +
+          evs.slice(0, 3).map(function (e) { var o = mem(e.ownerId); return '<span class="bar' + (e.busy ? ' busy' : '') + (faded(e, me().id) ? ' pend' : '') + (e.out === 'cancel' ? ' x' : '') + (e.all ? ' team' : '') + '" style="--c:' + esc(o.color) + '">' + (e.all ? '<img class="tlogo" src="icons/team-mark.png" alt="">' : '') + esc(e.busy ? 'Busy' : e.title) + '</span>'; }).join('') +
           (evs.length > 3 ? '<span class="more">+' + (evs.length - 3) + '</span>' : '') + '</button>';
       }
       html += '</div>';
@@ -433,7 +435,7 @@
     return html + '</div>';
   }
   function evRow(e, showDay) {
-    var o = mem(e.ownerId), cls = 'ev' + (e.busy ? ' busy' : '') + (e.out === 'cancel' ? ' x' : '') + (pendingFor(e, me().id) ? ' pend' : '');
+    var o = mem(e.ownerId), cls = 'ev' + (e.busy ? ' busy' : '') + (e.out === 'cancel' ? ' x' : '') + (faded(e, me().id) ? ' pend' : '');
     var tag = e.busy ? '<span class="pill grey">🔒 Private</span>' : (pendingFor(e, me().id) ? '<span class="pill warn">📩 Invited: tap to answer</span>' : '') + (e.vis === 'private' ? '<span class="pill grey">🔒 Only me</span>' : '') + (e.all ? '<span class="pill navy">👥 ✅' + attendOf(e).yes.length + ' ❌' + attendOf(e).no.length + ' ⏳' + attendOf(e).none.length + '</span>' + (!myAnswer(e) && eMs(e) > Date.now() ? '<span class="pill warn">Going?</span>' : '') : '') + (e.out === 'closed' ? '<span class="pill gold">💰 Closed' + (e.noc > 1 ? ' ×' + e.noc : '') + '</span>' : e.out === 'done' ? '<span class="pill green">✓ Done</span>' : e.out === 'cancel' ? '<span class="pill grey">Didn\'t happen</span>' : needsConfirm(e) ? '<span class="pill warn">Confirm?</span>' : '');
     var w = (e.with || []).length ? '<span class="with">' + (e.with || []).slice(0, 4).map(function (id) { return avatar(mem(id), 'xs'); }).join('') + ((e.with || []).length > 4 ? '<small>+' + ((e.with || []).length - 4) + '</small>' : '') + '</span>' : '';
     if (e.all) cls += ' team';
@@ -466,11 +468,11 @@
       var blocks = mine.filter(function (e) { return !e.allDay; }).map(function (e) {
         var s = Math.max(sMs(e), a + H0 * 3600e3), en = Math.min(eMs(e), a + H1 * 3600e3); if (en <= s) return '';
         var l = (s - a - H0 * 3600e3) / span * 100, w = Math.max(1.6, (en - s) / span * 100), o = mem(e.ownerId);
-        return '<a class="blk' + (e.busy ? ' busy' : '') + (pendingFor(e, m.id) ? ' pend' : '') + (e.all ? ' team' : '') + '" href="#/e/' + e.id + '" style="left:' + l + '%;width:' + w + '%;--c:' + esc(o.color) + '" title="' + esc(evTime(e) + ' ' + evTitle(e)) + '">' + (invited(e, m.id) ? (ansOf(e)[m.id] === 'yes' ? '✅' : '⏳') : '') + (e.all ? rsvpMark(e, m.id) + '<img class="tlogo" src="icons/team-mark.png" alt="">' : '') + esc(e.busy ? 'Busy' : (e.all ? '' : T(e.type).emoji + ' ') + e.title) + '</a>';
+        return '<a class="blk' + (e.busy ? ' busy' : '') + (faded(e, m.id) ? ' pend' : '') + (e.all ? ' team' : '') + '" href="#/e/' + e.id + '" style="left:' + l + '%;width:' + w + '%;--c:' + esc(o.color) + '" title="' + esc(evTime(e) + ' ' + evTitle(e)) + '">' + (invited(e, m.id) ? (ansOf(e)[m.id] === 'yes' ? '✅' : '⏳') : '') + (e.all ? rsvpMark(e, m.id) + '<img class="tlogo" src="icons/team-mark.png" alt="">' : '') + esc(e.busy ? 'Busy' : (e.all ? '' : T(e.type).emoji + ' ') + e.title) + '</a>';
       }).join('');
       var strips = allDay.slice(0, 2).map(function (e, i) {
         var o = mem(e.ownerId);
-        return '<a class="adstrip' + (e.busy ? ' busy' : '') + (e.all ? ' team' : '') + (pendingFor(e, m.id) ? ' pend' : '') + '" href="#/e/' + e.id + '" style="top:' + (2 + i * 15) + 'px;--c:' + esc(o.color) + '">' + (invited(e, m.id) ? (ansOf(e)[m.id] === 'yes' ? '✅' : '⏳') : '') + (e.all ? rsvpMark(e, m.id) + '<img class="tlogo" src="icons/team-mark.png" alt="">' : '') + esc(e.busy ? 'Busy (all day)' : 'All day · ' + e.title) + '</a>';
+        return '<a class="adstrip' + (e.busy ? ' busy' : '') + (e.all ? ' team' : '') + (faded(e, m.id) ? ' pend' : '') + '" href="#/e/' + e.id + '" style="top:' + (2 + i * 15) + 'px;--c:' + esc(o.color) + '">' + (invited(e, m.id) ? (ansOf(e)[m.id] === 'yes' ? '✅' : '⏳') : '') + (e.all ? rsvpMark(e, m.id) + '<img class="tlogo" src="icons/team-mark.png" alt="">' : '') + esc(e.busy ? 'Busy (all day)' : 'All day · ' + e.title) + '</a>';
       }).join('') + (allDay.length > 2 ? '<span class="admore">+' + (allDay.length - 2) + '</span>' : '');
       var ad = Math.min(2, allDay.length);
       return '<div class="tr' + (ad ? ' ad' + ad : '') + '"><div class="tn">' + avatar(m, 'xs') + '<span>' + esc(m.id === my ? 'Me' : shortName(m)) + '</span></div><div class="tl">' + strips + blocks + '</div></div>';
