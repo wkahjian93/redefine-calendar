@@ -7,7 +7,7 @@
   var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   var MONTH = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   var DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  var APP_VERSION = '9';
+  var APP_VERSION = '10';
   var H8 = 8 * 3600e3, DAY = 864e5, SELLING = {approach: 1, open: 1, present: 1, followup: 1, close: 1, recruit: 1};
 
   /* ---------- storage (each phone) ---------- */
@@ -107,13 +107,14 @@
     var t = Date.now(); a = Math.min(a, t - 40 * DAY); b = Math.max(b, t + 30 * DAY);
     return {from: new Date(a).toISOString(), to: new Date(b).toISOString()};
   }
-  var syncing = null;
+  var syncing = null, pendingOps = 0, mutSeq = 0;
   function sync(force) {
     if (!S.token) return Promise.resolve();
     if (syncing) return syncing;
-    var r = rangeFor(), same = S.range && S.range.from === r.from && S.range.to === r.to;
+    var r = rangeFor(), same = S.range && S.range.from === r.from && S.range.to === r.to, seq = mutSeq;
     syncing = api('sync', {from: r.from, to: r.to, ver: same && !force ? S.ver : 0}).then(function (j) {
       syncing = null;
+      if (seq !== mutSeq || pendingOps) { S.ver = 0; if (!pendingOps) setTimeout(function () { quietSync(true); }, 0); return false; }   // stale: a change happened meanwhile
       if (j.same) return false;
       var old = S.data; S.data = j; S.ver = j.ver; S.range = r; S.stats = {};
       LS.set('cache', j);
@@ -126,6 +127,48 @@
     return syncing;
   }
   function quietSync(force) { return sync(force).catch(function () {}); }
+
+  /* ---------- instant changes: update the screen first, save in the background ----------
+     If the server refuses or there is no signal, the change is undone and a message explains why. */
+  function optimistic(apply, op, body, ok, after) {
+    var backup = JSON.stringify(S.data);
+    if (apply) { try { apply(S.data); } catch (x) {} }
+    mutSeq++; pendingOps++; ansCache.ver = -2; S.stats = {}; LS.set('cache', S.data); render();
+    return api(op, body).then(function (j) {
+      pendingOps--; if (ok) toast(ok, 'good'); if (after) { try { after(j); } catch (x) {} render(); }
+      quietSync(true); return j;
+    }, function (e) {
+      pendingOps--; mutSeq++; S.data = JSON.parse(backup); ansCache.ver = -2; S.stats = {}; render();
+      toast('Not saved: ' + errText(e), 'bad'); quietSync(true); throw e;
+    });
+  }
+  function applyFor(op, q) {
+    var my = me().id, now = new Date().toISOString(), tmp = 'tmp' + Math.random().toString(36).slice(2);
+    var ev = function (d) { return (d.events || []).filter(function (x) { return x.id === q.id; })[0]; };
+    if (op === 'outcome') return function (d) {
+      var e = ev(d); if (!e) return; e.out = q.out || '';
+      if (q.out === 'closed') {
+        var cs = (q.cases || []).map(function (c) { return {plan: c.plan, anp: c.anp === '' || c.anp == null ? '' : Math.round(+c.anp * 100) / 100, mode: String(c.mode || '').toUpperCase()}; });
+        if (cs.length) { e.cases = cs; e.noc = cs.length; e.anp = cs.reduce(function (t, c) { return t + (+c.anp || 0); }, 0); } else { e.noc = +q.noc || 1; e.anp = +q.anp || 0; e.cases = []; }
+      } else { e.cases = []; e.noc = 0; e.anp = 0; }
+      if (q.count != null && e.type === 'approach') e.count = +q.count;
+    };
+    if (op === 'rsvp') return function (d) {
+      d.msgs = d.msgs.filter(function (m) { return !(m.to === 'ev:' + q.id && m.from === my && m.kind === 'rsvp'); });
+      if (q.answer) d.msgs.push({id: tmp, to: 'ev:' + q.id, from: my, kind: 'rsvp', text: q.answer, created: now});
+    };
+    if (op === 'send') return function (d) {
+      if (q.kind === 'cheer') {
+        var had = d.msgs.some(function (m) { return m.to === q.to && m.from === my && m.kind === 'cheer'; });
+        d.msgs = d.msgs.filter(function (m) { return !(m.to === q.to && m.from === my && m.kind === 'cheer'); });
+        if (!had) d.msgs.push({id: tmp, to: q.to, from: my, kind: 'cheer', text: '👏', created: now});
+      } else d.msgs.push({id: tmp, to: q.to, from: my, kind: 'text', text: q.text, created: now});
+    };
+    if (op === 'delmsg') return function (d) { d.msgs = d.msgs.filter(function (m) { return m.id !== q.id; }); };
+    if (op === 'profile') return function (d) { [d.me].concat(d.members.filter(function (m) { return m.id === my; })).forEach(function (m) { if (q.color) m.color = q.color; if (q.short) { m.short = q.short; d.me.shortSet = true; } }); };
+    if (op === 'del') return function (d) { d.events = d.events.filter(function (x) { return x.id !== q.id; }); };
+    return null;
+  }
 
   /* ---------- WhatsApp-style banners, sound, reminders ---------- */
   var audio = null;
@@ -565,7 +608,7 @@
       if (del) del.onclick = function () {
         confirmBox('Delete this event?', '"' + e.title + '" and its comments will be removed for everyone. This cannot be undone.', 'Delete', true).then(function (y) {
           if (!y) return editor(e);
-          api('del', {id: e.id}).then(function () { toast('Deleted'); location.hash = '#/'; return sync(true); }, function (er) { toast(errText(er), 'bad'); });
+          location.hash = '#/'; send('del', {id: e.id}, 'Deleted');
         });
       };
       f.onsubmit = function (ev) {
@@ -581,11 +624,13 @@
           var en = f.et.value ? Date.parse(d + 'T' + f.et.value + ':00+08:00') : 0; if (!en || en <= Date.parse(ev2.start)) en = Date.parse(ev2.start) + 3600e3;
           ev2.end = new Date(en).toISOString();
         }
-        var btn = f.querySelector('[type=submit]'); btn.disabled = true; btn.textContent = 'Saving…';
-        api('save', {event: ev2}).then(function (j) {
-          closeModal(); toast(isNew ? 'Added 📅' : 'Saved', 'good'); S.sel = dayKey(sMs(j.event));
-          return sync(true).then(function () { if (!isNew) location.hash = '#/e/' + j.event.id; });
-        }, function (er) { btn.disabled = false; btn.textContent = isNew ? 'Add to calendar' : 'Save'; toast(errText(er), 'bad'); });
+        var tmpId = isNew ? 'tmp' + Date.now() : e.id;
+        var view = {id: tmpId, ownerId: isNew ? me().id : e.ownerId, title: ev2.title.trim(), type: type, start: ev2.start, end: ev2.end, allDay: ad, place: ev2.place, notes: ev2.notes, vis: vis, all: !!ev2.all, with: withIds.slice(), remind: ev2.remind, count: type === 'approach' ? (+ev2.count || 1) : 0, out: isNew ? '' : e.out, anp: isNew ? 0 : e.anp, noc: isNew ? 0 : e.noc, cases: isNew ? [] : (e.cases || []), source: ev2.source};
+        closeModal(); S.sel = dayKey(sMs(view));
+        if (!isNew) location.hash = '#/e/' + e.id;
+        optimistic(function (d) { if (isNew) d.events.push(view); else d.events = d.events.map(function (x) { return x.id === e.id ? Object.assign({}, x, view) : x; }); }, 'save', {event: ev2}, isNew ? 'Added 📅' : 'Saved',
+          function (j) { S.data.events = S.data.events.map(function (x) { return x.id === tmpId ? j.event : x; }); if (location.hash === '#/e/' + tmpId) location.hash = '#/e/' + j.event.id; })
+          .catch(function () { editor(Object.assign({}, view, {id: isNew ? undefined : e.id})); });
       };
     });
   }
@@ -638,7 +683,7 @@
     }
     send('outcome', {id: id, out: v}, v === 'done' ? '✓ Counted' : v === 'cancel' ? 'Marked as didn\'t happen' : 'Undone');
   }
-  function send(op, body, ok) { api(op, body).then(function () { if (ok) toast(ok, 'good'); return sync(true); }, function (e) { toast(errText(e), 'bad'); }); }
+  function send(op, body, ok) { return optimistic(applyFor(op, body), op, body, ok).catch(function () {}); }
   function confirmScreen() {
     var list = toConfirm();
     return topbar('Confirm activities', {back: '#/'}) + '<main><p class="muted">Your numbers only count what you confirm. Nothing is guessed. One tap each.</p>' +
@@ -964,6 +1009,7 @@
     if (a === 'day') { S.dayView = addDays(S.dayView, +b.dataset.d); S.sel = S.dayView; var q = P(keyMs(S.dayView)); if (q.m !== S.cursor.m) { S.cursor = {y: q.y, m: q.m}; quietSync(); } return render(); }
     if (a === 'today') { var t = P(Date.now()); S.cursor = {y: t.y, m: t.m}; S.sel = today; S.dayView = today; render(); return quietSync(); }
     if (a === 'new') return editor(null);
+    if ((a === 'edit' || a === 'out' || a === 'cheer' || a === 'invite' || a === 'rsvp') && /^tmp/.test(b.dataset.id || '')) return toast('Still saving… one moment.');
     if (a === 'edit') return editor(events().filter(function (e) { return e.id === b.dataset.id; })[0]);
     if (a === 'out') return setOutcome(b.dataset.id, b.dataset.v);
     if (a === 'cheer') return send('send', {to: 'ev:' + b.dataset.id, kind: 'cheer'});
@@ -1024,7 +1070,7 @@
       var text = f.t.value.trim(); if (!text) return;
       var to = 'ev:' + f.dataset.id;
       f.t.value = ''; f.t.focus();
-      api('send', {to: to, text: text}).then(function () { return sync(true); }, function (e) { f.t.value = text; toast(errText(e), 'bad'); });
+      optimistic(applyFor('send', {to: to, text: text}), 'send', {to: to, text: text}).catch(function () { var inp = document.querySelector('form.composer input[name=t]'); if (inp && !inp.value) inp.value = text; });
     }
   });
   // tap and hold your own comment to delete it

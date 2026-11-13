@@ -60,11 +60,23 @@ var GAS = (function () {
     cache[name] = rows;
     return JSON.parse(JSON.stringify(rows));
   }
+  function toVals(cols, rows) { return rows.map(function (o) { return cols.map(function (c) { var v = o[c]; return v === undefined || v === null ? '' : String(v); }); }); }
+  /* Writes only the rows that changed since this table was read (one event saved = one row written, not the whole sheet).
+     Deletions or a table not read in this request fall back to rewriting the table. */
   function save(name, rows) {
-    var cols = CORE.TABLES[name], s = tab(name), old = s.getLastRow() - 1;
-    var vals = rows.map(function (o) { return cols.map(function (c) { var v = o[c]; return v === undefined || v === null ? '' : String(v); }); });
-    if (vals.length) s.getRange(2, 1, vals.length, cols.length).setNumberFormat('@').setValues(vals);
-    if (old > vals.length) s.getRange(vals.length + 2, 1, old - vals.length, cols.length).clearContent();
+    var cols = CORE.TABLES[name], s = tab(name), vals = toVals(cols, rows), before = cache[name], SEP = '\u0001';
+    if (before && vals.length >= before.length) {
+      var oldVals = toVals(cols, before), st = -1;
+      for (var i = 0; i <= vals.length; i++) {
+        var changed = i < vals.length && !(i < oldVals.length && oldVals[i].join(SEP) === vals[i].join(SEP));
+        if (changed && st < 0) st = i;
+        if (!changed && st >= 0) { s.getRange(st + 2, 1, i - st, cols.length).setNumberFormat('@').setValues(vals.slice(st, i)); st = -1; }
+      }
+    } else {
+      var old = s.getLastRow() - 1;
+      if (vals.length) s.getRange(2, 1, vals.length, cols.length).setNumberFormat('@').setValues(vals);
+      if (old > vals.length) s.getRange(vals.length + 2, 1, old - vals.length, cols.length).clearContent();
+    }
     cache[name] = JSON.parse(JSON.stringify(rows));
   }
   function ai(prompt, b64) {
