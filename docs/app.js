@@ -7,7 +7,7 @@
   var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   var MONTH = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   var DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  var APP_VERSION = '18';
+  var APP_VERSION = '19';
   var H8 = 8 * 3600e3, DAY = 864e5, SELLING = {approach: 1, open: 1, present: 1, followup: 1, close: 1, recruit: 1};
 
   /* ---------- storage (each phone) ---------- */
@@ -125,7 +125,7 @@
   }
   function rangeFor() {
     var c = S.cursor, a = Date.UTC(c.y, c.m - 1, 1) - H8 - 7 * DAY, b = Date.UTC(c.y, c.m + 2, 1) - H8 + 7 * DAY;
-    var t = Date.now(); a = Math.min(a, t - 40 * DAY); b = Math.max(b, t + 30 * DAY);
+    var t = Date.now(); a = Math.min(a, t - 40 * DAY); b = Math.max(b, t + 90 * DAY);
     return {from: new Date(a).toISOString(), to: new Date(b).toISOString()};
   }
   var syncing = null, pendingOps = 0, mutSeq = 0;
@@ -439,6 +439,7 @@
     var body = S.view === 'day' ? teamDay() : S.view === 'list' ? listView() : monthGrid() + dayAgenda(S.sel);
     return topbar('REDEFINE Calendar', {right: '<a class="icon-btn" href="#/import" aria-label="Import calendar">⤓</a>'}) +
       '<main class="cal">' + viewSwitch() + (S.view === 'day' ? '' : filterChips()) +
+      (upcomingTeam().length ? '<a class="confirm-bar team-bar" href="#/teamevents"><img class="tlogo" src="icons/team-mark.png" alt=""> Upcoming team events <b>(' + upcomingTeam().length + ')</b>' + (teamToAnswer() ? ' · <b class="ans">' + teamToAnswer() + ' to answer</b>' : '') + ' <span>›</span></a>' : '') +
       (myInvites().length ? '<a class="confirm-bar invite" href="#/invites">📩 <b>' + myInvites().length + '</b> invitation' + (myInvites().length > 1 ? 's' : '') + ' waiting for your answer <span>›</span></a>' : '') +
       (confirm.length ? '<a class="confirm-bar" href="#/confirm">✅ <b>' + confirm.length + '</b> activit' + (confirm.length > 1 ? 'ies' : 'y') + ' to confirm so your numbers count <span>›</span></a>' : '') +
       head + body + '</main><button class="fab" data-act="new" aria-label="Add event">+</button>' + tabs('cal');
@@ -553,6 +554,17 @@
       : a[my] === 'no' ? '<p class="muted">❌ You rejected this. It is hidden from your calendar.</p><button class="link" data-act="invite" data-id="' + e.id + '" data-v="yes">Accept after all</button>'
       : '<p><b>' + esc(shortName(mem(e.ownerId))) + '</b> invited you.</p><div class="outs"><button class="out" data-act="invite" data-id="' + e.id + '" data-v="yes">✅ Accept</button><button class="out grey" data-act="invite" data-id="' + e.id + '" data-v="no">❌ Reject</button></div>';
     return '<div class="card attend"><h4>Invited</h4>' + head + '<div class="alist">' + (e.with || []).map(who).join('') + '</div><p class="tiny muted">✅ accepted · ⏳ not answered yet · ❌ rejected. Everyone still on the event can comment and gets comment pop-ups.</p></div>';
+  }
+  function upcomingTeam() { var now = Date.now(); return events().filter(function (e) { return e.all && eMs(e) > now && e.out !== 'cancel'; }).sort(function (x, y) { return sMs(x) - sMs(y); }); }
+  function teamToAnswer() { var my = me().id; return upcomingTeam().filter(function (e) { return e.ownerId !== my && !ansOf(e)[my]; }).length; }
+  function teamEventsScreen() {
+    var list = upcomingTeam(), my = me().id;
+    return topbar('Team events', {back: '#/'}) + '<main><p class="tiny muted">Every upcoming whole-team event, next 3 months. Tap Going or Can\'t go any time; tap your answer again to clear it.</p>' + (list.length ? list.map(function (e) {
+      var at = attendOf(e), mine = myAnswer(e), own = e.ownerId === my;
+      return '<div class="card tev"><a class="tev-head" href="#/e/' + e.id + '"><img class="tlogo" src="icons/team-mark.png" alt=""><b>' + esc(e.title) + '</b><small>' + esc(dayLabel(dayKey(sMs(e)), true)) + ' · ' + esc(evTime(e)) + (e.place ? ' · 📍 ' + esc(e.place) : '') + '</small><small>by ' + esc(shortName(mem(e.ownerId))) + ' · ✅ ' + at.yes.length + ' going · ❌ ' + at.no.length + ' can\'t · ⏳ ' + at.none.length + ' no reply</small></a>' +
+        '<div class="outs"><button class="out' + (mine === 'yes' ? ' on' : '') + '" data-act="rsvp" data-id="' + e.id + '" data-v="' + (mine === 'yes' ? '' : 'yes') + '">✅ Going</button><button class="out grey' + (mine === 'no' ? ' on' : '') + '" data-act="rsvp" data-id="' + e.id + '" data-v="' + (mine === 'no' ? '' : 'no') + '">❌ Can\'t go</button></div>' +
+        (!mine && !own ? '<p class="tiny warn-t">You haven\'t answered yet.</p>' : own && !mine ? '<p class="tiny muted">You created this one.</p>' : '') + '</div>';
+    }).join('') : '<p class="empty">No upcoming team events.</p>') + '</main>' + tabs('cal');
   }
   function invitesScreen() {
     var list = myInvites();
@@ -1014,6 +1026,7 @@
     else if (parts[0] === 'import') html = importScreen();
     else if (parts[0] === 'confirm') html = confirmScreen();
     else if (parts[0] === 'invites') html = invitesScreen();
+    else if (parts[0] === 'teamevents') html = teamEventsScreen();
     else html = calendarScreen();
     var y = r === lastRoute ? window.scrollY : 0;
     $app.innerHTML = html; lastRoute = r;

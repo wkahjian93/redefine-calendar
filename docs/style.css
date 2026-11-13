@@ -304,3 +304,13 @@ main { padding: 12px 14px; }
 .notes { color: var(--text); }
 .evhead.team .notes, .evhead.team p.notes { background: #F3F4F6; color: #111827; font-weight: 500; }
 @media (prefers-color-scheme: dark) { .evhead.team .notes, .evhead.team p.notes { background: #1F2937; color: #F9FAFB; } }
+
+/* upcoming team events */
+.confirm-bar.team-bar { background: #000; color: #fff; border-color: #000; }
+.confirm-bar.team-bar .tlogo { height: 16px; margin-right: 2px; }
+.confirm-bar.team-bar .ans { color: #FCD34D; }
+.tev { padding: 0; overflow: hidden; }
+.tev-head { display: block; background: #000; color: #fff; padding: 12px 14px; }
+.tev-head b { font-size: 16px; } .tev-head .tlogo { height: 15px; margin-right: 6px; vertical-align: -2px; }
+.tev-head small { display: block; color: #D1D5DB; font-size: 12px; margin-top: 3px; }
+.tev .outs, .tev p { margin: 10px 12px; }
