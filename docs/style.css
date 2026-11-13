@@ -262,3 +262,9 @@ main { padding: 12px 14px; }
 
 .ask { background: #FFF4D6; border-radius: 10px; padding: 8px 10px; margin-bottom: 8px; }
 #ptn { flex: 1; min-width: 160px; }
+
+/* invitation not answered yet: faded */
+.bar.pend { opacity: .4; }
+.ev.pend { opacity: .55; border-left-style: dashed; }
+.blk.pend { opacity: .4; outline: 1px dashed var(--c); }
+.confirm-bar.invite { background: #EEF2FF; color: #1E3A8A; border-color: #C7D2FE; }

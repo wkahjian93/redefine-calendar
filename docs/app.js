@@ -7,7 +7,7 @@
   var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   var MONTH = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   var DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  var APP_VERSION = '6';
+  var APP_VERSION = '7';
   var H8 = 8 * 3600e3, DAY = 864e5, SELLING = {approach: 1, open: 1, present: 1, followup: 1, close: 1, recruit: 1};
 
   /* ---------- storage (each phone) ---------- */
@@ -51,7 +51,15 @@
   function T(type) { return C.TYPES[type] || {label: 'Event', emoji: '📌', work: 0}; }
   function evTitle(e) { return e.busy ? 'Busy' : (T(e.type).emoji + ' ' + e.title); }
   function evTime(e) { if (e.allDay) return 'All day'; return hm(sMs(e)) + ' – ' + hm(eMs(e)); }
-  function involves(e, id) { return e.ownerId === id || (e.with || []).indexOf(id) >= 0 || !!e.all; }
+  var ansCache = {ver: -1, map: {}};
+  function ansOf(e) {   // {memberId: 'yes'|'no'} for this event (invitations + team-event attendance)
+    if (ansCache.ver !== S.ver || ansCache.data !== S.data) { ansCache = {ver: S.ver, data: S.data, map: {}}; ((S.data && S.data.msgs) || []).forEach(function (m) { if (m.kind === 'rsvp') { var k = m.to.slice(3); (ansCache.map[k] = ansCache.map[k] || {})[m.from] = m.text; } }); }
+    return ansCache.map[e.id] || {};
+  }
+  function invited(e, id) { return !e.all && e.ownerId !== id && (e.with || []).indexOf(id) >= 0; }
+  function pendingFor(e, id) { return invited(e, id) && !ansOf(e)[id]; }
+  function involves(e, id) { return e.ownerId === id || ((e.with || []).indexOf(id) >= 0 && ansOf(e)[id] !== 'no') || !!e.all; }
+  function myInvites() { var my = me().id; return events().filter(function (e) { return pendingFor(e, my) && eMs(e) > Date.now() && e.out !== 'cancel'; }).sort(function (a, b) { return sMs(a) - sMs(b); }); }
   function isWork(e) { var t = e.type || e.t; return !!(C.TYPES[t] && C.TYPES[t].work); }
   function needsConfirm(e) { return e.ownerId === me().id && !e.busy && isWork(e) && !e.out && eMs(e) <= Date.now(); }
   function events() { return (S.data && S.data.events) || []; }
@@ -305,7 +313,7 @@
   /* ---------- layout ---------- */
   function logoSvg(s) { return '<svg width="' + s + '" height="' + s + '" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="14" fill="#14213D"/><rect x="12" y="16" width="40" height="36" rx="6" fill="#fff"/><rect x="12" y="16" width="40" height="10" rx="5" fill="#E8505B"/><rect x="12" y="22" width="40" height="4" fill="#E8505B"/><circle cx="23" cy="36" r="4" fill="#2E86DE"/><circle cx="32" cy="36" r="4" fill="#10AC84"/><circle cx="41" cy="36" r="4" fill="#F39C12"/><circle cx="23" cy="45" r="4" fill="#8E44AD"/><circle cx="32" cy="45" r="4" fill="#E8505B"/></svg>'; }
   function tabs(active) {
-    var u = unreadAll(), c = toConfirm().length;
+    var u = unreadAll(), c = toConfirm().length + myInvites().length;
     var t = [['cal', '#/', '📅', 'Calendar', c], ['feed', '#/feed', '🔔', 'Comments', u], ['stats', '#/stats', '📈', 'Activity', 0], ['me', '#/me', '👤', 'Me', 0]];
     return '<nav class="tabs">' + t.map(function (x) { return '<a href="' + x[1] + '" class="' + (active === x[0] ? 'on' : '') + '"><span class="ti">' + x[2] + (x[4] ? '<i class="badge">' + (x[4] > 99 ? '99+' : x[4]) + '</i>' : '') + '</span>' + x[3] + '</a>'; }).join('') + '</nav>';
   }
@@ -353,6 +361,7 @@
     var body = S.view === 'day' ? teamDay() : S.view === 'list' ? listView() : monthGrid() + dayAgenda(S.sel);
     return topbar('REDEFINE Calendar', {right: '<a class="icon-btn" href="#/import" aria-label="Import calendar">⤓</a>'}) +
       '<main class="cal">' + viewSwitch() + (S.view === 'day' ? '' : filterChips()) +
+      (myInvites().length ? '<a class="confirm-bar invite" href="#/invites">📩 <b>' + myInvites().length + '</b> invitation' + (myInvites().length > 1 ? 's' : '') + ' waiting for your answer <span>›</span></a>' : '') +
       (confirm.length ? '<a class="confirm-bar" href="#/confirm">✅ <b>' + confirm.length + '</b> activit' + (confirm.length > 1 ? 'ies' : 'y') + ' to confirm so your numbers count <span>›</span></a>' : '') +
       head + body + '</main><button class="fab" data-act="new" aria-label="Add event">+</button>' + tabs('cal');
   }
@@ -365,7 +374,7 @@
       for (var d = 0; d < 7; d++) {
         var k = addDays(start, w * 7 + d), p = P(keyMs(k)), evs = onDay(list, k);
         html += '<button class="gd' + (p.m !== c.m ? ' dim' : '') + (k === today ? ' today' : '') + (k === S.sel ? ' sel' : '') + '" data-act="sel" data-k="' + k + '"><span class="dn">' + p.d + '</span>' +
-          evs.slice(0, 3).map(function (e) { var o = mem(e.ownerId); return '<span class="bar' + (e.busy ? ' busy' : '') + (e.out === 'cancel' ? ' x' : '') + '" style="--c:' + esc(o.color) + '">' + esc(e.busy ? 'Busy' : e.title) + '</span>'; }).join('') +
+          evs.slice(0, 3).map(function (e) { var o = mem(e.ownerId); return '<span class="bar' + (e.busy ? ' busy' : '') + (pendingFor(e, me().id) ? ' pend' : '') + (e.out === 'cancel' ? ' x' : '') + '" style="--c:' + esc(o.color) + '">' + esc(e.busy ? 'Busy' : e.title) + '</span>'; }).join('') +
           (evs.length > 3 ? '<span class="more">+' + (evs.length - 3) + '</span>' : '') + '</button>';
       }
       html += '</div>';
@@ -373,8 +382,8 @@
     return html + '</div>';
   }
   function evRow(e, showDay) {
-    var o = mem(e.ownerId), cls = 'ev' + (e.busy ? ' busy' : '') + (e.out === 'cancel' ? ' x' : '');
-    var tag = e.busy ? '<span class="pill grey">🔒 Private</span>' : (e.vis === 'private' ? '<span class="pill grey">🔒 Only me</span>' : '') + (e.all ? '<span class="pill navy">👥 ✅' + attendOf(e).yes.length + ' ❌' + attendOf(e).no.length + ' ⏳' + attendOf(e).none.length + '</span>' + (!myAnswer(e) && eMs(e) > Date.now() ? '<span class="pill warn">Going?</span>' : '') : '') + (e.out === 'closed' ? '<span class="pill gold">💰 Closed' + (e.noc > 1 ? ' ×' + e.noc : '') + '</span>' : e.out === 'done' ? '<span class="pill green">✓ Done</span>' : e.out === 'cancel' ? '<span class="pill grey">Didn\'t happen</span>' : needsConfirm(e) ? '<span class="pill warn">Confirm?</span>' : '');
+    var o = mem(e.ownerId), cls = 'ev' + (e.busy ? ' busy' : '') + (e.out === 'cancel' ? ' x' : '') + (pendingFor(e, me().id) ? ' pend' : '');
+    var tag = e.busy ? '<span class="pill grey">🔒 Private</span>' : (pendingFor(e, me().id) ? '<span class="pill warn">📩 Invited: tap to answer</span>' : '') + (e.vis === 'private' ? '<span class="pill grey">🔒 Only me</span>' : '') + (e.all ? '<span class="pill navy">👥 ✅' + attendOf(e).yes.length + ' ❌' + attendOf(e).no.length + ' ⏳' + attendOf(e).none.length + '</span>' + (!myAnswer(e) && eMs(e) > Date.now() ? '<span class="pill warn">Going?</span>' : '') : '') + (e.out === 'closed' ? '<span class="pill gold">💰 Closed' + (e.noc > 1 ? ' ×' + e.noc : '') + '</span>' : e.out === 'done' ? '<span class="pill green">✓ Done</span>' : e.out === 'cancel' ? '<span class="pill grey">Didn\'t happen</span>' : needsConfirm(e) ? '<span class="pill warn">Confirm?</span>' : '');
     var w = (e.with || []).length ? '<span class="with">' + (e.with || []).slice(0, 4).map(function (id) { return avatar(mem(id), 'xs'); }).join('') + ((e.with || []).length > 4 ? '<small>+' + ((e.with || []).length - 4) + '</small>' : '') + '</span>' : '';
     return '<a class="' + cls + '" href="#/e/' + e.id + '" style="--c:' + esc(o.color) + '"><span class="et">' + (showDay ? esc(dayLabel(dayKey(sMs(e)))) + '<br>' : '') + esc(evTime(e)) + '</span>' +
       '<span class="eb"><b>' + esc(evTitle(e)) + '</b><small>' + avatar(o, 'xs') + ' ' + esc(o.name) + (e.place && !e.busy ? ' · ' + esc(e.place) : '') + '</small>' + tag + '</span>' + w + '</a>';
@@ -405,7 +414,7 @@
       var blocks = mine.filter(function (e) { return !e.allDay; }).map(function (e) {
         var s = Math.max(sMs(e), a + H0 * 3600e3), en = Math.min(eMs(e), a + H1 * 3600e3); if (en <= s) return '';
         var l = (s - a - H0 * 3600e3) / span * 100, w = Math.max(1.6, (en - s) / span * 100), o = mem(e.ownerId);
-        return '<a class="blk' + (e.busy ? ' busy' : '') + '" href="#/e/' + e.id + '" style="left:' + l + '%;width:' + w + '%;--c:' + esc(o.color) + '" title="' + esc(evTime(e) + ' ' + evTitle(e)) + '">' + (e.all ? rsvpMark(e, m.id) : '') + esc(e.busy ? 'Busy' : T(e.type).emoji + ' ' + e.title) + '</a>';
+        return '<a class="blk' + (e.busy ? ' busy' : '') + (pendingFor(e, m.id) ? ' pend' : '') + '" href="#/e/' + e.id + '" style="left:' + l + '%;width:' + w + '%;--c:' + esc(o.color) + '" title="' + esc(evTime(e) + ' ' + evTitle(e)) + '">' + (e.all ? rsvpMark(e, m.id) : '') + esc(e.busy ? 'Busy' : T(e.type).emoji + ' ' + e.title) + '</a>';
       }).join('');
       return '<div class="tr"><div class="tn">' + avatar(m, 'xs') + '<span>' + esc(m.id === my ? 'Me' : m.name.split(' ')[0]) + '</span></div><div class="tl">' +
         (allDay.length ? '<span class="allday">' + esc(allDay.map(function (e) { return e.busy ? 'Busy (all day)' : e.title; }).join(', ')) + '</span>' : '') + blocks + '</div></div>';
@@ -445,12 +454,29 @@
       '<p>' + avatar(o, 'sm') + ' ' + esc(o.name) + ((e.with || []).length ? ' <span class="muted">with</span> ' + e.with.map(function (id) { return avatar(mem(id), 'sm') + ' ' + esc(mem(id).name.split(' ')[0]); }).join(' ') : '') + '</p>' +
       (e.notes ? '<p class="notes">' + esc(e.notes) + '</p>' : '') +
       '<p class="muted tiny">' + (e.all ? '👥 Whole-team event: on everyone\'s calendar.' : e.vis === 'private' ? '🔒 Only ' + (mine ? 'you' : o.name.split(' ')[0]) + (e.with.length ? ' and the people tagged' : '') + ' can see this. Others see "Busy".' + (isWork(e) ? ' It still counts in the activity numbers.' : '') : '👥 The whole team can see this.') + (e.type === 'approach' ? ' · ' + (e.count || 1) + ' new friend(s)' : '') + '</p></div>' +
-      out + (e.all ? attendCard(e) : '') +
+      out + (e.all ? attendCard(e) : (e.with || []).length ? inviteCard(e) : '') +
       '<div class="cheers"><button class="cheer' + (iCheered ? ' on' : '') + '" data-act="cheer" data-id="' + e.id + '">👏 ' + (cheers.length || 'Cheer') + '</button><span class="muted tiny">' + esc(cheers.map(function (m) { return mem(m.from).name.split(' ')[0]; }).join(', ')) + '</span>' +
       '</div>' +
       '<section class="comments"><h4>Comments</h4><div data-live="comments">' + commentList(comments) + '</div>' +
       '<form class="composer" data-act="comment" data-id="' + e.id + '"><input name="t" maxlength="1000" placeholder="Write a comment…" autocomplete="off"><button class="btn primary">Send</button></form>' +
       '<p class="tiny muted">🔔 ' + esc(whoHears(e, comments)) + '</p></section></main>' + tabs('cal');
+  }
+  /* invitation: the invited person accepts / rejects; everyone on the event sees who answered */
+  function inviteCard(e) {
+    var a = ansOf(e), my = me().id, mineInv = invited(e, my), open = eMs(e) > Date.now() && e.out !== 'cancel';
+    var who = function (id) { var s = a[id] === 'yes' ? '✅' : a[id] === 'no' ? '❌' : '⏳'; return '<span class="who">' + s + ' ' + avatar(mem(id), 'xs') + esc(id === my ? 'Me' : mem(id).name.split(' ')[0]) + '</span>'; };
+    var head = '';
+    if (mineInv && open) head = a[my] === 'yes' ? '<p class="ok-t">✅ You accepted.</p><button class="link" data-act="invite" data-id="' + e.id + '" data-v="no">Can\'t make it after all? Reject</button>'
+      : a[my] === 'no' ? '<p class="muted">❌ You rejected this. It is hidden from your calendar.</p><button class="link" data-act="invite" data-id="' + e.id + '" data-v="yes">Accept after all</button>'
+      : '<p><b>' + esc(mem(e.ownerId).name.split(' ')[0]) + '</b> invited you.</p><div class="outs"><button class="out" data-act="invite" data-id="' + e.id + '" data-v="yes">✅ Accept</button><button class="out grey" data-act="invite" data-id="' + e.id + '" data-v="no">❌ Reject</button></div>';
+    return '<div class="card attend"><h4>Invited</h4>' + head + '<div class="alist">' + (e.with || []).map(who).join('') + '</div><p class="tiny muted">✅ accepted · ⏳ not answered yet · ❌ rejected. Everyone still on the event can comment and gets comment pop-ups.</p></div>';
+  }
+  function invitesScreen() {
+    var list = myInvites();
+    return topbar('Invitations', {back: '#/'}) + '<main>' + (list.length ? list.map(function (e) {
+      var o = mem(e.ownerId);
+      return '<div class="card cf" style="--c:' + esc(o.color) + '"><a href="#/e/' + e.id + '"><b>' + esc(T(e.type).emoji + ' ' + e.title) + '</b><small class="muted">' + esc(dayLabel(dayKey(sMs(e)))) + ' · ' + esc(evTime(e)) + (e.place ? ' · ' + esc(e.place) : '') + '<br>from ' + esc(o.name) + '</small></a><div class="outs"><button class="out" data-act="invite" data-id="' + e.id + '" data-v="yes">✅ Accept</button><button class="out grey" data-act="invite" data-id="' + e.id + '" data-v="no">❌ Reject</button></div></div>';
+    }).join('') : '<p class="empty">No invitations waiting. 👍</p>') + '</main>' + tabs('cal');
   }
   /* whole-team event: Going / Can't go / No reply, with names */
   function attendOf(e) { return C.attendance(e, S.data.msgs || [], members()); }
@@ -502,7 +528,7 @@
       '<div class="lbl">Who can see it?</div><div class="vis"><button type="button" class="vb' + (e.vis !== 'private' ? ' on' : '') + '" data-v="team">👥 Team</button><button type="button" class="vb' + (e.vis === 'private' ? ' on' : '') + '" data-v="private">🔒 Only me</button></div>' +
       '<p class="tiny muted" id="vis-help"></p>' +
       '<label class="switch" id="all-row"><input type="checkbox" name="all"' + (e.all ? ' checked' : '') + '> 👥 Everyone\'s in it (team meeting, training, roadshow)</label><p class="tiny muted" id="all-help">Shows on every member\'s calendar. Everyone answers Going / Can\'t go, gets a pop-up for comments, and a reminder 1 hour before.</p>' +
-      '<div class="lbl">With (optional)</div><div class="withpick">' + members().filter(function (m) { return m.id !== me().id && m.active !== false; }).map(function (m) { return '<button type="button" class="wp' + ((e.with || []).indexOf(m.id) >= 0 ? ' on' : '') + '" data-id="' + m.id + '">' + avatar(m, 'xs') + esc(m.name.split(' ')[0]) + '</button>'; }).join('') + '</div>' +
+      '<div class="lbl">Invite (optional): they accept or reject</div><div class="withpick">' + members().filter(function (m) { return m.id !== me().id && m.active !== false; }).map(function (m) { return '<button type="button" class="wp' + ((e.with || []).indexOf(m.id) >= 0 ? ' on' : '') + '" data-id="' + m.id + '">' + avatar(m, 'xs') + esc(m.name.split(' ')[0]) + '</button>'; }).join('') + '</div>' +
       '<label>Remind me<select name="remind">' + [['', 'No reminder'], ['0', 'At start'], ['10', '10 min before'], ['30', '30 min before'], ['60', '1 hour before'], ['120', '2 hours before'], ['1440', '1 day before']].map(function (r) { return '<option value="' + r[0] + '"' + (String(e.remind) === r[0] ? ' selected' : '') + '>' + r[1] + '</option>'; }).join('') + '</select></label>' +
       '<div class="row end sticky-actions">' + (!isNew ? '<button type="button" class="btn danger ghost" data-x="del">Delete</button>' : '') + '<button class="btn primary big" type="submit">' + (isNew ? 'Add to calendar' : 'Save') + '</button></div></form>';
     modal(html, function (sh) {
@@ -898,6 +924,7 @@
     else if (parts[0] === 'members') html = membersScreen();
     else if (parts[0] === 'import') html = importScreen();
     else if (parts[0] === 'confirm') html = confirmScreen();
+    else if (parts[0] === 'invites') html = invitesScreen();
     else html = calendarScreen();
     var y = r === lastRoute ? window.scrollY : 0;
     $app.innerHTML = html; lastRoute = r;
@@ -929,6 +956,10 @@
     if (a === 'edit') return editor(events().filter(function (e) { return e.id === b.dataset.id; })[0]);
     if (a === 'out') return setOutcome(b.dataset.id, b.dataset.v);
     if (a === 'cheer') return send('send', {to: 'ev:' + b.dataset.id, kind: 'cheer'});
+    if (a === 'invite') {
+      var iv = b.dataset.v, go = function () { return send('rsvp', {id: b.dataset.id, answer: iv}, iv === 'yes' ? '✅ Accepted. It is on your calendar.' : 'Rejected. Removed from your calendar.'); };
+      return iv === 'no' ? confirmBox('Reject this invitation?', 'It will disappear from your calendar and the owner will be told. You can still accept later from the event link.', 'Reject', true).then(function (y) { if (y) go(); }) : go();
+    }
     if (a === 'rsvp') return send('rsvp', {id: b.dataset.id, answer: b.dataset.v}, b.dataset.v === 'yes' ? '✅ See you there!' : b.dataset.v === 'no' ? 'Noted: can\'t go' : 'Answer cleared');
     if (a === 'period') { S.statsPeriod = b.dataset.p; LS.set('statsPeriod', S.statsPeriod); return render(); }
     if (a === 'report') return copyReport();

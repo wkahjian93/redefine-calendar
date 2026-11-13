@@ -66,7 +66,7 @@ function fresh() {
   // tagged person sees details of a private event
   const joint = h({op: 'save', token: ali.token, event: {title: 'Joint FW Present Ms Tan', start: iso(NOW + 50 * H), end: iso(NOW + 51 * H), vis: 'private', with: [boss.me.id]}}).event;
   ok(find(view(boss.token), joint.id).title === 'Joint FW Present Ms Tan' && find(view(mar.token), joint.id).busy, 'tagged leader sees details, others Busy');
-  ok(s.pushes.some(p => p.ids.includes(boss.me.id) && /added you/.test(p.note.title)), 'tagged person gets a pop-up');
+  ok(s.pushes.some(p => p.ids.includes(boss.me.id) && /invited you/.test(p.note.title) && /Accept or reject/.test(p.note.body)), 'invited person gets a pop-up asking to accept');
   // comments on private events are hidden from others
   h({op: 'send', token: ali.token, to: 'ev:' + hid.id, text: 'note to self'});
   ok(!h({op: 'sync', token: mar.token, force: true}).msgs.some(x => x.text === 'note to self'), 'comments on a private event stay private');
@@ -289,6 +289,38 @@ function fresh() {
   ok(s.load('devices').length === 0, 'sign out stops pop-ups on that phone');
 }
 
+
+
+/* ---------- invitations: accept / reject ---------- */
+{
+  const {s, h, join} = fresh();
+  const boss = join('Kah Jian', true), ali = join('Alicia Tan'), mar = join('Marcus Lim'), siti = join('Siti Aisyah'), dan = join('Daniel Ong');
+  const ev = h({op: 'save', token: ali.token, event: {title: 'Joint present Mr Tan', start: iso(NOW + 5 * H), end: iso(NOW + 6 * H), with: [mar.me.id, siti.me.id]}}).event;
+  ok(s.pushes.some(p => p.ids.includes(mar.me.id) && p.ids.includes(siti.me.id) && /invited you/.test(p.note.title)), 'both invitees get an invitation pop-up');
+  s.pushes.length = 0;
+  h({op: 'rsvp', token: mar.token, id: ev.id, answer: 'yes'});
+  ok(s.pushes.length === 1 && s.pushes[0].ids[0] === ali.me.id && /Marcus Lim accepted/.test(s.pushes[0].note.title), 'accepting tells the owner');
+  h({op: 'rsvp', token: siti.token, id: ev.id, answer: 'no'});
+  ok(/Siti Aisyah rejected/.test(s.pushes[1].note.title), 'rejecting tells the owner');
+  h({op: 'rsvp', token: siti.token, id: ev.id, answer: 'no'});
+  ok(s.pushes.length === 2, 'same answer twice does not pop up again');
+  throws(() => h({op: 'rsvp', token: dan.token, id: ev.id, answer: 'yes'}), 'not_team_event', 'someone not invited cannot answer');
+  const a = CORE.answers(ev.id, s.load('msgs'));
+  ok(a[mar.me.id] === 'yes' && a[siti.me.id] === 'no', 'answers stored');
+  // comments: owner + accepted/pending invitees, not the one who rejected
+  s.pushes.length = 0;
+  h({op: 'send', token: mar.token, to: 'ev:' + ev.id, text: 'I bring the BI'});
+  ok(s.pushes[0].ids.join() === ali.me.id, 'invitee comments -> owner (rejected Siti left out)');
+  h({op: 'send', token: ali.token, to: 'ev:' + ev.id, text: 'Thanks'});
+  ok(s.pushes[1].ids.join() === mar.me.id, 'owner replies -> accepted invitee, not the one who rejected');
+  // reminder skips the person who rejected
+  s.pushes.length = 0; s.setNow(NOW + 5 * H - 20 * 60e3); CORE.tick(s);
+  const r = s.pushes.find(p => /Joint present/.test(p.note.title));
+  ok(r && r.ids.sort().join() === [ali.me.id, mar.me.id].sort().join(), 'reminder goes to owner + accepted, not to who rejected');
+  // she changes her mind
+  h({op: 'rsvp', token: siti.token, id: ev.id, answer: 'yes'});
+  ok(CORE.answers(ev.id, s.load('msgs'))[siti.me.id] === 'yes', 'can accept after rejecting');
+}
 
 /* ---------- partner calendars (husband & wife) ---------- */
 {

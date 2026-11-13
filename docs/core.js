@@ -55,7 +55,9 @@ var CORE = (function () {
   function isAll(e) { return (e.all === 'true' || e.all === true) && e.vis !== 'private'; }   // whole-team event (meeting, training, roadshow)
   function activeIds(members) { return members.filter(function (m) { return String(m.active) !== 'false'; }).map(function (m) { return m.id; }); }
   /* People an event belongs to: owner + tagged, or everyone for a whole-team event. */
-  function peopleOf(e, members) { return isAll(e) ? activeIds(members) : [e.ownerId].concat(withList(e)); }
+  function answers(evId, msgs) { var a = {}; (msgs || []).forEach(function (m) { if (m.to === 'ev:' + evId && m.kind === 'rsvp') a[m.from] = m.text; }); return a; }
+  /* People an event belongs to: owner + invited people who did not reject, or everyone for a whole-team event. */
+  function peopleOf(e, members, msgs) { if (isAll(e)) return activeIds(members); var a = answers(e.id, msgs); return [e.ownerId].concat(withList(e).filter(function (id) { return a[id] !== 'no'; })); }
   /* Who gets the pop-up for a new comment (same rule on the server and the phone):
      - whole-team event: every member except the writer;
      - individual event: someone else comments -> the owner (+ anyone tagged on it);
@@ -64,7 +66,8 @@ var CORE = (function () {
     var ids;
     if (isAll(e)) ids = activeIds(members);
     else {
-      var core = [e.ownerId].concat(withList(e));
+      var a = {}; earlier.forEach(function (m) { if (m.kind === 'rsvp') a[m.from] = m.text; });
+      var core = [e.ownerId].concat(withList(e).filter(function (id) { return a[id] !== 'no'; }));   // rejected invitees are left out
       ids = core.slice();
       if (core.indexOf(from) >= 0) earlier.forEach(function (m) { if ((m.kind === 'text' || !m.kind) && ids.indexOf(m.from) < 0) ids.push(m.from); });
     }
@@ -293,7 +296,7 @@ var CORE = (function () {
     store.save('events', rows); store.version(true);
     var added = withList(old).filter(function (x) { return before.indexOf(x) < 0; });
     if (isAll(old) && !wasAll) added = activeIds(members).filter(function (x) { return x !== me.id; });   // new team-wide event: tell everyone
-    if (added.length) store.push(added, {title: me.name + (isAll(old) ? ' 📣 Team event' : ' added you 📅'), body: old.title + ' · ' + whenText(old) + (isAll(old) ? ' · Going? Tap to answer' : ''), tag: 'ev-' + old.id, url: '#/e/' + old.id});
+    if (added.length) store.push(added, {title: me.name + (isAll(old) ? ' 📣 Team event' : ' invited you 📩'), body: old.title + ' · ' + whenText(old) + (isAll(old) ? ' · Going? Tap to answer' : ' · Accept or reject?'), tag: 'ev-' + old.id, url: '#/e/' + old.id});
     return {event: viewEvent(old, me, true)};
   }
   function delEvent(q, store, me) {
@@ -385,13 +388,16 @@ var CORE = (function () {
   }
   function rsvp(q, store, me) {
     var ev = store.load('events').filter(function (e) { return e.id === q.id; })[0];
-    if (!ev || !isAll(ev)) fail('not_team_event');
+    var invited = ev && !isAll(ev) && withList(ev).indexOf(me.id) >= 0;
+    if (!ev || !(isAll(ev) || invited)) fail('not_team_event');
     if (ev.out === 'cancel') fail('cancelled');
     if (endMs(ev) <= store.now().getTime()) fail('ended');
     var ans = q.answer === 'yes' || q.answer === 'no' ? q.answer : '', to = 'ev:' + ev.id;
     var msgs = store.load('msgs').filter(function (m) { return !(m.to === to && m.from === me.id && m.kind === 'rsvp'); });
+    var before = answers(ev.id, store.load('msgs'))[me.id] || '';
     if (ans) msgs.push({id: newId(store, 10), to: to, from: me.id, kind: 'rsvp', text: ans, created: nowIso(store)});
     store.save('msgs', msgs); store.version(true);
+    if (invited && ans && ans !== before) store.push([ev.ownerId], {title: (ans === 'yes' ? '✅ ' + me.name + ' accepted' : '❌ ' + me.name + ' rejected'), body: ev.title + ' · ' + whenText(ev), tag: 'ev-' + ev.id, url: '#/e/' + ev.id});
     return {answer: ans};
   }
 
@@ -583,16 +589,17 @@ var CORE = (function () {
       if (now >= st - r * 60e3 && now < st + 10 * 60e3) {
         var lead = Math.round((st - now) / 60e3), extra = '';
         if (all) { var at = attendance(e, msgs || (msgs = store.load('msgs')), members); extra = ' · ✅ ' + at.yes.length + ' going, ❌ ' + at.no.length + ' can\'t, ⏳ ' + at.none.length + ' no reply'; }
-        store.push(peopleOf(e, members), {title: '⏰ ' + e.title, body: (lead > 1 ? 'In ' + (lead >= 120 ? Math.round(lead / 60) + ' hours' : lead + ' min') : 'Starting now') + ' · ' + whenText(e) + (e.place ? ' · ' + e.place : '') + extra, tag: 'ev-' + e.id, url: '#/e/' + e.id});
+        store.push(peopleOf(e, members, msgs || (msgs = store.load('msgs'))), {title: '⏰ ' + e.title, body: (lead > 1 ? 'In ' + (lead >= 120 ? Math.round(lead / 60) + ' hours' : lead + ' min') : 'Starting now') + ' · ' + whenText(e) + (e.place ? ' · ' + e.place : '') + extra, tag: 'ev-' + e.id, url: '#/e/' + e.id});
         e.remSent = nowIso(store); sent++;
       } else if (now >= st + 10 * 60e3) { e.remSent = 'past'; sent++; }
     });
     if (sent) store.save('events', rows);
     return {sent: sent};
   }
-  function dayEvents(store, memberId, dayKey) {
+  function dayEvents(store, memberId, dayKey, msgs) {
+    msgs = msgs || store.load('msgs');
     return store.load('events').filter(function (e) {
-      return (e.ownerId === memberId || withList(e).indexOf(memberId) >= 0 || isAll(e)) && e.out !== 'cancel' && mytDay(startMs(e)) <= dayKey && mytDay(endMs(e) - 1) >= dayKey;
+      return (e.ownerId === memberId || (withList(e).indexOf(memberId) >= 0 && answers(e.id, msgs)[memberId] !== 'no') || isAll(e)) && e.out !== 'cancel' && mytDay(startMs(e)) <= dayKey && mytDay(endMs(e) - 1) >= dayKey;
     }).sort(function (a, b) { return startMs(a) - startMs(b); });
   }
   function morning(store) {
@@ -643,7 +650,7 @@ var CORE = (function () {
   }
 
   return {TABLES: TABLES, TYPES: TYPES, TYPE_ORDER: TYPE_ORDER, PROSPECT: PROSPECT, COLORS: COLORS, REMIND: REMIND,
-    handle: handle, tick: tick, attendance: attendance, TEAM_REMIND: TEAM_REMIND, cents: cents, MODES: MODES, casesOf: casesOf, commentTargets: commentTargets, isAll: isAll, MAX_NOC: MAX_NOC, morning: morning, evening: evening, detectType: detectType, stats: stats, addStats: addStats,
+    handle: handle, tick: tick, answers: answers, attendance: attendance, TEAM_REMIND: TEAM_REMIND, cents: cents, MODES: MODES, casesOf: casesOf, commentTargets: commentTargets, isAll: isAll, MAX_NOC: MAX_NOC, morning: morning, evening: evening, detectType: detectType, stats: stats, addStats: addStats,
     ratios: ratios, parseRead: parseRead, parseICS: parseICS, readPrompt: readPrompt, startMs: startMs, endMs: endMs, myt: myt, whenText: whenText};
 })();
 if (typeof module !== 'undefined') module.exports = CORE;

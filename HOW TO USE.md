@@ -31,6 +31,12 @@ You stay signed in on that phone for good, like WhatsApp. Only two things sign y
   - Under every comment box, the app shows exactly who will be notified.
 - **🔔 Comments tab:** every comment and cheer meant for you, newest first, with an unread count.
 
+## Inviting teammates to your event
+- On the event form, pick people under **Invite**. They get a pop-up: "Alicia invited you 📩 … Accept or reject?"
+- On their calendar the event shows **faded** with "📩 Invited: tap to answer", and a **📩 invitations waiting** bar lists them.
+- **✅ Accept**: the event turns full colour. **❌ Reject**: it disappears from their calendar (they can still accept later). You, the owner, get a pop-up either way.
+- The event shows everyone's answer: ✅ accepted, ⏳ not answered, ❌ rejected. Everyone still on the event can comment and gets comment pop-ups; whoever rejected is left out.
+
 ## Partner calendar (husband & wife)
 - **Me → Partner calendar** → choose your partner → **Send request**. Your partner opens **Me** and taps **Accept**. Nothing is shared until both agree.
 - Once linked: a **💑 Me + partner** chip on the calendar shows both calendars together, and you each see the other's **private** events in full. Everyone else (leaders included) still sees Busy. Each person's activity numbers stay their own.
