@@ -88,7 +88,7 @@ module.exports = {seed};
 if (require.main === module) {
   setInterval(() => { const n = store.pushes.length; CORE.tick(store); store.pushes.slice(n).forEach(p => console.log('POP-UP to', p.ids.join(','), '|', p.note.title, '|', p.note.body)); }, 30e3);
   const types = {'.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.png': 'image/png', '.jpg': 'image/jpeg', '.svg': 'image/svg+xml', '.webmanifest': 'application/manifest+json', '.json': 'application/json', '.ics': 'text/calendar'};
-  const SAVE_OK = {'icon-192.png': path.join(DOCS, 'icons'), 'icon-512.png': path.join(DOCS, 'icons'), 'apple-touch-icon.png': path.join(DOCS, 'icons'), 'badge-72.png': path.join(DOCS, 'icons')};
+  const SAVE_OK = {'icon-192.png': path.join(DOCS, 'icons'), 'icon-512.png': path.join(DOCS, 'icons'), 'apple-touch-icon.png': path.join(DOCS, 'icons'), 'badge-72.png': path.join(DOCS, 'icons'), 'team-mark.png': path.join(DOCS, 'icons')};
   http.createServer((req, res) => {
     const url = decodeURIComponent(req.url.split('?')[0]);
     if (url === '/gas' && req.method === 'POST') {

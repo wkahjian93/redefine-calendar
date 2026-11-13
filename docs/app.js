@@ -7,7 +7,7 @@
   var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   var MONTH = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   var DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  var APP_VERSION = '11';
+  var APP_VERSION = '12';
   var H8 = 8 * 3600e3, DAY = 864e5, SELLING = {approach: 1, open: 1, present: 1, followup: 1, close: 1, recruit: 1};
 
   /* ---------- storage (each phone) ---------- */
@@ -423,9 +423,9 @@
       var rowStart = addDays(start, w * 7); if (w >= 4 && P(keyMs(rowStart)).m !== c.m) break;
       html += '<div class="gw">';
       for (var d = 0; d < 7; d++) {
-        var k = addDays(start, w * 7 + d), p = P(keyMs(k)), evs = onDay(list, k);
+        var k = addDays(start, w * 7 + d), p = P(keyMs(k)), evs = onDay(list, k).sort(function (x, y) { return (y.all ? 1 : 0) - (x.all ? 1 : 0); });   // team events always visible first
         html += '<button class="gd' + (p.m !== c.m ? ' dim' : '') + (k === today ? ' today' : '') + (k === S.sel ? ' sel' : '') + '" data-act="sel" data-k="' + k + '"><span class="dn">' + p.d + '</span>' +
-          evs.slice(0, 3).map(function (e) { var o = mem(e.ownerId); return '<span class="bar' + (e.busy ? ' busy' : '') + (pendingFor(e, me().id) ? ' pend' : '') + (e.out === 'cancel' ? ' x' : '') + '" style="--c:' + esc(o.color) + '">' + esc(e.busy ? 'Busy' : e.title) + '</span>'; }).join('') +
+          evs.slice(0, 3).map(function (e) { var o = mem(e.ownerId); return '<span class="bar' + (e.busy ? ' busy' : '') + (pendingFor(e, me().id) ? ' pend' : '') + (e.out === 'cancel' ? ' x' : '') + (e.all ? ' team' : '') + '" style="--c:' + esc(o.color) + '">' + (e.all ? '<img class="tlogo" src="icons/team-mark.png" alt="">' : '') + esc(e.busy ? 'Busy' : e.title) + '</span>'; }).join('') +
           (evs.length > 3 ? '<span class="more">+' + (evs.length - 3) + '</span>' : '') + '</button>';
       }
       html += '</div>';
@@ -436,8 +436,9 @@
     var o = mem(e.ownerId), cls = 'ev' + (e.busy ? ' busy' : '') + (e.out === 'cancel' ? ' x' : '') + (pendingFor(e, me().id) ? ' pend' : '');
     var tag = e.busy ? '<span class="pill grey">🔒 Private</span>' : (pendingFor(e, me().id) ? '<span class="pill warn">📩 Invited: tap to answer</span>' : '') + (e.vis === 'private' ? '<span class="pill grey">🔒 Only me</span>' : '') + (e.all ? '<span class="pill navy">👥 ✅' + attendOf(e).yes.length + ' ❌' + attendOf(e).no.length + ' ⏳' + attendOf(e).none.length + '</span>' + (!myAnswer(e) && eMs(e) > Date.now() ? '<span class="pill warn">Going?</span>' : '') : '') + (e.out === 'closed' ? '<span class="pill gold">💰 Closed' + (e.noc > 1 ? ' ×' + e.noc : '') + '</span>' : e.out === 'done' ? '<span class="pill green">✓ Done</span>' : e.out === 'cancel' ? '<span class="pill grey">Didn\'t happen</span>' : needsConfirm(e) ? '<span class="pill warn">Confirm?</span>' : '');
     var w = (e.with || []).length ? '<span class="with">' + (e.with || []).slice(0, 4).map(function (id) { return avatar(mem(id), 'xs'); }).join('') + ((e.with || []).length > 4 ? '<small>+' + ((e.with || []).length - 4) + '</small>' : '') + '</span>' : '';
+    if (e.all) cls += ' team';
     return '<a class="' + cls + '" href="#/e/' + e.id + '" style="--c:' + esc(o.color) + '"><span class="et">' + (showDay ? esc(dayLabel(dayKey(sMs(e)))) + '<br>' : '') + esc(evTime(e)) + '</span>' +
-      '<span class="eb"><b>' + esc(evTitle(e)) + '</b><small>' + avatar(o, 'xs') + ' ' + esc(o.name) + (e.place && !e.busy ? ' · ' + esc(e.place) : '') + '</small>' + tag + '</span>' + w + '</a>';
+      '<span class="eb"><b>' + (e.all ? '<img class="tlogo" src="icons/team-mark.png" alt="">' + esc(e.title) : esc(evTitle(e))) + '</b><small>' + avatar(o, 'xs') + ' ' + esc(o.name) + (e.place && !e.busy ? ' · ' + esc(e.place) : '') + '</small>' + tag + '</span>' + w + '</a>';
   }
   function dayAgenda(k) {
     var evs = onDay(filtered(), k);
@@ -465,7 +466,7 @@
       var blocks = mine.filter(function (e) { return !e.allDay; }).map(function (e) {
         var s = Math.max(sMs(e), a + H0 * 3600e3), en = Math.min(eMs(e), a + H1 * 3600e3); if (en <= s) return '';
         var l = (s - a - H0 * 3600e3) / span * 100, w = Math.max(1.6, (en - s) / span * 100), o = mem(e.ownerId);
-        return '<a class="blk' + (e.busy ? ' busy' : '') + (pendingFor(e, m.id) ? ' pend' : '') + '" href="#/e/' + e.id + '" style="left:' + l + '%;width:' + w + '%;--c:' + esc(o.color) + '" title="' + esc(evTime(e) + ' ' + evTitle(e)) + '">' + (e.all ? rsvpMark(e, m.id) : '') + esc(e.busy ? 'Busy' : T(e.type).emoji + ' ' + e.title) + '</a>';
+        return '<a class="blk' + (e.busy ? ' busy' : '') + (pendingFor(e, m.id) ? ' pend' : '') + (e.all ? ' team' : '') + '" href="#/e/' + e.id + '" style="left:' + l + '%;width:' + w + '%;--c:' + esc(o.color) + '" title="' + esc(evTime(e) + ' ' + evTitle(e)) + '">' + (e.all ? rsvpMark(e, m.id) + '<img class="tlogo" src="icons/team-mark.png" alt="">' : '') + esc(e.busy ? 'Busy' : (e.all ? '' : T(e.type).emoji + ' ') + e.title) + '</a>';
       }).join('');
       return '<div class="tr"><div class="tn">' + avatar(m, 'xs') + '<span>' + esc(m.id === my ? 'Me' : shortName(m)) + '</span></div><div class="tl">' +
         (allDay.length ? '<span class="allday">' + esc(allDay.map(function (e) { return e.busy ? 'Busy (all day)' : e.title; }).join(', ')) + '</span>' : '') + blocks + '</div></div>';
@@ -499,7 +500,7 @@
       out = (e.out === 'closed' ? caseList(e) : '') + '<p class="result">' + (e.out === 'closed' ? '💰 Closed ' + (e.noc || 1) + ' case' + ((e.noc || 1) > 1 ? 's' : '') + (e.anp ? ' · ANP ' + rm(e.anp) : '') : e.out === 'done' ? '✓ Done' : 'Didn\'t happen') + '</p>';
     }
     return topbar(esc(T(e.type).label), {back: '#/', right: mine ? '<button class="icon-btn" data-act="edit" data-id="' + e.id + '" aria-label="Edit">✎</button>' : ''}) +
-      '<main><div class="card evhead" style="--c:' + esc(o.color) + '"><h2>' + esc(T(e.type).emoji + ' ' + e.title) + '</h2>' +
+      '<main><div class="card evhead' + (e.all ? ' team' : '') + '" style="--c:' + esc(o.color) + '"><h2>' + (e.all ? '<img class="tlogo" src="icons/team-mark.png" alt="">' + esc(e.title) : esc(T(e.type).emoji + ' ' + e.title)) + '</h2>' +
       '<p>' + esc(dayLabel(dayKey(sMs(e)), true)) + (e.allDay && e.end !== e.start ? ' → ' + esc(dayLabel(String(e.end).slice(0, 10), true)) : '') + '<br>' + esc(evTime(e)) + '</p>' +
       (e.place ? '<p>📍 ' + esc(e.place) + '</p>' : '') +
       '<p>' + avatar(o, 'sm') + ' ' + esc(o.name) + ((e.with || []).length ? ' <span class="muted">with</span> ' + e.with.map(function (id) { return avatar(mem(id), 'sm') + ' ' + esc(shortName(mem(id))); }).join(' ') : '') + '</p>' +

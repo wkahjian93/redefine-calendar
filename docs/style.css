@@ -273,3 +273,16 @@ main { padding: 12px 14px; }
 .chip.on .ctool { background: rgba(255,255,255,.22); }
 
 .wp:disabled { opacity: 1; cursor: default; }
+
+/* whole-team events: black with the white REDEFINE logo */
+.tlogo { height: 1em; width: auto; vertical-align: -0.12em; margin-right: 4px; }
+.bar.team { background: #000; color: #fff; }
+.bar.team .tlogo { height: 9px; margin-right: 2px; vertical-align: -1px; }
+.ev.team { background: #000; color: #fff; border-left-color: #000; }
+.ev.team .eb small, .ev.team .et { color: #C9CDD6; }
+.ev.team .pill.navy { background: #2A2A2A; color: #fff; }
+.blk.team { background: #000; color: #fff; }
+.blk.team .tlogo { height: 10px; margin: 0 2px; }
+.evhead.team { background: #000; color: #fff; border-top-color: #000; }
+.evhead.team .muted, .evhead.team p { color: #E5E7EB; }
+.evhead.team .tlogo { height: .95em; margin-right: 8px; }
