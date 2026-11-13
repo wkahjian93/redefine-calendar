@@ -7,7 +7,7 @@
   var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   var MONTH = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   var DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  var APP_VERSION = '21';
+  var APP_VERSION = '22';
   var H8 = 8 * 3600e3, DAY = 864e5, SELLING = {approach: 1, open: 1, present: 1, followup: 1, close: 1, recruit: 1};
 
   /* ---------- storage (each phone) ---------- */
@@ -815,14 +815,14 @@
           (lead ? '<td>' + (q.M == null ? '–' : rm(q.M)) + '</td><td>' + pct(q.CP) + '</td><td>' + pct(q.OA) + '</td><td>' + pct(q.PO) + '</td><td>' + pct(q.FP) + '</td><td class="' + (s.unconfirmed > 3 ? 'warn-t' : '') + '">' + s.unconfirmed + '</td><td class="tiny">' + (x.m.seen ? ago(x.m.seen) : 'never') + '</td>' : '') + '</tr>';
       }).join('');
     html += '<tr class="tot"><td></td><td class="l">Team total</td><td>' + tot.A + '</td><td>' + tot.O + '</td><td>' + tot.P + '</td><td>' + tot.F + '</td><td>' + tot.recruit + '</td><td class="sum">' + actTotal(tot) + '</td><td>' + tot.C + '</td><td class="anpc">' + money(tot.anp) + '</td>' + (lead ? '<td>' + (tq.M == null ? '–' : rm(tq.M)) + '</td><td>' + pct(tq.CP) + '</td><td>' + pct(tq.OA) + '</td><td>' + pct(tq.PO) + '</td><td>' + pct(tq.FP) + '</td><td>' + tot.unconfirmed + '</td><td></td>' : '') + '</tr>';
-    html += '</tbody></table></div></div>';
+    html += '</tbody></table></div>' + (lead ? '<button class="btn wa" data-act="report">📋 Copy for WhatsApp</button>' : '') + '</div>';
     var cl = closeList(d.events, d.r);
-    html += '<div class="card"><div class="row between"><h4>Close case list</h4>' + (cl.lines.length ? '<button class="btn tiny primary" data-act="copy-close">📋 Copy</button>' : '') + '</div>' +
-      (cl.lines.length ? '<pre class="closelist">' + esc(cl.text) + '</pre>' : '<p class="empty small">No closed cases yet in ' + esc(d.r.label.toLowerCase()) + '.</p>') + '</div>';
+    html += '<div class="card"><div class="row between"><h4>Close case list</h4>' + '</div>' +
+      (cl.lines.length ? '<pre class="closelist">' + esc(cl.text) + '</pre><button class="btn wa" data-act="copy-close">📋 Copy for WhatsApp</button>' : '<p class="empty small">No closed cases yet in ' + esc(d.r.label.toLowerCase()) + '.</p>') + '</div>';
     if (lead) {
       var quiet = rows.filter(function (x) { return x.m.role !== 'leader' && !d.events.some(function (e) { return e.ownerId === x.m.id && SELLING[e.type || e.t] && (e.out === 'done' || e.out === 'closed') && Date.now() - sMs(e) < 5 * DAY; }); });
       html += '<div class="card"><h4>Needs a check-in</h4><p class="tiny muted">No confirmed approach, open, present, follow-up, close or recruitment in the last 5 days.</p>' + (quiet.length ? quiet.map(function (x) { return '<div class="thread small">' + avatar(x.m, 'sm') + '<span class="tb"><b>' + esc(x.m.name) + '</b><small>' + x.s.unconfirmed + ' not confirmed</small></span></div>'; }).join('') : '<p class="empty small">Everyone is active 👍</p>') +
-        '<div class="row"><button class="btn primary" data-act="report">📋 Copy WhatsApp report</button><button class="btn ghost" data-act="csv">⬇ CSV</button></div></div>';
+        '<div class="row"><button class="btn ghost" data-act="csv">⬇ Download CSV (Excel)</button></div></div>';
     }
     return html + '</main>' + tabs('stats');
   }
@@ -863,11 +863,12 @@
   function copyReport() {
     var x = reportRows(); if (!x) return;
     var tot = C.addStats(x.rows.map(function (r) { return r.s; })), tq = C.ratios(tot);
-    var lines = ['*REDEFINE activity · ' + x.d.r.label + '*', '*Team total: ' + actTotal(tot) + ' activities · NOC ' + tot.C + ' · ANP ' + rm(tot.anp) + '*', 'A ' + tot.A + ' · O ' + tot.O + ' · P ' + tot.P + ' · F ' + tot.F + ' · R ' + tot.recruit, 'Closing ' + pct(tq.CP) + ' · Avg case ' + (tq.M == null ? '–' : rm(tq.M)), ''];
-    x.rows.forEach(function (r, i) { var s = r.s; lines.push((i + 1) + '. ' + r.m.name + ': A' + s.A + ' O' + s.O + ' P' + s.P + ' F' + s.F + ' R' + s.recruit + ' = ' + actTotal(s) + ' · NOC ' + s.C + (s.anp ? ' · ' + rm(s.anp) : '') + (s.unconfirmed ? ' · ⚠️' + s.unconfirmed + ' unconfirmed' : '')); });
-    lines.push('', 'Confirmed activities only. Keep your calendar updated 💪');
-    var text = lines.join('\n');
-    (navigator.clipboard ? navigator.clipboard.writeText(text) : Promise.reject()).then(function () { toast('Report copied. Paste it in WhatsApp.', 'good'); }, function () { modal('<h3>Copy this</h3><textarea rows="12" style="width:100%">' + esc(text) + '</textarea><div class="row end"><button class="btn" data-act="close-modal">Done</button></div>'); });
+    var line = function (s) { return 'A' + s.A + ' O' + s.O + ' P' + s.P + ' F' + s.F + ' R' + s.recruit + ' = ' + actTotal(s) + ' · NOC ' + s.C + ' · ' + (s.anp ? rm(s.anp) : 'RM0'); };
+    var rows = x.rows.slice().sort(function (p, q) { return actTotal(q.s) - actTotal(p.s) || q.s.anp - p.s.anp; });
+    var lines = ['📊 *REDEFINE Team Board · ' + x.d.r.label + '*', 'Activities ' + actTotal(tot) + ' · NOC ' + tot.C + ' · ANP ' + rm(tot.anp) + ' · Avg case ' + (tq.M == null ? '–' : rm(tq.M)), ''];
+    rows.forEach(function (r, n) { lines.push((n + 1) + '. ' + shortName(r.m) + ': ' + line(r.s) + (r.s.unconfirmed ? ' · ⚠️' + r.s.unconfirmed + ' unconfirmed' : '')); });
+    lines.push('', '*Team total: ' + line(tot) + '*', '', 'A approach · O open · P present · F follow-up · R recruit', 'Confirmed activities only. Keep your calendar updated 💪');
+    copyText(lines.join('\n'));
   }
   function downloadCsv() {
     var x = reportRows(); if (!x) return;
@@ -1089,7 +1090,7 @@
     if (a === 'period') { S.statsPeriod = b.dataset.p; LS.set('statsPeriod', S.statsPeriod); return render(); }
     if (a === 'report') return copyReport();
     if (a === 'csv') return downloadCsv();
-    if (a === 'copy-close') { var dd = statsData(S.statsPeriod); if (!dd.events) return; var txt = closeList(dd.events, dd.r).text; return (navigator.clipboard ? navigator.clipboard.writeText(txt) : Promise.reject()).then(function () { toast('Close case list copied. Paste it in WhatsApp.', 'good'); }, function () { modal('<h3>Copy this</h3><textarea rows="12" style="width:100%">' + esc(txt) + '</textarea><div class="row end"><button class="btn" data-act="close-modal">Done</button></div>'); }); }
+    if (a === 'copy-close') { var dd = statsData(S.statsPeriod); if (!dd.events) return; return copyText(closeList(dd.events, dd.r).text); }
     if (a === 'push') return enablePush();
     if (a === 'pushfix') return repairPush(true).then(render);
     if (a === 'pushtest15') { toast('Lock your phone now. A pop-up should arrive in about 15 seconds.'); return api('pushtest', {delay: 15}).catch(function () {}); }
