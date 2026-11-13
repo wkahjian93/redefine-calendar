@@ -268,3 +268,6 @@ main { padding: 12px 14px; }
 .ev.pend { opacity: .55; border-left-style: dashed; }
 .blk.pend { opacity: .4; outline: 1px dashed var(--c); }
 .confirm-bar.invite { background: #EEF2FF; color: #1E3A8A; border-color: #C7D2FE; }
+
+.chip .ctool { margin-left: 6px; padding: 0 4px; border-radius: 8px; font-size: 13px; line-height: 18px; background: rgba(0,0,0,.08); }
+.chip.on .ctool { background: rgba(255,255,255,.22); }

@@ -1,7 +1,7 @@
 // Network first and always revalidated, so phones get updates as soon as they are online; falls back to the cache offline.
 // Also shows the phone pop-ups that arrive from the server (Firebase Cloud Messaging) - by itself, without the Firebase
 // library, so it works the same on Android and iPhone and even when the app is closed.
-const CACHE = 'rcal-v7';
+const CACHE = 'rcal-v9';
 const FILES = ['./', 'index.html', 'style.css', 'app.js', 'core.js', 'config.js', 'manifest.webmanifest', 'icons/icon.svg', 'icons/icon-192.png'];
 const IOS = /iphone|ipad|ipod|macintosh/i.test(self.navigator.userAgent) && /safari/i.test(self.navigator.userAgent) && !/chrome|crios|android/i.test(self.navigator.userAgent);
 self.addEventListener('install', e => { self.skipWaiting(); e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES)).catch(() => {})); });

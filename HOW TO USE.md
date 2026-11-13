@@ -10,6 +10,8 @@
 3. **Me → Turn on notifications** (iPhone: open the app from the home screen first).
 4. **Me → Import calendar** to move your old appointments in (see below).
 
+**Set your short name:** Me → **My short name** (e.g. KJ, MJ, Rex). The team sees it on chips, Team day, attendance and the close case list, so no surnames get mixed up. Until you set it, the app suggests your given-name initials (WONG KAH JIAN → KJ).
+
 You stay signed in on that phone for good, like WhatsApp. Only two things sign you out: tapping **Sign out** on that phone, or a leader removing you. Changing the team code or losing signal never does.
 
 ## Every day (agents)
@@ -41,7 +43,7 @@ You stay signed in on that phone for good, like WhatsApp. Only two things sign y
 - **Me → Partner calendar** → choose your partner → **Send request**. Your partner opens **Me** and taps **Accept**. Nothing is shared until both agree.
 - Once linked: a **💑 Me + partner** chip on the calendar shows both calendars together, and you each see the other's **private** events in full. Everyone else (leaders included) still sees Busy. Each person's activity numbers stay their own.
 - **Unlink** any time in the same card.
-- Just want to plan around a teammate? Tap the **Me + …** chip and pick anyone: their events show next to yours (their private events stay Busy).
+- Just want to plan around a teammate? Tap the **Me + …** chip and pick anyone: their events show next to yours (their private events stay Busy). On that chip tap **📌** to keep it for next time, or **×** to close it.
 
 ## Team events (meeting, training, roadshow)
 - Create the event with **👥 Everyone's in it** switched on. It appears on everyone's calendar and everyone gets a pop-up asking **Going?**

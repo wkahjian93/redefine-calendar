@@ -6,7 +6,7 @@
    hash(text) -> hex, version(bump) -> number, ai(prompt, imageBase64) -> text, push(memberIds, note). */
 var CORE = (function () {
   var TABLES = {
-    members: ['id', 'name', 'pin', 'role', 'color', 'created', 'active', 'partner', 'partnerReq'],
+    members: ['id', 'name', 'pin', 'role', 'color', 'created', 'active', 'partner', 'partnerReq', 'short'],
     sessions: ['token', 'memberId', 'created', 'lastSeen', 'device'],
     events: ['id', 'ownerId', 'title', 'type', 'start', 'end', 'allDay', 'place', 'notes', 'vis', 'with', 'remind', 'count', 'out', 'anp', 'source', 'remSent', 'created', 'updated', 'noc', 'all', 'cases'],
     msgs: ['id', 'to', 'from', 'kind', 'text', 'created'],
@@ -233,10 +233,10 @@ var CORE = (function () {
     var myDevices = store.load('devices').filter(function (d) { return d.memberId === me.id; }).length;
     return {
       ver: ver, now: nowIso(store),
-      me: {id: me.id, name: me.name, role: me.role, color: me.color, leader: leader, devices: myDevices, partner: me.partner || '', partnerReq: me.partnerReq || '',
+      me: {id: me.id, name: me.name, short: shortOf(me), shortSet: !!me.short, role: me.role, color: me.color, leader: leader, devices: myDevices, partner: me.partner || '', partnerReq: me.partnerReq || '',
         partnerAsks: members.filter(function (m) { return m.partnerReq === me.id && String(m.active) !== 'false'; }).map(function (m) { return m.id; })},
       members: members.filter(function (m) { return String(m.active) !== 'false' || leader; }).map(function (m) {
-        var o = {id: m.id, name: m.name, role: m.role, color: m.color, active: String(m.active) !== 'false', partner: m.partner || ''}; if (leader) o.seen = seen[m.id] || ''; return o;
+        var o = {id: m.id, name: m.name, short: shortOf(m), role: m.role, color: m.color, active: String(m.active) !== 'false', partner: m.partner || ''}; if (leader) o.seen = seen[m.id] || ''; return o;
       }),
       events: events, msgs: evc.map(function (m) { return {id: m.id, to: m.to, from: m.from, kind: m.kind, text: m.text, created: m.created}; })
     };
@@ -470,10 +470,24 @@ var CORE = (function () {
     store.save('members', rows); store.version(true); log(store, me.id, 'member', m.name + ' ' + JSON.stringify({active: q.active, role: q.role}));
     return {member: {id: m.id, name: m.name, role: m.role, active: m.active !== 'false'}};
   }
+  /* Short name: what the team sees on chips, Team day, attendance and the close case list (e.g. KJ, MJ, Rex). */
+  function defaultShort(name) {
+    var w = str(name).split(/\s+/).filter(Boolean);
+    if (w.length >= 3) return w.slice(1).map(function (x) { return x[0]; }).join('').toUpperCase();   // WONG KAH JIAN -> KJ (no surname)
+    return w[0] || '?';
+  }
+  function shortOf(m) { return m.short || defaultShort(m.name); }
   function profile(q, store, me) {
-    var c = str(q.color, 7); if (!/^#[0-9A-Fa-f]{6}$/.test(c)) fail('bad_request');
-    var rows = store.load('members'); rows.forEach(function (m) { if (m.id === me.id) m.color = c; }); store.save('members', rows); store.version(true);
-    return {color: c};
+    var rows = store.load('members'), my = rows.filter(function (m) { return m.id === me.id; })[0], out = {};
+    if (q.color != null) { var c = str(q.color, 7); if (!/^#[0-9A-Fa-f]{6}$/.test(c)) fail('bad_request'); my.color = c; out.color = c; }
+    if (q.short != null) {
+      var sh = str(q.short, 12).replace(/\s+/g, ' ');
+      if (sh && !/^[\p{L}\p{N} .'&-]+$/u.test(sh)) fail('bad_short');
+      if (sh && rows.some(function (m) { return m.id !== my.id && String(m.active) !== 'false' && normName(shortOf(m)) === normName(sh); })) fail('short_taken');
+      my.short = sh; out.short = shortOf(my);
+    }
+    store.save('members', rows); store.version(true);
+    return out;
   }
   function signOut(q, store) {
     var h = store.hash('sess|' + str(q.token, 80));
@@ -650,7 +664,7 @@ var CORE = (function () {
   }
 
   return {TABLES: TABLES, TYPES: TYPES, TYPE_ORDER: TYPE_ORDER, PROSPECT: PROSPECT, COLORS: COLORS, REMIND: REMIND,
-    handle: handle, tick: tick, answers: answers, attendance: attendance, TEAM_REMIND: TEAM_REMIND, cents: cents, MODES: MODES, casesOf: casesOf, commentTargets: commentTargets, isAll: isAll, MAX_NOC: MAX_NOC, morning: morning, evening: evening, detectType: detectType, stats: stats, addStats: addStats,
+    handle: handle, tick: tick, defaultShort: defaultShort, answers: answers, attendance: attendance, TEAM_REMIND: TEAM_REMIND, cents: cents, MODES: MODES, casesOf: casesOf, commentTargets: commentTargets, isAll: isAll, MAX_NOC: MAX_NOC, morning: morning, evening: evening, detectType: detectType, stats: stats, addStats: addStats,
     ratios: ratios, parseRead: parseRead, parseICS: parseICS, readPrompt: readPrompt, startMs: startMs, endMs: endMs, myt: myt, whenText: whenText};
 })();
 if (typeof module !== 'undefined') module.exports = CORE;

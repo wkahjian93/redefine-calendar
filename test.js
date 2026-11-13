@@ -350,6 +350,22 @@ function fresh() {
   ok(!s.load('members').find(m => m.id === rex.me.id).partner, 'removing a member unlinks the partner');
 }
 
+
+/* ---------- short names (no surnames) ---------- */
+{
+  const {s, h, join} = fresh();
+  const kj = join('WONG KAH JIAN'), mj = join('LIM MAY JING'), wen = join('Wen Lim');
+  ok(CORE.defaultShort('WONG KAH JIAN') === 'KJ' && CORE.defaultShort('LIM MAY JING') === 'MJ' && CORE.defaultShort('Alicia Tan') === 'Alicia', 'suggested short name skips the surname');
+  let sy = h({op: 'sync', token: kj.token, force: true});
+  ok(sy.me.short === 'KJ' && !sy.me.shortSet && sy.members.find(m => m.id === mj.me.id).short === 'MJ', 'everyone gets a suggested short name');
+  h({op: 'profile', token: wen.token, short: 'Wen'});
+  sy = h({op: 'sync', token: kj.token, force: true});
+  ok(sy.members.find(m => m.id === wen.me.id).short === 'Wen', 'own short name shows to the team');
+  throws(() => h({op: 'profile', token: wen.token, short: 'kj'}), 'short_taken', 'two people cannot use the same short name');
+  throws(() => h({op: 'profile', token: wen.token, short: '<b>'}), 'bad_short', 'odd characters refused');
+  ok(h({op: 'profile', token: kj.token, short: '嘉健'}).short === '嘉健', 'Chinese short names allowed');
+}
+
 /* ---------- sample team sanity ---------- */
 {
   const s = memStore(); seed(s, NOW);

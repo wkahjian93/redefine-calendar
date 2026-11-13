@@ -7,7 +7,7 @@
   var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   var MONTH = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   var DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  var APP_VERSION = '7';
+  var APP_VERSION = '9';
   var H8 = 8 * 3600e3, DAY = 864e5, SELLING = {approach: 1, open: 1, present: 1, followup: 1, close: 1, recruit: 1};
 
   /* ---------- storage (each phone) ---------- */
@@ -46,8 +46,9 @@
   function mem(id) { return members().filter(function (m) { return m.id === id; })[0] || {id: id, name: 'Former member', color: '#999'}; }
   function me() { return (S.data && S.data.me) || {}; }
   function isLeader() { return !!me().leader; }
+  function shortName(m) { return (m && (m.short || C.defaultShort(m.name))) || '?'; }
   function initials(n) { return String(n || '?').split(/\s+/).map(function (w) { return w[0]; }).join('').slice(0, 2).toUpperCase(); }
-  function avatar(m, size) { return '<span class="av' + (size ? ' av-' + size : '') + '" style="background:' + esc(m.color || '#999') + '">' + esc(initials(m.name)) + '</span>'; }
+  function avatar(m, size) { var sh = shortName(m), t = sh.length <= 3 ? sh.toUpperCase() : initials(sh); return '<span class="av' + (size ? ' av-' + size : '') + '" style="background:' + esc(m.color || '#999') + '">' + esc(t) + '</span>'; }
   function T(type) { return C.TYPES[type] || {label: 'Event', emoji: '📌', work: 0}; }
   function evTitle(e) { return e.busy ? 'Busy' : (T(e.type).emoji + ' ' + e.title); }
   function evTime(e) { if (e.allDay) return 'All day'; return hm(sMs(e)) + ' – ' + hm(eMs(e)); }
@@ -85,7 +86,7 @@
     ai_unreadable: 'The AI reply was messy. Please try that photo again.', no_api_key: 'Photo reading is not set up on the server yet.',
     no_credit: 'The AI account has no credit left. Tell your leader.', rate_limited: 'AI is busy. Try again in a minute.', ai_unavailable: 'AI is not available right now.',
     bad_api_key: 'The AI key on the server is wrong.', too_long: 'An event can be at most 14 days.', leader_only: 'Only leaders can do that.',
-    network: 'No connection. Check your internet.', too_many: 'Too many events at once (max 300).', cannot_close: 'Only open / present / follow-up / closing can be closed.', bad_noc: 'NOC must be 1 to 50 cases.', plan_needed: 'Please type the plan name for each case.', mode_needed: 'Please pick M / Q / HY / Y for each case.', cases_needed: 'Add at least one case.', not_team_event: 'Attendance is only for whole-team events.', ended: 'This event has ended.', cancelled: 'This event was cancelled.', already_linked: 'One of you is already linked to someone else.', no_request: 'That request is no longer there.', not_linked: 'You are not linked.'
+    network: 'No connection. Check your internet.', too_many: 'Too many events at once (max 300).', cannot_close: 'Only open / present / follow-up / closing can be closed.', bad_noc: 'NOC must be 1 to 50 cases.', plan_needed: 'Please type the plan name for each case.', mode_needed: 'Please pick M / Q / HY / Y for each case.', cases_needed: 'Add at least one case.', not_team_event: 'Attendance is only for whole-team events.', ended: 'This event has ended.', cancelled: 'This event was cancelled.', already_linked: 'One of you is already linked to someone else.', no_request: 'That request is no longer there.', not_linked: 'You are not linked.', short_taken: 'Someone already uses that short name. Try another.', bad_short: 'Use letters and numbers only.'
   };
   function errText(e) { return ERR[e && e.code] || ERR[e && e.message] || 'Something went wrong (' + ((e && (e.code || e.message)) || 'error') + ')'; }
 
@@ -329,11 +330,18 @@
   function filterChips() {
     var my = me().id, list = members().filter(function (m) { return m.active !== false; });
     var p = me().partner, merged = S.filter.indexOf('me+') === 0 ? S.filter.slice(3) : '';
-    var extra = []; if (p && mem(p).active !== false) extra.push(['me+' + p, '💑 Me + ' + mem(p).name.split(' ')[0], mem(p).color]);
-    if (merged && merged !== p) extra.push([S.filter, 'Me + ' + mem(merged).name.split(' ')[0], mem(merged).color]);
+    // merged chips: partner (always), kept ones (📌, remove with ×), and the one just picked (📌 keep or × close)
+    var kept = LS.get('merges', []).filter(function (id) { return id !== p && members().some(function (m) { return m.id === id && m.active !== false; }); });
+    var extra = []; if (p && mem(p).active !== false) extra.push(['me+' + p, '💑 Me + ' + shortName(mem(p)), mem(p).color]);
+    kept.forEach(function (id) { extra.push(['me+' + id, 'Me + ' + shortName(mem(id)), mem(id).color, 'kept', id]); });
+    if (merged && merged !== p && kept.indexOf(merged) < 0) extra.push([S.filter, 'Me + ' + shortName(mem(merged)), mem(merged).color, 'temp', merged]);
     extra.push(['pick', 'Me + …', '#9CA3AF']);
-    var chips = [['all', 'Everyone', '#14213D'], ['me', 'Me', me().color]].concat(extra, list.filter(function (m) { return m.id !== my; }).map(function (m) { return [m.id, m.name.split(' ')[0], m.color]; }));
-    return '<div class="chips">' + chips.map(function (c) { return '<button class="chip' + (S.filter === c[0] ? ' on' : '') + '" data-act="filter" data-id="' + c[0] + '"><i style="background:' + esc(c[2]) + '"></i>' + esc(c[1]) + '</button>'; }).join('') + '</div>';
+    var chips = [['all', 'Everyone', '#14213D'], ['me', 'Me', me().color]].concat(extra, list.filter(function (m) { return m.id !== my; }).map(function (m) { return [m.id, shortName(m), m.color]; }));
+    return '<div class="chips">' + chips.map(function (c) {
+      var tools = c[3] === 'temp' ? '<span class="ctool" data-act="merge-keep" data-id="' + c[4] + '" title="Keep this chip">📌</span><span class="ctool" data-act="merge-x" data-id="' + c[4] + '" title="Close">×</span>'
+        : c[3] === 'kept' ? '<span class="ctool" data-act="merge-x" data-id="' + c[4] + '" title="Remove">×</span>' : '';
+      return '<button class="chip' + (S.filter === c[0] ? ' on' : '') + (tools ? ' has-tools' : '') + '" data-act="filter" data-id="' + c[0] + '"><i style="background:' + esc(c[2]) + '"></i>' + esc(c[1]) + tools + '</button>';
+    }).join('') + '</div>';
   }
   function pickMerge() {
     var list = members().filter(function (m) { return m.id !== me().id && m.active !== false; });
@@ -342,7 +350,7 @@
   }
   function partnerCard() {
     var m = me(), asks = (m.partnerAsks || []).filter(function (id) { return mem(id).active !== false; }), body;
-    if (m.partner) body = '<p>💑 Linked with ' + avatar(mem(m.partner), 'sm') + ' <b>' + esc(mem(m.partner).name) + '</b>. You see each other\'s private events; the team still sees Busy.</p><div class="row"><button class="btn ghost" data-act="filter" data-id="me+' + m.partner + '" onclick="location.hash=\'#/\'">View Me + ' + esc(mem(m.partner).name.split(' ')[0]) + '</button><button class="btn danger ghost" data-act="partner" data-do="unlink">Unlink</button></div>';
+    if (m.partner) body = '<p>💑 Linked with ' + avatar(mem(m.partner), 'sm') + ' <b>' + esc(mem(m.partner).name) + '</b>. You see each other\'s private events; the team still sees Busy.</p><div class="row"><button class="btn ghost" data-act="filter" data-id="me+' + m.partner + '" onclick="location.hash=\'#/\'">View Me + ' + esc(shortName(mem(m.partner))) + '</button><button class="btn danger ghost" data-act="partner" data-do="unlink">Unlink</button></div>';
     else {
       body = asks.map(function (id) { return '<div class="ask">' + avatar(mem(id), 'sm') + ' <b>' + esc(mem(id).name) + '</b> wants to link calendars with you.<div class="row"><button class="btn primary" data-act="partner" data-do="accept" data-id="' + id + '">Accept</button><button class="btn ghost" data-act="partner" data-do="decline" data-id="' + id + '">Decline</button></div></div>'; }).join('');
       if (m.partnerReq) body += '<p class="muted">Waiting for <b>' + esc(mem(m.partnerReq).name) + '</b> to accept.</p><button class="btn ghost" data-act="partner" data-do="cancel">Cancel request</button>';
@@ -416,12 +424,12 @@
         var l = (s - a - H0 * 3600e3) / span * 100, w = Math.max(1.6, (en - s) / span * 100), o = mem(e.ownerId);
         return '<a class="blk' + (e.busy ? ' busy' : '') + (pendingFor(e, m.id) ? ' pend' : '') + '" href="#/e/' + e.id + '" style="left:' + l + '%;width:' + w + '%;--c:' + esc(o.color) + '" title="' + esc(evTime(e) + ' ' + evTitle(e)) + '">' + (e.all ? rsvpMark(e, m.id) : '') + esc(e.busy ? 'Busy' : T(e.type).emoji + ' ' + e.title) + '</a>';
       }).join('');
-      return '<div class="tr"><div class="tn">' + avatar(m, 'xs') + '<span>' + esc(m.id === my ? 'Me' : m.name.split(' ')[0]) + '</span></div><div class="tl">' +
+      return '<div class="tr"><div class="tn">' + avatar(m, 'xs') + '<span>' + esc(m.id === my ? 'Me' : shortName(m)) + '</span></div><div class="tl">' +
         (allDay.length ? '<span class="allday">' + esc(allDay.map(function (e) { return e.busy ? 'Busy (all day)' : e.title; }).join(', ')) + '</span>' : '') + blocks + '</div></div>';
     }).join('');
     var hours = ''; for (var h = H0; h < H1; h += 2) hours += '<span style="left:' + ((h - H0) / (H1 - H0) * 100) + '%">' + ((h % 12) || 12) + (h < 12 ? 'a' : 'p') + '</span>';
     var nowLine = isToday && now > a + H0 * 3600e3 && now < a + H1 * 3600e3 ? '<i class="now" style="left:calc(var(--nw) + (100% - var(--nw)) * ' + ((now - a - H0 * 3600e3) / span).toFixed(4) + ')"></i>' : '';
-    return (isToday ? '<p class="freenow"><b>Free now:</b> ' + (freeNow.length ? freeNow.map(function (m) { return esc(m.id === my ? 'Me' : m.name.split(' ')[0]); }).join(', ') : 'nobody') + ' <span class="muted">· busy: ' + busyNow.length + '</span></p>' : '') +
+    return (isToday ? '<p class="freenow"><b>Free now:</b> ' + (freeNow.length ? freeNow.map(function (m) { return esc(m.id === my ? 'Me' : shortName(m)); }).join(', ') : 'nobody') + ' <span class="muted">· busy: ' + busyNow.length + '</span></p>' : '') +
       '<div class="team"><div class="tr th"><div class="tn"></div><div class="tl hours">' + hours + '</div></div><div class="rows">' + rows + nowLine + '</div></div>' +
       '<p class="tiny muted">Grey = private (busy, no details). Tap a block to see it. Blank = free.</p>';
   }
@@ -431,7 +439,7 @@
     var e = events().filter(function (x) { return x.id === id; })[0];
     if (!e) return topbar('Event', {back: '#/'}) + '<main><p class="empty">This event is not in the dates loaded, or it was deleted.</p></main>' + tabs('cal');
     var o = mem(e.ownerId), mine = e.ownerId === me().id;
-    if (e.busy) return topbar('Busy', {back: '#/'}) + '<main><div class="card evhead" style="--c:' + esc(o.color) + '"><h2>🔒 Busy</h2><p>' + esc(dayLabel(dayKey(sMs(e)), true)) + '<br>' + esc(evTime(e)) + '</p><p>' + avatar(o, 'sm') + ' ' + esc(o.name) + '</p><p class="muted">This is private. Only ' + esc(o.name.split(' ')[0]) + ' can see the details.</p></div></main>' + tabs('cal');
+    if (e.busy) return topbar('Busy', {back: '#/'}) + '<main><div class="card evhead" style="--c:' + esc(o.color) + '"><h2>🔒 Busy</h2><p>' + esc(dayLabel(dayKey(sMs(e)), true)) + '<br>' + esc(evTime(e)) + '</p><p>' + avatar(o, 'sm') + ' ' + esc(o.name) + '</p><p class="muted">This is private. Only ' + esc(shortName(o)) + ' can see the details.</p></div></main>' + tabs('cal');
     var thread = (S.data.msgs || []).filter(function (m) { return m.to === 'ev:' + e.id; });
     var cheers = thread.filter(function (m) { return m.kind === 'cheer'; }), comments = thread.filter(function (m) { return m.kind !== 'cheer' && m.kind !== 'rsvp'; });
     var iCheered = cheers.some(function (m) { return m.from === me().id; });
@@ -451,11 +459,11 @@
       '<main><div class="card evhead" style="--c:' + esc(o.color) + '"><h2>' + esc(T(e.type).emoji + ' ' + e.title) + '</h2>' +
       '<p>' + esc(dayLabel(dayKey(sMs(e)), true)) + (e.allDay && e.end !== e.start ? ' → ' + esc(dayLabel(String(e.end).slice(0, 10), true)) : '') + '<br>' + esc(evTime(e)) + '</p>' +
       (e.place ? '<p>📍 ' + esc(e.place) + '</p>' : '') +
-      '<p>' + avatar(o, 'sm') + ' ' + esc(o.name) + ((e.with || []).length ? ' <span class="muted">with</span> ' + e.with.map(function (id) { return avatar(mem(id), 'sm') + ' ' + esc(mem(id).name.split(' ')[0]); }).join(' ') : '') + '</p>' +
+      '<p>' + avatar(o, 'sm') + ' ' + esc(o.name) + ((e.with || []).length ? ' <span class="muted">with</span> ' + e.with.map(function (id) { return avatar(mem(id), 'sm') + ' ' + esc(shortName(mem(id))); }).join(' ') : '') + '</p>' +
       (e.notes ? '<p class="notes">' + esc(e.notes) + '</p>' : '') +
-      '<p class="muted tiny">' + (e.all ? '👥 Whole-team event: on everyone\'s calendar.' : e.vis === 'private' ? '🔒 Only ' + (mine ? 'you' : o.name.split(' ')[0]) + (e.with.length ? ' and the people tagged' : '') + ' can see this. Others see "Busy".' + (isWork(e) ? ' It still counts in the activity numbers.' : '') : '👥 The whole team can see this.') + (e.type === 'approach' ? ' · ' + (e.count || 1) + ' new friend(s)' : '') + '</p></div>' +
+      '<p class="muted tiny">' + (e.all ? '👥 Whole-team event: on everyone\'s calendar.' : e.vis === 'private' ? '🔒 Only ' + (mine ? 'you' : shortName(o)) + (e.with.length ? ' and the people tagged' : '') + ' can see this. Others see "Busy".' + (isWork(e) ? ' It still counts in the activity numbers.' : '') : '👥 The whole team can see this.') + (e.type === 'approach' ? ' · ' + (e.count || 1) + ' new friend(s)' : '') + '</p></div>' +
       out + (e.all ? attendCard(e) : (e.with || []).length ? inviteCard(e) : '') +
-      '<div class="cheers"><button class="cheer' + (iCheered ? ' on' : '') + '" data-act="cheer" data-id="' + e.id + '">👏 ' + (cheers.length || 'Cheer') + '</button><span class="muted tiny">' + esc(cheers.map(function (m) { return mem(m.from).name.split(' ')[0]; }).join(', ')) + '</span>' +
+      '<div class="cheers"><button class="cheer' + (iCheered ? ' on' : '') + '" data-act="cheer" data-id="' + e.id + '">👏 ' + (cheers.length || 'Cheer') + '</button><span class="muted tiny">' + esc(cheers.map(function (m) { return shortName(mem(m.from)); }).join(', ')) + '</span>' +
       '</div>' +
       '<section class="comments"><h4>Comments</h4><div data-live="comments">' + commentList(comments) + '</div>' +
       '<form class="composer" data-act="comment" data-id="' + e.id + '"><input name="t" maxlength="1000" placeholder="Write a comment…" autocomplete="off"><button class="btn primary">Send</button></form>' +
@@ -464,11 +472,11 @@
   /* invitation: the invited person accepts / rejects; everyone on the event sees who answered */
   function inviteCard(e) {
     var a = ansOf(e), my = me().id, mineInv = invited(e, my), open = eMs(e) > Date.now() && e.out !== 'cancel';
-    var who = function (id) { var s = a[id] === 'yes' ? '✅' : a[id] === 'no' ? '❌' : '⏳'; return '<span class="who">' + s + ' ' + avatar(mem(id), 'xs') + esc(id === my ? 'Me' : mem(id).name.split(' ')[0]) + '</span>'; };
+    var who = function (id) { var s = a[id] === 'yes' ? '✅' : a[id] === 'no' ? '❌' : '⏳'; return '<span class="who">' + s + ' ' + avatar(mem(id), 'xs') + esc(id === my ? 'Me' : shortName(mem(id))) + '</span>'; };
     var head = '';
     if (mineInv && open) head = a[my] === 'yes' ? '<p class="ok-t">✅ You accepted.</p><button class="link" data-act="invite" data-id="' + e.id + '" data-v="no">Can\'t make it after all? Reject</button>'
       : a[my] === 'no' ? '<p class="muted">❌ You rejected this. It is hidden from your calendar.</p><button class="link" data-act="invite" data-id="' + e.id + '" data-v="yes">Accept after all</button>'
-      : '<p><b>' + esc(mem(e.ownerId).name.split(' ')[0]) + '</b> invited you.</p><div class="outs"><button class="out" data-act="invite" data-id="' + e.id + '" data-v="yes">✅ Accept</button><button class="out grey" data-act="invite" data-id="' + e.id + '" data-v="no">❌ Reject</button></div>';
+      : '<p><b>' + esc(shortName(mem(e.ownerId))) + '</b> invited you.</p><div class="outs"><button class="out" data-act="invite" data-id="' + e.id + '" data-v="yes">✅ Accept</button><button class="out grey" data-act="invite" data-id="' + e.id + '" data-v="no">❌ Reject</button></div>';
     return '<div class="card attend"><h4>Invited</h4>' + head + '<div class="alist">' + (e.with || []).map(who).join('') + '</div><p class="tiny muted">✅ accepted · ⏳ not answered yet · ❌ rejected. Everyone still on the event can comment and gets comment pop-ups.</p></div>';
   }
   function invitesScreen() {
@@ -483,7 +491,7 @@
   function myAnswer(e) { var at = attendOf(e), my = me().id; return at.yes.indexOf(my) >= 0 ? 'yes' : at.no.indexOf(my) >= 0 ? 'no' : ''; }
   function attendCard(e) {
     var at = attendOf(e), mine = myAnswer(e), open = eMs(e) > Date.now() && e.out !== 'cancel';
-    var names = function (ids) { return ids.length ? ids.map(function (id) { return '<span class="who">' + avatar(mem(id), 'xs') + esc(id === me().id ? 'Me' : mem(id).name.split(' ')[0]) + '</span>'; }).join('') : '<span class="muted tiny">nobody</span>'; };
+    var names = function (ids) { return ids.length ? ids.map(function (id) { return '<span class="who">' + avatar(mem(id), 'xs') + esc(id === me().id ? 'Me' : shortName(mem(id))) + '</span>'; }).join('') : '<span class="muted tiny">nobody</span>'; };
     return '<div class="card attend"><h4>Attendance</h4>' +
       (open ? '<div class="outs"><button class="out' + (mine === 'yes' ? ' on' : '') + '" data-act="rsvp" data-id="' + e.id + '" data-v="' + (mine === 'yes' ? '' : 'yes') + '">✅ Going</button><button class="out grey' + (mine === 'no' ? ' on' : '') + '" data-act="rsvp" data-id="' + e.id + '" data-v="' + (mine === 'no' ? '' : 'no') + '">❌ Can\'t go</button></div>' + (!mine ? '<p class="tiny warn-t">You haven\'t answered yet.</p>' : '') : '') +
       '<div class="alist"><b>✅ Going (' + at.yes.length + ')</b>' + names(at.yes) + '</div>' +
@@ -496,7 +504,7 @@
     var ids = C.commentTargets(e, comments, me().id, members());
     if (e.all) return 'Everyone in REDEFINE gets a pop-up for comments here.';
     if (!ids.length) return 'Nobody else gets a pop-up yet (no one has commented).';
-    return 'Only ' + ids.map(function (id) { return mem(id).name.split(' ')[0]; }).join(', ') + ' will get a pop-up.';
+    return 'Only ' + ids.map(function (id) { return shortName(mem(id)); }).join(', ') + ' will get a pop-up.';
   }
   function caseList(e) {
     if (!e.cases || !e.cases.length) return '';
@@ -528,7 +536,7 @@
       '<div class="lbl">Who can see it?</div><div class="vis"><button type="button" class="vb' + (e.vis !== 'private' ? ' on' : '') + '" data-v="team">👥 Team</button><button type="button" class="vb' + (e.vis === 'private' ? ' on' : '') + '" data-v="private">🔒 Only me</button></div>' +
       '<p class="tiny muted" id="vis-help"></p>' +
       '<label class="switch" id="all-row"><input type="checkbox" name="all"' + (e.all ? ' checked' : '') + '> 👥 Everyone\'s in it (team meeting, training, roadshow)</label><p class="tiny muted" id="all-help">Shows on every member\'s calendar. Everyone answers Going / Can\'t go, gets a pop-up for comments, and a reminder 1 hour before.</p>' +
-      '<div class="lbl">Invite (optional): they accept or reject</div><div class="withpick">' + members().filter(function (m) { return m.id !== me().id && m.active !== false; }).map(function (m) { return '<button type="button" class="wp' + ((e.with || []).indexOf(m.id) >= 0 ? ' on' : '') + '" data-id="' + m.id + '">' + avatar(m, 'xs') + esc(m.name.split(' ')[0]) + '</button>'; }).join('') + '</div>' +
+      '<div class="lbl">Invite (optional): they accept or reject</div><div class="withpick">' + members().filter(function (m) { return m.id !== me().id && m.active !== false; }).map(function (m) { return '<button type="button" class="wp' + ((e.with || []).indexOf(m.id) >= 0 ? ' on' : '') + '" data-id="' + m.id + '">' + avatar(m, 'xs') + esc(shortName(m)) + '</button>'; }).join('') + '</div>' +
       '<label>Remind me<select name="remind">' + [['', 'No reminder'], ['0', 'At start'], ['10', '10 min before'], ['30', '30 min before'], ['60', '1 hour before'], ['120', '2 hours before'], ['1440', '1 day before']].map(function (r) { return '<option value="' + r[0] + '"' + (String(e.remind) === r[0] ? ' selected' : '') + '>' + r[1] + '</option>'; }).join('') + '</select></label>' +
       '<div class="row end sticky-actions">' + (!isNew ? '<button type="button" class="btn danger ghost" data-x="del">Delete</button>' : '') + '<button class="btn primary big" type="submit">' + (isNew ? 'Add to calendar' : 'Save') + '</button></div></form>';
     modal(html, function (sh) {
@@ -539,7 +547,7 @@
         sh.querySelector('.count-row').hidden = type !== 'approach';
         sh.querySelector('#all-row').hidden = sh.querySelector('#all-help').hidden = vis === 'private';
         var ad = f.allDay.checked; sh.querySelectorAll('.t-only').forEach(function (x) { x.hidden = ad; }); sh.querySelectorAll('.d-only').forEach(function (x) { x.hidden = !ad; });
-        sh.querySelector('#vis-help').textContent = vis === 'private' ? (type && T(type).work ? 'Team sees a grey "Busy" block. It still counts in your activity numbers (no details shown).' : 'Team sees a grey "Busy" block only.') + (me().partner ? ' Your linked partner ' + mem(me().partner).name.split(' ')[0] + ' sees the details.' : '') : 'Everyone in REDEFINE can see the title, time and place.';
+        sh.querySelector('#vis-help').textContent = vis === 'private' ? (type && T(type).work ? 'Team sees a grey "Busy" block. It still counts in your activity numbers (no details shown).' : 'Team sees a grey "Busy" block only.') + (me().partner ? ' Your linked partner ' + shortName(mem(me().partner)) + ' sees the details.' : '') : 'Everyone in REDEFINE can see the title, time and place.';
       }
       f.title.addEventListener('input', function () {
         var d = C.detectType(f.title.value);
@@ -647,7 +655,7 @@
     var html = topbar('Comments') + '<main class="chatlist"><p class="tiny muted">Comments and cheers meant for you: on your events, on events you commented on, and on whole-team events.</p>' +
       (list.length ? list.map(function (m) {
         var e = evById(m.to.slice(3)), w = mem(m.from);
-        return '<a class="thread' + (m.created > since ? ' new' : '') + '" href="#/e/' + e.id + '">' + avatar(w, 'md') + '<span class="tb"><b>' + esc(w.name.split(' ')[0]) + (m.kind === 'cheer' ? ' cheered 👏' : '') + ' · ' + esc(T(e.type).emoji + ' ' + e.title) + '</b><small>' + (m.kind === 'cheer' ? esc(dayLabel(dayKey(sMs(e))) + ' · ' + evTime(e)) : esc(m.text)) + '</small></span><span class="tm">' + ago(m.created) + (m.created > since ? '<i class="dot"></i>' : '') + '</span></a>';
+        return '<a class="thread' + (m.created > since ? ' new' : '') + '" href="#/e/' + e.id + '">' + avatar(w, 'md') + '<span class="tb"><b>' + esc(shortName(w)) + (m.kind === 'cheer' ? ' cheered 👏' : '') + ' · ' + esc(T(e.type).emoji + ' ' + e.title) + '</b><small>' + (m.kind === 'cheer' ? esc(dayLabel(dayKey(sMs(e))) + ' · ' + evTime(e)) : esc(m.text)) + '</small></span><span class="tm">' + ago(m.created) + (m.created > since ? '<i class="dot"></i>' : '') + '</span></a>';
       }).join('') : '<p class="empty">No comments yet. Open any event to cheer 👏 or comment.</p>') + '</main>';
     markRead();
     return html + tabs('feed');
@@ -692,7 +700,7 @@
       (lead ? '<th>Avg case</th><th>NOC/P</th><th>O/A</th><th>P/O</th><th>F/P</th><th>Not conf.</th><th>Last seen</th>' : '') + '</tr></thead><tbody>' +
       rows.map(function (x, i) {
         var s = x.s, q = C.ratios(s), you = x.m.id === my;
-        return '<tr class="' + (you ? 'you' : '') + '"><td>' + (i + 1) + '</td><td class="l">' + avatar(x.m, 'xs') + ' ' + esc(you ? 'Me' : x.m.name.split(' ')[0]) + '</td><td>' + s.A + '</td><td>' + s.O + '</td><td>' + s.P + '</td><td>' + s.F + '</td><td>' + s.recruit + '</td><td class="sum">' + actTotal(s) + '</td><td>' + s.C + '</td><td class="anpc">' + (s.anp ? money(s.anp) : '–') + '</td>' +
+        return '<tr class="' + (you ? 'you' : '') + '"><td>' + (i + 1) + '</td><td class="l">' + avatar(x.m, 'xs') + ' ' + esc(you ? 'Me' : shortName(x.m)) + '</td><td>' + s.A + '</td><td>' + s.O + '</td><td>' + s.P + '</td><td>' + s.F + '</td><td>' + s.recruit + '</td><td class="sum">' + actTotal(s) + '</td><td>' + s.C + '</td><td class="anpc">' + (s.anp ? money(s.anp) : '–') + '</td>' +
           (lead ? '<td>' + (q.M == null ? '–' : rm(q.M)) + '</td><td>' + pct(q.CP) + '</td><td>' + pct(q.OA) + '</td><td>' + pct(q.PO) + '</td><td>' + pct(q.FP) + '</td><td class="' + (s.unconfirmed > 3 ? 'warn-t' : '') + '">' + s.unconfirmed + '</td><td class="tiny">' + (x.m.seen ? ago(x.m.seen) : 'never') + '</td>' : '') + '</tr>';
       }).join('');
     html += '<tr class="tot"><td></td><td class="l">Team total</td><td>' + tot.A + '</td><td>' + tot.O + '</td><td>' + tot.P + '</td><td>' + tot.F + '</td><td>' + tot.recruit + '</td><td class="sum">' + actTotal(tot) + '</td><td>' + tot.C + '</td><td class="anpc">' + money(tot.anp) + '</td>' + (lead ? '<td>' + (tq.M == null ? '–' : rm(tq.M)) + '</td><td>' + pct(tq.CP) + '</td><td>' + pct(tq.OA) + '</td><td>' + pct(tq.PO) + '</td><td>' + pct(tq.FP) + '</td><td>' + tot.unconfirmed + '</td><td></td>' : '') + '</tr>';
@@ -724,7 +732,7 @@
     var list = evs.filter(function (e) { return e.out === 'closed' && sMs(e) >= r.from && sMs(e) < r.to && members().some(function (m) { return m.id === e.ownerId && m.active !== false; }); })
       .sort(function (x, y) { return sMs(x) - sMs(y); }), lines = [], total = 0;
     list.forEach(function (e) {
-      var p = P(sMs(e)), who = mem(e.ownerId).name.split(' ')[0], cs = e.cases && e.cases.length ? e.cases : [{plan: '(plan not entered)', anp: e.anp || '', mode: '?'}];
+      var p = P(sMs(e)), who = shortName(mem(e.ownerId)), cs = e.cases && e.cases.length ? e.cases : [{plan: '(plan not entered)', anp: e.anp || '', mode: '?'}];
       if (!(e.cases && e.cases.length) && (e.noc || 1) > 1) for (var k = 1; k < e.noc; k++) cs.push({plan: '(plan not entered)', anp: '', mode: '?'});
       cs.forEach(function (c) {
         var has = c.anp !== '' && c.anp != null && +c.anp > 0; if (has) total += +c.anp;
@@ -773,6 +781,7 @@
       : perm === 'denied' ? '<p class="warn-t">Notifications are blocked for this app. Turn them on in your phone Settings → Notifications.</p>'
       : '<p class="muted">Get a WhatsApp-style pop-up for comments on your events, cheers, team wins and event reminders.</p><button class="btn primary" data-act="push">🔔 Turn on notifications</button>';
     return topbar('Me') + '<main class="me"><div class="card who">' + avatar(m, 'lg') + '<div><h3>' + esc(m.name) + '</h3><p class="muted">' + (m.leader ? '⭐ Leader' : 'Agent') + ' · REDEFINE</p></div></div>' +
+      '<div class="card"><h4>My short name</h4><p class="tiny muted">What the team sees on chips, Team day, attendance and the close case list. Avoid surnames, e.g. KJ, MJ, Rex.</p><div class="row"><input id="shortin" maxlength="12" value="' + esc(me().short || '') + '" placeholder="e.g. KJ" style="flex:1;min-width:120px"><button class="btn primary" data-act="short">Save</button></div>' + (!me().shortSet ? '<p class="tiny warn-t">Suggested from your name. Change it if you like, then tap Save.</p>' : '') + '</div>' +
       '<div class="card"><h4>My colour</h4><div class="colors">' + C.COLORS.map(function (c) { return '<button class="col' + (c === m.color ? ' on' : '') + '" style="background:' + c + '" data-act="color" data-c="' + c + '" aria-label="colour ' + c + '"></button>'; }).join('') + '</div></div>' +
       '<div class="card"><h4>Notifications</h4>' + push + '</div>' +
       partnerCard() +
@@ -939,6 +948,8 @@
     if (a === 'close-modal') return closeModal();
     if (a === 'filter' && b.dataset.id === 'pick') return pickMerge();
     if (a === 'filter') { S.filter = b.dataset.id; LS.set('filter', S.filter); return render(); }
+    if (a === 'merge-keep') { var mk = LS.get('merges', []); if (mk.indexOf(b.dataset.id) < 0) mk.push(b.dataset.id); LS.set('merges', mk.slice(-6)); toast('Kept. It stays on your chips.', 'good'); return render(); }
+    if (a === 'merge-x') { LS.set('merges', LS.get('merges', []).filter(function (x) { return x !== b.dataset.id; })); if (S.filter === 'me+' + b.dataset.id) { S.filter = 'me'; LS.set('filter', 'me'); } return render(); }
     if (a === 'merge') { closeModal(); S.filter = 'me+' + b.dataset.id; LS.set('filter', S.filter); return render(); }
     if (a === 'partner') {
       var pa = b.dataset.do, pid = b.dataset.id || (document.getElementById('ptn') || {}).value;
@@ -972,6 +983,7 @@
     if (a === 'pushoff') return api('pushoff', {pushToken: LS.get('pushToken', '')}).then(function () { LS.del('pushToken'); toast('Pop-ups off for this phone'); render(); });
     if (a === 'install') return modal(installHelp(false));
     if (a === 'color') return send('profile', {color: b.dataset.c});
+    if (a === 'short') { var sv = (document.getElementById('shortin') || {}).value || ''; if (!sv.trim()) return toast('Type a short name first.', 'bad'); return send('profile', {short: sv.trim()}, 'Saved: the team now sees you as ' + sv.trim()); }
     if (a === 'signout') return confirmBox('Sign out?', 'You will need the team code, your name and PIN to sign in again on this phone.', 'Sign out', true).then(function (y) { if (y) api('signout', {pushToken: LS.get('pushToken', '')}).catch(function () {}).then(function () { signOutLocal(); }); });
     if (a === 'mem') {
       var who = mem(b.dataset.id), d = b.dataset.do;
