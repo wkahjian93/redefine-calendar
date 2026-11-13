@@ -300,3 +300,7 @@ main { padding: 12px 14px; }
 /* team events not answered Going yet: light */
 .bar.team.pend, .blk.team.pend, .adstrip.team.pend { opacity: .38; outline: none; }
 .ev.team.pend { opacity: .5; }
+/* notes box: always readable - light box needs dark text, also inside the black team card */
+.notes { color: var(--text); }
+.evhead.team .notes, .evhead.team p.notes { background: #F3F4F6; color: #111827; font-weight: 500; }
+@media (prefers-color-scheme: dark) { .evhead.team .notes, .evhead.team p.notes { background: #1F2937; color: #F9FAFB; } }
