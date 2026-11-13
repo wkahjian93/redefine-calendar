@@ -7,7 +7,7 @@
   var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   var MONTH = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   var DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  var APP_VERSION = '5';
+  var APP_VERSION = '6';
   var H8 = 8 * 3600e3, DAY = 864e5, SELLING = {approach: 1, open: 1, present: 1, followup: 1, close: 1, recruit: 1};
 
   /* ---------- storage (each phone) ---------- */
@@ -57,7 +57,8 @@
   function events() { return (S.data && S.data.events) || []; }
   function filtered() {
     var f = S.filter, id = me().id;
-    return events().filter(function (e) { return f === 'all' || (f === 'me' ? involves(e, id) : involves(e, f)); });
+    var pair = f.indexOf('me+') === 0 ? f.slice(3) : '';   // merged view: me + one teammate (e.g. husband & wife)
+    return events().filter(function (e) { return f === 'all' || (f === 'me' ? involves(e, id) : pair ? involves(e, id) || involves(e, pair) : involves(e, f)); });
   }
   function onDay(list, k) {
     var a = keyMs(k), b = a + DAY;
@@ -76,7 +77,7 @@
     ai_unreadable: 'The AI reply was messy. Please try that photo again.', no_api_key: 'Photo reading is not set up on the server yet.',
     no_credit: 'The AI account has no credit left. Tell your leader.', rate_limited: 'AI is busy. Try again in a minute.', ai_unavailable: 'AI is not available right now.',
     bad_api_key: 'The AI key on the server is wrong.', too_long: 'An event can be at most 14 days.', leader_only: 'Only leaders can do that.',
-    network: 'No connection. Check your internet.', too_many: 'Too many events at once (max 300).', cannot_close: 'Only open / present / follow-up / closing can be closed.', bad_noc: 'NOC must be 1 to 50 cases.', plan_needed: 'Please type the plan name for each case.', mode_needed: 'Please pick M / Q / HY / Y for each case.', cases_needed: 'Add at least one case.', not_team_event: 'Attendance is only for whole-team events.', ended: 'This event has ended.', cancelled: 'This event was cancelled.'
+    network: 'No connection. Check your internet.', too_many: 'Too many events at once (max 300).', cannot_close: 'Only open / present / follow-up / closing can be closed.', bad_noc: 'NOC must be 1 to 50 cases.', plan_needed: 'Please type the plan name for each case.', mode_needed: 'Please pick M / Q / HY / Y for each case.', cases_needed: 'Add at least one case.', not_team_event: 'Attendance is only for whole-team events.', ended: 'This event has ended.', cancelled: 'This event was cancelled.', already_linked: 'One of you is already linked to someone else.', no_request: 'That request is no longer there.', not_linked: 'You are not linked.'
   };
   function errText(e) { return ERR[e && e.code] || ERR[e && e.message] || 'Something went wrong (' + ((e && (e.code || e.message)) || 'error') + ')'; }
 
@@ -319,8 +320,27 @@
   /* ---------- calendar ---------- */
   function filterChips() {
     var my = me().id, list = members().filter(function (m) { return m.active !== false; });
-    var chips = [['all', 'Everyone', '#14213D'], ['me', 'Me', me().color]].concat(list.filter(function (m) { return m.id !== my; }).map(function (m) { return [m.id, m.name.split(' ')[0], m.color]; }));
+    var p = me().partner, merged = S.filter.indexOf('me+') === 0 ? S.filter.slice(3) : '';
+    var extra = []; if (p && mem(p).active !== false) extra.push(['me+' + p, '💑 Me + ' + mem(p).name.split(' ')[0], mem(p).color]);
+    if (merged && merged !== p) extra.push([S.filter, 'Me + ' + mem(merged).name.split(' ')[0], mem(merged).color]);
+    extra.push(['pick', 'Me + …', '#9CA3AF']);
+    var chips = [['all', 'Everyone', '#14213D'], ['me', 'Me', me().color]].concat(extra, list.filter(function (m) { return m.id !== my; }).map(function (m) { return [m.id, m.name.split(' ')[0], m.color]; }));
     return '<div class="chips">' + chips.map(function (c) { return '<button class="chip' + (S.filter === c[0] ? ' on' : '') + '" data-act="filter" data-id="' + c[0] + '"><i style="background:' + esc(c[2]) + '"></i>' + esc(c[1]) + '</button>'; }).join('') + '</div>';
+  }
+  function pickMerge() {
+    var list = members().filter(function (m) { return m.id !== me().id && m.active !== false; });
+    modal('<h3>Merge my calendar with…</h3><p class="tiny muted">Shows your events and theirs together. Their private events still show as Busy unless you are linked partners (Me → Partner calendar).</p><div class="withpick">' +
+      list.map(function (m) { return '<button class="wp" data-act="merge" data-id="' + m.id + '">' + avatar(m, 'xs') + esc(m.name) + '</button>'; }).join('') + '</div><div class="row end"><button class="btn ghost" data-act="close-modal">Cancel</button></div>');
+  }
+  function partnerCard() {
+    var m = me(), asks = (m.partnerAsks || []).filter(function (id) { return mem(id).active !== false; }), body;
+    if (m.partner) body = '<p>💑 Linked with ' + avatar(mem(m.partner), 'sm') + ' <b>' + esc(mem(m.partner).name) + '</b>. You see each other\'s private events; the team still sees Busy.</p><div class="row"><button class="btn ghost" data-act="filter" data-id="me+' + m.partner + '" onclick="location.hash=\'#/\'">View Me + ' + esc(mem(m.partner).name.split(' ')[0]) + '</button><button class="btn danger ghost" data-act="partner" data-do="unlink">Unlink</button></div>';
+    else {
+      body = asks.map(function (id) { return '<div class="ask">' + avatar(mem(id), 'sm') + ' <b>' + esc(mem(id).name) + '</b> wants to link calendars with you.<div class="row"><button class="btn primary" data-act="partner" data-do="accept" data-id="' + id + '">Accept</button><button class="btn ghost" data-act="partner" data-do="decline" data-id="' + id + '">Decline</button></div></div>'; }).join('');
+      if (m.partnerReq) body += '<p class="muted">Waiting for <b>' + esc(mem(m.partnerReq).name) + '</b> to accept.</p><button class="btn ghost" data-act="partner" data-do="cancel">Cancel request</button>';
+      else body += '<p class="tiny muted">For husband & wife (or partners) who keep one calendar: once both agree, you see each other\'s private events and get a "Me + partner" view.</p><div class="row"><select id="ptn"><option value="">Choose your partner…</option>' + members().filter(function (x) { return x.id !== m.id && x.active !== false && !x.partner; }).map(function (x) { return '<option value="' + x.id + '">' + esc(x.name) + '</option>'; }).join('') + '</select><button class="btn primary" data-act="partner" data-do="request">Send request</button></div>';
+    }
+    return '<div class="card"><h4>Partner calendar</h4>' + body + '</div>';
   }
   function viewSwitch() {
     return '<div class="seg">' + [['month', 'Month'], ['day', 'Team day'], ['list', 'List']].map(function (v) { return '<button class="' + (S.view === v[0] ? 'on' : '') + '" data-act="view" data-v="' + v[0] + '">' + v[1] + '</button>'; }).join('') + '</div>';
@@ -493,7 +513,7 @@
         sh.querySelector('.count-row').hidden = type !== 'approach';
         sh.querySelector('#all-row').hidden = sh.querySelector('#all-help').hidden = vis === 'private';
         var ad = f.allDay.checked; sh.querySelectorAll('.t-only').forEach(function (x) { x.hidden = ad; }); sh.querySelectorAll('.d-only').forEach(function (x) { x.hidden = !ad; });
-        sh.querySelector('#vis-help').textContent = vis === 'private' ? (type && T(type).work ? 'Team sees a grey "Busy" block. It still counts in your activity numbers (no details shown).' : 'Team sees a grey "Busy" block only.') : 'Everyone in REDEFINE can see the title, time and place.';
+        sh.querySelector('#vis-help').textContent = vis === 'private' ? (type && T(type).work ? 'Team sees a grey "Busy" block. It still counts in your activity numbers (no details shown).' : 'Team sees a grey "Busy" block only.') + (me().partner ? ' Your linked partner ' + mem(me().partner).name.split(' ')[0] + ' sees the details.' : '') : 'Everyone in REDEFINE can see the title, time and place.';
       }
       f.title.addEventListener('input', function () {
         var d = C.detectType(f.title.value);
@@ -729,6 +749,7 @@
     return topbar('Me') + '<main class="me"><div class="card who">' + avatar(m, 'lg') + '<div><h3>' + esc(m.name) + '</h3><p class="muted">' + (m.leader ? '⭐ Leader' : 'Agent') + ' · REDEFINE</p></div></div>' +
       '<div class="card"><h4>My colour</h4><div class="colors">' + C.COLORS.map(function (c) { return '<button class="col' + (c === m.color ? ' on' : '') + '" style="background:' + c + '" data-act="color" data-c="' + c + '" aria-label="colour ' + c + '"></button>'; }).join('') + '</div></div>' +
       '<div class="card"><h4>Notifications</h4>' + push + '</div>' +
+      partnerCard() +
       '<div class="card"><h4>Move my calendar here</h4><p class="muted">Google Calendar, TimeTree, iPhone, or a paper diary: snap photos or screenshots and the AI copies them in. You check every row first.</p><a class="btn primary" href="#/import">⤓ Import calendar</a></div>' +
       (!standalone() ? '<div class="card"><h4>Install</h4><p class="muted">Add REDEFINE Calendar to your home screen so it opens like an app.</p><button class="btn ghost" data-act="install">How?</button></div>' : '') +
       (m.leader ? '<div class="card"><h4>Leader</h4><a class="btn ghost" href="#/members">👥 Manage members</a></div>' : '') +
@@ -889,7 +910,16 @@
     var b = ev.target.closest('[data-act]'); if (!b || b.tagName === 'FORM' || b.tagName === 'INPUT') return;
     var a = b.dataset.act, today = dayKey(Date.now());
     if (a === 'close-modal') return closeModal();
+    if (a === 'filter' && b.dataset.id === 'pick') return pickMerge();
     if (a === 'filter') { S.filter = b.dataset.id; LS.set('filter', S.filter); return render(); }
+    if (a === 'merge') { closeModal(); S.filter = 'me+' + b.dataset.id; LS.set('filter', S.filter); return render(); }
+    if (a === 'partner') {
+      var pa = b.dataset.do, pid = b.dataset.id || (document.getElementById('ptn') || {}).value;
+      if (pa === 'request' && !pid) return toast('Pick your partner first.', 'bad');
+      var pmsg = {request: 'Send a link request to ' + mem(pid).name + '? Once they accept, you both see each other\'s private events.', accept: 'Link calendars with ' + mem(pid).name + '? You will both see each other\'s private events.', unlink: 'Unlink from ' + mem(me().partner).name + '? Your private events become private again for both of you.'}[pa];
+      var go = function () { return send('partner', {action: pa, id: pid}, {request: 'Request sent 💌', accept: 'Linked 💑', decline: 'Declined', cancel: 'Request cancelled', unlink: 'Unlinked'}[pa]); };
+      return pmsg ? confirmBox('Partner calendar', pmsg, pa === 'unlink' ? 'Unlink' : 'Yes', pa === 'unlink').then(function (y) { if (y) go(); }) : go();
+    }
     if (a === 'view') { S.view = b.dataset.v; LS.set('view', S.view); if (S.view === 'day' && !S.dayView) S.dayView = S.sel || today; return render(); }
     if (a === 'sel') { S.sel = b.dataset.k; var p = P(keyMs(S.sel)); if (p.m !== S.cursor.m) { S.cursor = {y: p.y, m: p.m}; quietSync(); } return render(); }
     if (a === 'month') { var c = S.cursor, m = c.m + +b.dataset.d; S.cursor = {y: c.y + Math.floor(m / 12), m: (m + 12) % 12}; S.sel = dayKey(Date.UTC(S.cursor.y, S.cursor.m, 1) - H8 + 3600e3); render(); return quietSync(); }

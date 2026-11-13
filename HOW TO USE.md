@@ -31,6 +31,12 @@ You stay signed in on that phone for good, like WhatsApp. Only two things sign y
   - Under every comment box, the app shows exactly who will be notified.
 - **🔔 Comments tab:** every comment and cheer meant for you, newest first, with an unread count.
 
+## Partner calendar (husband & wife)
+- **Me → Partner calendar** → choose your partner → **Send request**. Your partner opens **Me** and taps **Accept**. Nothing is shared until both agree.
+- Once linked: a **💑 Me + partner** chip on the calendar shows both calendars together, and you each see the other's **private** events in full. Everyone else (leaders included) still sees Busy. Each person's activity numbers stay their own.
+- **Unlink** any time in the same card.
+- Just want to plan around a teammate? Tap the **Me + …** chip and pick anyone: their events show next to yours (their private events stay Busy).
+
 ## Team events (meeting, training, roadshow)
 - Create the event with **👥 Everyone's in it** switched on. It appears on everyone's calendar and everyone gets a pop-up asking **Going?**
 - Open the event and tap **✅ Going** or **❌ Can't go**. The card lists who is going, who can't, and who hasn't replied. On **Team day** each person's row shows ✅ / ❌ / ⏳.

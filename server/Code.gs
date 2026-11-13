@@ -9,7 +9,7 @@
    hash(text) -> hex, version(bump) -> number, ai(prompt, imageBase64) -> text, push(memberIds, note). */
 var CORE = (function () {
   var TABLES = {
-    members: ['id', 'name', 'pin', 'role', 'color', 'created', 'active'],
+    members: ['id', 'name', 'pin', 'role', 'color', 'created', 'active', 'partner', 'partnerReq'],
     sessions: ['token', 'memberId', 'created', 'lastSeen', 'device'],
     events: ['id', 'ownerId', 'title', 'type', 'start', 'end', 'allDay', 'place', 'notes', 'vis', 'with', 'remind', 'count', 'out', 'anp', 'source', 'remSent', 'created', 'updated', 'noc', 'all', 'cases'],
     msgs: ['id', 'to', 'from', 'kind', 'text', 'created'],
@@ -199,7 +199,7 @@ var CORE = (function () {
   }
 
   /* ---------- privacy: what each person may see ---------- */
-  function canSeeDetails(e, me) { return e.vis !== 'private' || e.ownerId === me.id || withList(e).indexOf(me.id) >= 0; }
+  function canSeeDetails(e, me) { return e.vis !== 'private' || e.ownerId === me.id || withList(e).indexOf(me.id) >= 0 || (!!me.partner && me.partner === e.ownerId); }
   function viewEvent(e, me, leader) {
     var work = TYPES[e.type] && TYPES[e.type].work;
     if (!canSeeDetails(e, me)) {
@@ -233,9 +233,10 @@ var CORE = (function () {
     var myDevices = store.load('devices').filter(function (d) { return d.memberId === me.id; }).length;
     return {
       ver: ver, now: nowIso(store),
-      me: {id: me.id, name: me.name, role: me.role, color: me.color, leader: leader, devices: myDevices},
+      me: {id: me.id, name: me.name, role: me.role, color: me.color, leader: leader, devices: myDevices, partner: me.partner || '', partnerReq: me.partnerReq || '',
+        partnerAsks: members.filter(function (m) { return m.partnerReq === me.id && String(m.active) !== 'false'; }).map(function (m) { return m.id; })},
       members: members.filter(function (m) { return String(m.active) !== 'false' || leader; }).map(function (m) {
-        var o = {id: m.id, name: m.name, role: m.role, color: m.color, active: String(m.active) !== 'false'}; if (leader) o.seen = seen[m.id] || ''; return o;
+        var o = {id: m.id, name: m.name, role: m.role, color: m.color, active: String(m.active) !== 'false', partner: m.partner || ''}; if (leader) o.seen = seen[m.id] || ''; return o;
       }),
       events: events, msgs: evc.map(function (m) { return {id: m.id, to: m.to, from: m.from, kind: m.kind, text: m.text, created: m.created}; })
     };
@@ -420,12 +421,47 @@ var CORE = (function () {
     return {anp: all.anp, anpCases: all.anpCases, noc: all.C};
   }
 
+  /* ---------- partner calendars (couples): both must agree; then each sees the other's private events ---------- */
+  function partner(q, store, me) {
+    var rows = store.load('members'), my = rows.filter(function (x) { return x.id === me.id; })[0], act = q.action;
+    var other = rows.filter(function (x) { return x.id === q.id && String(x.active) !== 'false'; })[0];
+    var tell = function (id, title, body) { store.push([id], {title: title, body: body, tag: 'partner', url: '#/me'}); };
+    if (act === 'request') {
+      if (!other || other.id === my.id) fail('not_found');
+      if (my.partner) fail('already_linked');
+      if (other.partnerReq === my.id) act = 'accept';   // they asked me first: just link
+      else { my.partnerReq = other.id; store.save('members', rows); store.version(true); tell(other.id, '💑 ' + my.name + ' wants to link calendars', 'Open Me to accept: you will see each other\'s private events.'); return {requested: other.id}; }
+    }
+    if (act === 'accept') {
+      if (!other || other.partnerReq !== my.id) fail('no_request');
+      if (my.partner || other.partner) fail('already_linked');
+      my.partner = other.id; other.partner = my.id; my.partnerReq = ''; other.partnerReq = '';
+      rows.forEach(function (x) { if (x.partnerReq === my.id || x.partnerReq === other.id) x.partnerReq = ''; });
+      store.save('members', rows); store.version(true); log(store, my.id, 'partner', my.name + ' + ' + other.name);
+      tell(other.id, '💑 ' + my.name + ' linked calendars with you', 'You now see each other\'s private events.');
+      return {partner: other.id};
+    }
+    if (act === 'decline') {
+      if (!other || other.partnerReq !== my.id) fail('no_request');
+      other.partnerReq = ''; store.save('members', rows); store.version(true); return {declined: other.id};
+    }
+    if (act === 'cancel') { my.partnerReq = ''; store.save('members', rows); store.version(true); return {cancelled: true}; }
+    if (act === 'unlink') {
+      if (!my.partner) fail('not_linked');
+      var p = rows.filter(function (x) { return x.id === my.partner; })[0];
+      if (p) { p.partner = ''; tell(p.id, '💑 ' + my.name + ' unlinked calendars', 'Private events are private again.'); }
+      my.partner = ''; store.save('members', rows); store.version(true); log(store, my.id, 'unpartner', my.name);
+      return {unlinked: true};
+    }
+    fail('bad_request');
+  }
+
   /* ---------- leader: members ---------- */
   function member(q, store, me, leader) {
     if (!leader) fail('leader_only');
     var rows = store.load('members'), m = rows.filter(function (x) { return x.id === q.id; })[0]; if (!m) fail('not_found');
     if (m.id === me.id) fail('not_yourself');
-    if (q.active === false) { m.active = 'false'; store.save('sessions', store.load('sessions').filter(function (s) { return s.memberId !== m.id; })); store.save('devices', store.load('devices').filter(function (d) { return d.memberId !== m.id; })); }
+    if (q.active === false) { rows.forEach(function (x) { if (x.partner === m.id) x.partner = ''; if (x.partnerReq === m.id) x.partnerReq = ''; }); m.partner = ''; m.partnerReq = ''; m.active = 'false'; store.save('sessions', store.load('sessions').filter(function (s) { return s.memberId !== m.id; })); store.save('devices', store.load('devices').filter(function (d) { return d.memberId !== m.id; })); }
     if (q.active === true) m.active = 'true';
     if (q.role === 'leader' || q.role === 'agent') m.role = q.role;
     store.save('members', rows); store.version(true); log(store, me.id, 'member', m.name + ' ' + JSON.stringify({active: q.active, role: q.role}));
@@ -585,7 +621,7 @@ var CORE = (function () {
   }
 
   var OPS = {sync: sync, save: saveEvent, del: delEvent, outcome: outcome, import: importEvents, send: send, delmsg: delMsg,
-    pushreg: pushReg, pushoff: pushOff, pushtest: pushTest, teamtotals: teamTotals, rsvp: rsvp, member: member, profile: profile, signout: signOut};
+    pushreg: pushReg, pushoff: pushOff, pushtest: pushTest, teamtotals: teamTotals, rsvp: rsvp, member: member, partner: partner, profile: profile, signout: signOut};
   function handle(q, store) {
     if (!q || typeof q !== 'object') fail('bad_request');
     if (q.op === 'signin') {
@@ -643,7 +679,7 @@ function doPost(e) {
 
 var GAS = (function () {
   var P = PropertiesService.getScriptProperties();
-  var cache = {}, outbox = [];
+  var cache = {}, outbox = [], headOk = {};
 
   function book() {
     var id = P.getProperty('SHEET_ID');
@@ -661,7 +697,10 @@ var GAS = (function () {
       s.getRange(1, 1, s.getMaxRows(), cols.length).setNumberFormat('@');
       var first = b.getSheetByName('Sheet1');
       if (first && b.getSheets().length > 1) b.deleteSheet(first);
+    } else if (!headOk[name]) {
+      if (s.getLastColumn() < cols.length || s.getRange(1, cols.length).getValue() !== cols[cols.length - 1]) s.getRange(1, 1, 1, cols.length).setValues([cols]).setFontWeight('bold');   // new columns added in an update
     }
+    headOk[name] = 1;
     return s;
   }
   function load(name) {

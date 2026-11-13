@@ -289,6 +289,35 @@ function fresh() {
   ok(s.load('devices').length === 0, 'sign out stops pop-ups on that phone');
 }
 
+
+/* ---------- partner calendars (husband & wife) ---------- */
+{
+  const {s, h, join} = fresh();
+  const boss = join('Kah Jian', true), rex = join('Rex Tan'), wen = join('Wen Lim'), mar = join('Marcus Lim');
+  const priv = h({op: 'save', token: wen.token, event: {title: 'Gynae check-up', start: iso(NOW + 5 * H), end: iso(NOW + 6 * H), vis: 'private'}}).event;
+  const view = (tok, id) => h({op: 'sync', token: tok, force: true}).events.find(e => e.id === id);
+  ok(view(rex.token, priv.id).busy, 'before linking: Rex sees only Busy');
+  h({op: 'partner', token: rex.token, action: 'request', id: wen.me.id});
+  ok(view(rex.token, priv.id).busy, 'a request alone shares nothing');
+  ok(s.pushes.some(p => p.ids[0] === wen.me.id && /wants to link/.test(p.note.title)), 'partner gets a pop-up asking to link');
+  ok(h({op: 'sync', token: wen.token, force: true}).me.partnerAsks.includes(rex.me.id), 'Wen sees the request');
+  throws(() => h({op: 'partner', token: mar.token, action: 'accept', id: wen.me.id}), 'no_request', 'cannot accept a request that was not sent to you');
+  h({op: 'partner', token: wen.token, action: 'accept', id: rex.me.id});
+  ok(view(rex.token, priv.id).title === 'Gynae check-up', 'linked: Rex sees the private event of Wen in full');
+  const rexPriv = h({op: 'save', token: rex.token, event: {title: 'Dentist', start: iso(NOW + 7 * H), end: iso(NOW + 8 * H), vis: 'private'}}).event;
+  ok(view(wen.token, rexPriv.id).title === 'Dentist', 'and Wen sees the one of Rex');
+  ok(view(mar.token, priv.id).busy && view(boss.token, priv.id).busy, 'everyone else (leader too) still sees Busy');
+  ok(h({op: 'send', token: rex.token, to: 'ev:' + priv.id, text: 'I drive you'}).msg, 'partner can comment on the private event');
+  throws(() => h({op: 'partner', token: mar.token, action: 'request', id: rex.me.id}) && h({op: 'partner', token: rex.token, action: 'accept', id: mar.me.id}), 'already_linked', 'a linked person cannot link to a second partner');
+  throws(() => h({op: 'save', token: rex.token, event: {id: priv.id, title: 'x', start: iso(NOW + 5 * H)}}), 'not_yours', 'partner can see but not edit');
+  h({op: 'partner', token: wen.token, action: 'unlink'});
+  ok(view(rex.token, priv.id).busy && view(wen.token, rexPriv.id).busy, 'unlink: private again for both');
+  h({op: 'partner', token: rex.token, action: 'request', id: wen.me.id}); h({op: 'partner', token: wen.token, action: 'request', id: rex.me.id});
+  ok(view(rex.token, priv.id).title === 'Gynae check-up', 'both asking each other = linked');
+  h({op: 'member', token: boss.token, id: wen.me.id, active: false});
+  ok(!s.load('members').find(m => m.id === rex.me.id).partner, 'removing a member unlinks the partner');
+}
+
 /* ---------- sample team sanity ---------- */
 {
   const s = memStore(); seed(s, NOW);

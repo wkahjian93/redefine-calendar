@@ -26,7 +26,7 @@ function doPost(e) {
 
 var GAS = (function () {
   var P = PropertiesService.getScriptProperties();
-  var cache = {}, outbox = [];
+  var cache = {}, outbox = [], headOk = {};
 
   function book() {
     var id = P.getProperty('SHEET_ID');
@@ -44,7 +44,10 @@ var GAS = (function () {
       s.getRange(1, 1, s.getMaxRows(), cols.length).setNumberFormat('@');
       var first = b.getSheetByName('Sheet1');
       if (first && b.getSheets().length > 1) b.deleteSheet(first);
+    } else if (!headOk[name]) {
+      if (s.getLastColumn() < cols.length || s.getRange(1, cols.length).getValue() !== cols[cols.length - 1]) s.getRange(1, 1, 1, cols.length).setValues([cols]).setFontWeight('bold');   // new columns added in an update
     }
+    headOk[name] = 1;
     return s;
   }
   function load(name) {
