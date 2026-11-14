@@ -7,7 +7,7 @@
   var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   var MONTH = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   var DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  var APP_VERSION = '25';
+  var APP_VERSION = '26';
   var H8 = 8 * 3600e3, DAY = 864e5, SELLING = {approach: 1, open: 1, present: 1, followup: 1, close: 1, recruit: 1};
 
   /* ---------- storage (each phone) ---------- */
@@ -353,7 +353,7 @@
   /* ---------- sign in ---------- */
   function signInScreen() {
     return '<div class="signin">' +
-      '<div class="logo">' + logoSvg(64) + '</div><h1>REDEFINE Calendar</h1>' +
+      '<div class="logo"><img class="signin-logo" src="icons/redefine-logo.png" alt="REDEFINE"></div><h1>Calendar</h1>' +
       '<p class="muted">One calendar for the whole team. See who is busy, keep private things private, and let the app count your activities.</p>' +
       (CFG.sample ? '<p class="sample-note">Test copy: team code <b>test-team</b> (leader: <b>test-leader-code</b>), any sample name e.g. <b>Kah Jian</b>, PIN <b>1234</b>.</p>' : '') +
       '<form id="signin" autocomplete="off"><label>Team code<input name="code" required autocapitalize="off" placeholder="from your leader"></label>' +
@@ -392,7 +392,7 @@
   }
   function topbar(title, opts) {
     opts = opts || {};
-    return '<header class="top">' + (opts.back ? '<a class="back" href="' + opts.back + '" aria-label="Back">‹</a>' : '<span class="brand">' + logoSvg(26) + '</span>') +
+    return '<header class="top">' + (opts.back ? '<a class="back" href="' + opts.back + '" aria-label="Back">‹</a>' : '<span class="brand"><img class="brand-logo" src="icons/team-mark.png" alt="REDEFINE"></span>') +
       '<h2>' + title + '</h2>' + (opts.right || '') + '</header>' +
       (CFG.sample ? '<div class="sample">' + esc(CFG.sample) + '</div>' : '') +
       (!S.online ? '<div class="offline">No signal. Showing the last saved copy.</div>' : '');
