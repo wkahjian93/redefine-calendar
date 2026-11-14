@@ -316,3 +316,22 @@ main { padding: 12px 14px; }
 .tev .outs, .tev p { margin: 10px 12px; }
 
 .btn.wa { background: #25D366; border-color: #25D366; color: #fff; width: 100%; margin-top: 8px; }
+
+/* Agenda view */
+.ag { background: var(--card); border-radius: 14px; border: 1px solid var(--line); overflow: hidden; }
+.ag-day { display: flex; border-top: 1px solid var(--line); min-height: 52px; }
+.ag-day:first-child { border-top: 0; }
+.ag-day.today { background: var(--soft); }
+.ag-date { width: 74px; flex: none; border: 0; background: none; text-align: center; padding: 6px 0; }
+.ag-date b { display: block; font-size: 26px; line-height: 1.05; font-weight: 700; }
+.ag-date small { font-size: 11px; color: var(--muted); }
+.ag-day.sun .ag-date b, .ag-day.sun .ag-date small { color: var(--coral); }
+.ag-day.today .ag-date b { color: var(--coral); }
+.ag-evs { flex: 1; min-width: 0; padding: 7px 10px 7px 0; display: flex; flex-direction: column; justify-content: center; }
+.ag-ev { display: flex; gap: 10px; align-items: baseline; font-size: 14px; line-height: 1.55; }
+.ag-t { width: 64px; flex: none; font-size: 12px; font-weight: 700; white-space: nowrap; }
+.ag-ti { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.ag-ev.pend { opacity: .45; } .ag-ev.x .ag-ti { text-decoration: line-through; opacity: .6; }
+.ag-ev.busy .ag-ti { color: var(--muted); }
+.ag-ev.team .ag-ti { background: #000; color: #fff; border-radius: 5px; padding: 0 6px; flex: 0 1 auto; }
+.ag-ev.team .tlogo { height: 11px; margin-right: 4px; vertical-align: -1px; }

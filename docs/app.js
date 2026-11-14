@@ -7,7 +7,7 @@
   var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   var MONTH = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   var DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  var APP_VERSION = '23';
+  var APP_VERSION = '24';
   var H8 = 8 * 3600e3, DAY = 864e5, SELLING = {approach: 1, open: 1, present: 1, followup: 1, close: 1, recruit: 1};
 
   /* ---------- storage (each phone) ---------- */
@@ -428,15 +428,31 @@
     }
     return '<div class="card"><h4>Partner calendar</h4>' + body + '</div>';
   }
+  /* Agenda: the whole month as a compact list, one row per day (big date + weekday, then coloured time + title) */
+  var WEEKDAY = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  function hmLong(ms) { var p = P(ms); return ((p.h % 12) || 12) + ':' + pad(p.mi) + (p.h < 12 ? ' AM' : ' PM'); }
+  function agendaView() {
+    var c = S.cursor, days = new Date(Date.UTC(c.y, c.m + 1, 0)).getUTCDate(), today = dayKey(Date.now()), list = filtered(), my = me().id, html = '<div class="ag">';
+    for (var n = 1; n <= days; n++) {
+      var k = c.y + '-' + pad(c.m + 1) + '-' + pad(n), p = P(keyMs(k)), evs = onDay(list, k).sort(function (x, y) { return (y.allDay ? 1 : 0) - (x.allDay ? 1 : 0) || sMs(x) - sMs(y); });
+      html += '<div class="ag-day' + (k === today ? ' today' : '') + (p.w === 0 ? ' sun' : '') + '" id="ag-' + k + '"><button class="ag-date" data-act="ag-new" data-k="' + k + '" aria-label="Add on ' + k + '"><b>' + n + '</b><small>' + WEEKDAY[p.w] + '</small></button><div class="ag-evs">' +
+        evs.map(function (e) {
+          var o = mem(e.ownerId), startsToday = dayKey(sMs(e)) === k;
+          var t = e.allDay || !startsToday ? 'All-day' : hmLong(sMs(e));
+          return '<a class="ag-ev' + (faded(e, my) ? ' pend' : '') + (e.out === 'cancel' ? ' x' : '') + (e.all ? ' team' : '') + (e.busy ? ' busy' : '') + '" href="#/e/' + e.id + '"><span class="ag-t" style="color:' + esc(e.busy ? '#9CA3AF' : o.color) + '">' + t + '</span><span class="ag-ti">' + (e.all ? '<img class="tlogo" src="icons/team-mark.png" alt="">' : '') + esc(e.busy ? 'Busy · ' + shortName(o) : e.title) + '</span></a>';
+        }).join('') + '</div></div>';
+    }
+    return html + '</div>';
+  }
   function viewSwitch() {
-    return '<div class="seg">' + [['month', 'Month'], ['day', 'Team day'], ['list', 'List']].map(function (v) { return '<button class="' + (S.view === v[0] ? 'on' : '') + '" data-act="view" data-v="' + v[0] + '">' + v[1] + '</button>'; }).join('') + '</div>';
+    return '<div class="seg">' + [['month', 'Month'], ['agenda', 'Agenda'], ['day', 'Team day'], ['list', 'List']].map(function (v) { return '<button class="' + (S.view === v[0] ? 'on' : '') + '" data-act="view" data-v="' + v[0] + '">' + v[1] + '</button>'; }).join('') + '</div>';
   }
   function calendarScreen() {
     var c = S.cursor, today = dayKey(Date.now()), confirm = toConfirm();
     var head = S.view === 'day'
       ? '<div class="monthnav"><button class="nav" data-act="day" data-d="-1" aria-label="Previous day">‹</button><b>' + esc(dayLabel(S.dayView)) + '</b><button class="nav" data-act="day" data-d="1" aria-label="Next day">›</button><button class="btn tiny ghost" data-act="today">Today</button></div>'
       : '<div class="monthnav"><button class="nav" data-act="month" data-d="-1" aria-label="Previous month">‹</button><b>' + MONTH[c.m] + ' ' + c.y + '</b><button class="nav" data-act="month" data-d="1" aria-label="Next month">›</button><button class="btn tiny ghost" data-act="today">Today</button></div>';
-    var body = S.view === 'day' ? teamDay() : S.view === 'list' ? listView() : monthGrid() + dayAgenda(S.sel);
+    var body = S.view === 'day' ? teamDay() : S.view === 'list' ? listView() : S.view === 'agenda' ? agendaView() : monthGrid() + dayAgenda(S.sel);
     return topbar('REDEFINE Calendar', {right: '<a class="icon-btn" href="#/import" aria-label="Import calendar">⤓</a>'}) +
       '<main class="cal">' + viewSwitch() + (S.view === 'day' ? '' : filterChips()) +
       (upcomingTeam().length ? '<a class="confirm-bar team-bar" href="#/teamevents"><img class="tlogo" src="icons/team-mark.png" alt=""> Upcoming team events <b>(' + upcomingTeam().length + ')</b>' + (teamToAnswer() ? ' · <b class="ans">' + teamToAnswer() + ' to answer</b>' : '') + ' <span>›</span></a>' : '') +
@@ -1083,12 +1099,13 @@
       var go = function () { return send('partner', {action: pa, id: pid}, {request: 'Request sent 💌', accept: 'Linked 💑', decline: 'Declined', cancel: 'Request cancelled', unlink: 'Unlinked'}[pa]); };
       return pmsg ? confirmBox('Partner calendar', pmsg, pa === 'unlink' ? 'Unlink' : 'Yes', pa === 'unlink').then(function (y) { if (y) go(); }) : go();
     }
-    if (a === 'view') { S.view = b.dataset.v; LS.set('view', S.view); if (S.view === 'day' && !S.dayView) S.dayView = S.sel || today; return render(); }
+    if (a === 'view') { S.view = b.dataset.v; LS.set('view', S.view); if (S.view === 'agenda') setTimeout(function () { var r = document.getElementById('ag-' + dayKey(Date.now())); if (r) r.scrollIntoView({block: 'center'}); }, 30); if (S.view === 'day' && !S.dayView) S.dayView = S.sel || today; return render(); }
     if (a === 'sel') { S.sel = b.dataset.k; var p = P(keyMs(S.sel)); if (p.m !== S.cursor.m) { S.cursor = {y: p.y, m: p.m}; quietSync(); } return render(); }
     if (a === 'month') { var c = S.cursor, m = c.m + +b.dataset.d; S.cursor = {y: c.y + Math.floor(m / 12), m: (m + 12) % 12}; S.sel = dayKey(Date.UTC(S.cursor.y, S.cursor.m, 1) - H8 + 3600e3); render(); return quietSync(); }
     if (a === 'day') { S.dayView = addDays(S.dayView, +b.dataset.d); S.sel = S.dayView; var q = P(keyMs(S.dayView)); if (q.m !== S.cursor.m) { S.cursor = {y: q.y, m: q.m}; quietSync(); } return render(); }
     if (a === 'today') { var t = P(Date.now()); S.cursor = {y: t.y, m: t.m}; S.sel = today; S.dayView = today; render(); return quietSync(); }
     if (a === 'new') return editor(null);
+    if (a === 'ag-new') { S.sel = b.dataset.k; return editor(null); }
     if ((a === 'edit' || a === 'out' || a === 'cheer' || a === 'invite' || a === 'rsvp') && /^tmp/.test(b.dataset.id || '')) return toast('Still saving… one moment.');
     if (a === 'edit') return editor(events().filter(function (e) { return e.id === b.dataset.id; })[0]);
     if (a === 'out') return setOutcome(b.dataset.id, b.dataset.v);
