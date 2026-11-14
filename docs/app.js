@@ -7,7 +7,7 @@
   var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   var MONTH = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   var DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  var APP_VERSION = '24';
+  var APP_VERSION = '25';
   var H8 = 8 * 3600e3, DAY = 864e5, SELLING = {approach: 1, open: 1, present: 1, followup: 1, close: 1, recruit: 1};
 
   /* ---------- storage (each phone) ---------- */
@@ -365,11 +365,13 @@
   function doSignIn(form, create) {
     var f = new FormData(form), body = {code: f.get('code'), name: f.get('name'), pin: f.get('pin'), device: navigator.userAgent.slice(0, 60), create: !!create};
     var btn = form.querySelector('button'); btn.disabled = true; btn.textContent = 'Signing in…';
+    // keep a pre-filled New event link from another REDEFINE app (e.g. 90Days Kick Start) through sign-in
+    var after = /^#\/new(\?|$)/.test(location.hash) ? location.hash : '#/';
     api('signin', body).then(function (j) {
       S.token = j.token; LS.set('token', j.token); LS.set('since', new Date().toISOString());
       toast(j.created ? 'Welcome to REDEFINE Calendar, ' + j.me.name + '!' : 'Welcome back, ' + j.me.name, 'good');
       return sync(true);
-    }).then(function () { location.hash = '#/'; render(); }, function (e) {
+    }).then(function () { location.hash = after; render(); }, function (e) {
       btn.disabled = false; btn.textContent = 'Sign in';
       if (e.code === 'new_name') return confirmBox('New member?', 'No one called "' + body.name + '" yet. Create a new member with this name and PIN?', 'Create').then(function (y) { if (y) doSignIn(form, true); });
       toast(errText(e), 'bad');
