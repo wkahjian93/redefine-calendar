@@ -7,7 +7,7 @@
   var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   var MONTH = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   var DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  var APP_VERSION = '22';
+  var APP_VERSION = '23';
   var H8 = 8 * 3600e3, DAY = 864e5, SELLING = {approach: 1, open: 1, present: 1, followup: 1, close: 1, recruit: 1};
 
   /* ---------- storage (each phone) ---------- */
@@ -621,11 +621,15 @@
   }
 
   /* ---------- editor ---------- */
-  function editor(e) {
+  function editor(e, pre) {
     var isNew = !e, now = Date.now(), k = S.sel || dayKey(now);
     if (isNew) {
-      var startH = k === dayKey(now) ? Math.min(21, P(now).h + 1) : 10;
-      e = {all: false, title: '', type: '', start: new Date(keyMs(k) + startH * 3600e3).toISOString(), end: new Date(keyMs(k) + (startH + 1) * 3600e3).toISOString(), allDay: false, place: '', notes: '', vis: 'team', with: [], remind: '30', count: 1};
+      pre = pre || {};
+      if (/^\d{4}-\d{2}-\d{2}$/.test(pre.date || '')) k = pre.date;
+      var startH = k === dayKey(now) ? Math.min(21, P(now).h + 1) : 10, startM = 0;
+      var tm = /^(\d{1,2}):(\d{2})$/.exec(pre.time || ''); if (tm && +tm[1] < 24 && +tm[2] < 60) { startH = +tm[1]; startM = +tm[2]; }
+      var st0 = keyMs(k) + (startH * 60 + startM) * 60e3;
+      e = {all: false, title: String(pre.title || '').slice(0, 120), type: '', start: new Date(st0).toISOString(), end: new Date(st0 + 3600e3).toISOString(), allDay: false, place: '', notes: String(pre.notes || '').slice(0, 1500), vis: 'team', with: [], remind: '30', count: 1};
     }
     var picked = !isNew;
     var html = '<form id="ed" class="editor"><div class="row between"><h3>' + (isNew ? 'New event' : 'Edit event') + '</h3><button type="button" class="icon-btn" data-act="close-modal" aria-label="Close">✕</button></div>' +
@@ -669,7 +673,7 @@
       sh.querySelectorAll('.wp').forEach(function (b) { b.onclick = function () { var i = withIds.indexOf(b.dataset.id); if (i >= 0) withIds.splice(i, 1); else withIds.push(b.dataset.id); b.classList.toggle('on'); }; });
       f.allDay.onchange = paint; f.all.onchange = paint;
       f.st.addEventListener('change', function () { var s = f.st.value.split(':'), en = f.et.value.split(':'); if (f.et.value <= f.st.value) f.et.value = pad(Math.min(23, +s[0] + 1)) + ':' + s[1]; });
-      paint(); if (isNew) setTimeout(function () { f.title.focus(); }, 50);
+      paint(); if (isNew) setTimeout(function () { f.title.focus(); if (f.title.value) f.title.dispatchEvent(new Event('input')); }, 50);   // a pre-filled title still picks its type
       var del = sh.querySelector('[data-x=del]');
       if (del) del.onclick = function () {
         confirmBox('Delete this event?', '"' + e.title + '" and its comments will be removed for everyone. This cannot be undone.', 'Delete', true).then(function (y) {
@@ -1036,6 +1040,14 @@
     if (typing && r === lastRoute) {   // don't wipe what someone is typing: only refresh the live lists
       var live = $app.querySelector('[data-live]');
       if (live && live.dataset.live === 'comments') live.innerHTML = commentList((S.data.msgs || []).filter(function (m) { return m.to === 'ev:' + parts[1] && m.kind !== 'cheer' && m.kind !== 'rsvp'; }));
+      return;
+    }
+    /* link from another REDEFINE app (e.g. On Field follow-up): #/new?t=title&d=YYYY-MM-DD&s=HH:MM&n=notes opens a pre-filled New event; nothing is saved until the agent taps Add */
+    if (/^new(\?|$)/.test(parts[0] || '')) {
+      var qs = new URLSearchParams(r.split('?')[1] || '');
+      history.replaceState(null, '', location.pathname + location.search + '#/');
+      lastRoute = '/'; $app.innerHTML = calendarScreen();
+      setTimeout(function () { editor(null, {title: qs.get('t'), date: qs.get('d'), time: qs.get('s'), notes: qs.get('n')}); }, 30);
       return;
     }
     if (parts[0] === 'e' && parts[1]) html = eventScreen(parts[1]);
