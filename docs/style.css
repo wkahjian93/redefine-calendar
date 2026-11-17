@@ -500,3 +500,21 @@ html[data-celebrate] .calhead { background: color-mix(in srgb, var(--bg) 92%, tr
 .hol-t { color: #B45309; }
 .heat { width: 100%; border-collapse: separate; border-spacing: 3px; font-size: 12px; text-align: center; }
 .heat th { font-weight: 600; color: var(--muted); font-size: 11px; } .heat td { border-radius: 6px; padding: 8px 2px; font-weight: 700; }
+
+/* ---------- hold-to-record voice notes ---------- */
+.fab.mic { touch-action: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; transition: transform .15s; }
+.fab.mic.rec { transform: scale(1.35); background: #E5484D; color: #fff; border-color: #E5484D; box-shadow: 0 0 0 10px rgba(229, 72, 77, .18); }
+#recbar { position: fixed; left: 12px; right: 84px; bottom: calc(150px + var(--safe-b)); z-index: 40; display: none; align-items: center; gap: 10px; padding: 12px 14px; border-radius: 14px; background: var(--card); color: var(--text); box-shadow: 0 6px 20px rgba(0, 0, 0, .2); font-size: 15px; max-width: 520px; pointer-events: none; }
+#recbar.on { display: flex; } #recbar.cancel { background: #E5484D; color: #fff; justify-content: center; font-weight: 700; }
+#recbar span { color: var(--muted); font-size: 13px; margin-left: auto; }
+.recdot { width: 12px; height: 12px; border-radius: 50%; background: #E5484D; animation: recblink 1s infinite; } @keyframes recblink { 50% { opacity: .25; } }
+.vnote { border-left: 4px solid #F2C200; } .vnote .row { margin-top: 8px; gap: 8px; }
+.vchk a { color: inherit; text-decoration: none; } .vchk .row { gap: 8px; margin-top: 6px; } .vchk p { margin: 6px 0; }
+
+/* ---------- faces on the person chips (PDF page 9) ---------- */
+.chip { padding: 3px 11px 3px 3px; gap: 6px; }
+.av-chip { width: 24px; height: 24px; font-size: 9px; border: 1.5px solid var(--card); box-sizing: border-box; }
+.cpair { display: inline-flex; } .cpair .av-chip + .av-chip { margin-left: -9px; }
+.cteam { background: #14213D; } .cteam img { width: 13px; height: 15px; }
+.cplus { background: #9CA3AF; font-size: 15px; font-weight: 700; }
+.chip.on .av-chip { border-color: var(--navy); }

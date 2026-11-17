@@ -7,7 +7,7 @@
   var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   var MONTH = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   var DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  var APP_VERSION = '32';
+  var APP_VERSION = '34';
   var H8 = 8 * 3600e3, DAY = 864e5, SELLING = {approach: 1, open: 1, present: 1, followup: 1, close: 1, recruit: 1};
 
   /* ---------- storage (each phone) ---------- */
@@ -140,6 +140,7 @@
     document.getElementById('toasts').appendChild(t); setTimeout(function () { t.classList.add('out'); }, 2800); setTimeout(function () { t.remove(); }, 3300);
   }
   var ERR = {
+    not_an_appointment: 'That didn’t sound like an appointment. Say what, which day and what time.',
     bad_audio: 'That recording couldn’t be used. Try again (up to 60 seconds).', nothing_heard: 'Nothing was heard. Hold the phone closer and try again.', owner_only: 'Only the owner can change celebration themes.', bad_theme: 'Please pick the colours again.', bad_music: 'Use an MP3 or M4A file up to 5 MB.',
     wrong_code: 'That team code is not right.', wrong_pin: 'Wrong PIN for that name.', pin_4_digits: 'PIN must be 4–6 digits.', name_needed: 'Please type your name.',
     too_many_tries: 'Too many wrong tries. Wait 15 minutes.', removed: 'Your leader removed this account.', signed_out: 'Please sign in again.',
@@ -239,6 +240,7 @@
     if (op === 'profile' && q.bday != null) return function (d) { d.me.bday = q.bday; d.members.forEach(function (m) { if (m.id === my) m.bday = q.bday; }); };
     if (op === 'profile') return function (d) { [d.me].concat(d.members.filter(function (m) { return m.id === my; })).forEach(function (m) { if (q.color) m.color = q.color; if (q.short) { m.short = q.short; d.me.shortSet = true; } }); };
     if (op === 'todo') return function (d) { var it = q.item; d.todos = d.todos || []; var ex = d.todos.filter(function (x) { return x.id === it.id; })[0]; if (ex) { ex.text = it.text; ex.q = String(it.q); ex.due = it.due || ''; ex.done = it.done ? (ex.done || now) : ''; } else d.todos.push({id: it.id || tmp, text: it.text, q: String(it.q), due: it.due || '', done: '', created: now}); };
+    if (op === 'checked') return function (d) { (d.events || []).forEach(function (x) { if (x.id === q.id) x.source = 'voiceok'; }); };
     if (op === 'tododel') return function (d) { d.todos = (d.todos || []).filter(function (x) { return x.id !== q.id; }); };
     if (op === 'goal') return function (d) { d.goals = (d.goals || []).filter(function (g) { return g.key !== q.key; }); if (q.anp !== '') d.goals.push({key: q.key, anp: String(q.anp)}); };
     if (op === 'del') return function (d) { d.events = d.events.filter(function (x) { return x.id !== q.id; }); };
@@ -450,7 +452,7 @@
     ['#/', '.seg', '📅 Views', 'Month, Agenda (whole month as a list), Team day (who is free) and List. They stay at the top while you scroll.'],
     ['#/', '.chips', '👥 Whose calendar', 'Everyone, only Me, or Me + someone (e.g. your partner). 📌 keeps a Me + chip, × closes it.'],
     ['#/', '.grid, .ag', '👆 Days', 'Tap a day to choose it (scroll inside to see all). Tap it again to open that day. Swipe sideways to change month.'],
-    ['#/', '.fab', '➕ Add', 'Add an appointment. Type the title: the app picks the type and colour. You can repeat it weekly / monthly / yearly.'],
+    ['#/', '.fab', '➕ Add', 'Add an appointment. Type the title: the app picks the type and colour. You can repeat it weekly / monthly / yearly. Or hold 🎤, speak, let go: it’s saved for you.'],
     ['#/', '.team-bar', '📣 Team events', 'Black with the REDEFINE logo. Answer Going / Can’t go here; everyone gets a reminder 1 hour before.'],
     ['#/', '.legend', '🎨 Colours', 'Green sales, yellow client & admin, orange recruit, blue meeting, red personal. Holidays and birthdays are marked too.'],
     ['#/', '.tabs a[href="#/todo"]', '✅ To-do', 'Your to-do list in 4 boxes: urgent & important first.'],
@@ -765,51 +767,95 @@
     });
   }
 
-  /* ================= Voice booking ================= */
-  var REC = null;
-  function voiceStart() {
+  /* ================= Voice booking: hold 🎤 and speak, let go to save (like a WhatsApp voice note) =================
+     Nothing to wait for: the recording goes to a queue on the phone and is saved into the calendar in the background
+     (kept and retried if the internet drops). The agent checks the entry later (🎤 to check). */
+  var HOLD = null, VQ = LS.get('voiceQ', []), vqBusy = false;
+  function holdUI(h) {
+    var el = document.getElementById('recbar'); if (!el) { el = document.createElement('div'); el.id = 'recbar'; document.body.appendChild(el); }
+    if (!h) { el.className = ''; document.querySelectorAll('.fab.mic').forEach(function (b) { b.classList.remove('rec'); }); return; }
+    var sec = h.tStart ? Math.floor((Date.now() - h.tStart) / 1000) : 0;
+    el.className = 'on' + (h.slide ? ' cancel' : '');
+    el.innerHTML = h.slide ? '🗑️ Let go to cancel' : '<i class="recdot"></i><b>0:' + ('0' + Math.min(59, sec)).slice(-2) + '</b><span>' + (h.rec ? '‹ slide left to cancel' : 'Getting the microphone…') + '</span>';
+    if (h.btn) h.btn.classList.add('rec');
+  }
+  function micDown(ev) {
+    var btn = ev.target.closest && ev.target.closest('.fab.mic'); if (!btn || HOLD) return;
+    ev.preventDefault();
+    try { btn.setPointerCapture(ev.pointerId); } catch (x) {}
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.MediaRecorder) return toast('Voice recording isn’t supported here. Update your phone or use Chrome / Safari.', 'bad');
+    var h = HOLD = {x0: ev.clientX, t0: Date.now(), btn: btn, up: false, cancel: false, slide: false};
+    holdUI(h);
     navigator.mediaDevices.getUserMedia({audio: true}).then(function (stream) {
+      if (h.up) {   // let go before the microphone was ready (e.g. the first-time "allow microphone" question)
+        stream.getTracks().forEach(function (t) { t.stop(); });
+        if (Date.now() - h.t0 > 1500) toast('🎤 Microphone ready. Now hold 🎤, speak, then let go.', 'good');
+        return;
+      }
       var mime = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg'].filter(function (m) { return MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(m); })[0] || '';
-      var rec = new MediaRecorder(stream, mime ? {mimeType: mime, audioBitsPerSecond: 32000} : undefined), chunks = [], t0 = Date.now();
-      REC = {rec: rec, stream: stream, cancel: false};
+      var rec = new MediaRecorder(stream, mime ? {mimeType: mime, audioBitsPerSecond: 32000} : undefined), chunks = [];
+      h.rec = rec; h.tStart = Date.now();
       rec.ondataavailable = function (e) { if (e.data && e.data.size) chunks.push(e.data); };
       rec.onstop = function () {
-        stream.getTracks().forEach(function (t) { t.stop(); }); var r = REC; REC = null; if (r) clearInterval(r.tm);
-        if (!r || r.cancel) return;
-        var type = String(rec.mimeType || mime || 'audio/webm').split(';')[0];
-        if (Date.now() - t0 < 1200) { closeModal(); return toast('Too short. Hold on and say the whole appointment.', 'bad'); }
-        voiceSend(new Blob(chunks, {type: type}), type);
+        stream.getTracks().forEach(function (t) { t.stop(); }); clearInterval(h.tm);
+        if (h.cancel) return toast('Cancelled', '');
+        if (Date.now() - h.tStart < 900) return toast('Hold the 🎤 button while you speak, then let go.', 'bad');
+        queueVoice(new Blob(chunks, {type: String(rec.mimeType || mime || 'audio/webm').split(';')[0]}));
       };
-      rec.start(1000);
-      modal('<div class="voice"><h3>🎤 Listening…</h3><p class="muted">Say it like you’d tell a friend, in any language:<br><i>“Esok 3 点 present medical card to Mr Lim at Gurney”</i></p><div class="vu"><span></span><span></span><span></span></div><p class="vt" id="vt">0:00 / 1:00</p>' +
-        '<div class="row end"><button class="btn ghost" data-act="voice-cancel">Cancel</button><button class="btn primary" data-act="voice-stop">✓ Done</button></div></div>');
-      REC.tm = setInterval(function () { var s = Math.floor((Date.now() - t0) / 1000), el = document.getElementById('vt'); if (el) el.textContent = '0:' + ('0' + Math.min(59, s)).slice(-2) + ' / 1:00'; if (s >= 60 || !el) { if (!el && REC) REC.cancel = true; if (rec.state !== 'inactive') rec.stop(); } }, 500);
-    }, function () { toast('Microphone not allowed. Allow the microphone for this app in your phone settings to use voice.', 'bad'); });
+      rec.start(500);
+      try { navigator.vibrate && navigator.vibrate(15); } catch (x) {}
+      h.tm = setInterval(function () { if (HOLD !== h) return; holdUI(h); if (Date.now() - h.tStart >= 60e3) micUp(); }, 250);
+      holdUI(h);
+    }, function () { if (HOLD === h) HOLD = null; holdUI(null); toast('Microphone not allowed. Allow the microphone for this app in your phone settings to use voice.', 'bad'); });
   }
-  function voiceEvent(x) {
-    var ev = {title: x.title, type: x.type, place: x.place, notes: x.notes, with: x.with || [], rep: x.rep || '', allDay: !!x.allDay, vis: 'team', source: 'voice', remind: x.allDay ? '' : '30'};
-    if (x.date && x.allDay) { ev.start = x.date; ev.end = x.date; }
-    else if (x.date && x.start) { var s = Date.parse(x.date + 'T' + x.start + ':00+08:00'), e2 = x.end ? Date.parse(x.date + 'T' + x.end + ':00+08:00') : s + 3600e3; if (!(e2 > s)) e2 = s + 3600e3; ev.start = new Date(s).toISOString(); ev.end = new Date(e2).toISOString(); }
-    return ev;
+  function micMove(ev) { if (!HOLD) return; var s = ev.clientX - HOLD.x0 < -70; if (s !== HOLD.slide) { HOLD.slide = s; holdUI(HOLD); } }
+  function micUp(ev, cancel) {
+    var h = HOLD; if (!h) return; HOLD = null; h.up = true; h.cancel = !!cancel || h.slide; holdUI(null);
+    if (S.renderLater) { S.renderLater = false; setTimeout(render, 0); }
+    if (h.rec && h.rec.state !== 'inactive') h.rec.stop();
+    else if (!h.rec && Date.now() - h.t0 < 600) toast('Hold the 🎤 button while you speak, then let go.', '');
   }
-  function voiceSend(blob, type) {
-    modal('<div class="voice"><h3>🎤 Understanding…</h3><p class="muted">This takes a few seconds.</p><div class="spin"></div></div>');
-    fileB64(blob).then(function (b64) { return api('voice', {audio: b64, mime: type}); }).then(function (j) {
-      var v = j.voice, x = v.event, ev = voiceEvent(x), said = '<p class="tiny muted">You said: “' + esc(v.heard) + '”</p>';
-      if (!v.complete) {
-        closeModal();
-        var miss = v.missing.map(function (m) { return {what: 'what it is', date: 'the date', time: 'the time'}[m]; }).join(' and ');
-        editor(null, {date: x.date, time: x.start, ev: Object.assign({title: x.title, type: x.type, place: x.place, notes: x.notes, with: x.with || [], rep: x.rep || '', source: 'voice'}, x.allDay ? {allDay: true} : {})});
-        return toast('🎤 Got it. Please fill in ' + miss + ', then Save.', 'good');
-      }
-      return api('save', {event: ev}).then(function (r) {
-        quietSync(true);
-        var id = r.event && r.event.id;
-        modal('<div class="voice"><h3>✅ Saved from your voice</h3><div class="card"><b>' + esc(T(ev.type).emoji + ' ' + ev.title) + '</b><p>' + esc(dayLabel(x.date, true)) + (x.allDay ? ' · All day' : ' · ' + x.start + (x.end ? '–' + x.end : '')) + (ev.place ? '<br>📍 ' + esc(ev.place) : '') + (ev.rep ? '<br>🔁 Repeats' : '') + '</p></div>' + said +
-          '<div class="row end"><button class="btn ghost danger" data-act="voice-undo" data-id="' + esc(id || '') + '">Undo</button>' + (id ? '<a class="btn" href="#/e/' + id + '" data-act="close-modal">Open</a>' : '') + '<button class="btn primary" data-act="close-modal">OK</button></div></div>');
-      });
-    }).catch(function (e) { closeModal(); toast(errText(e), 'bad'); });
+  document.addEventListener('pointerdown', micDown);
+  document.addEventListener('pointermove', micMove);
+  document.addEventListener('pointerup', function (ev) { micUp(ev); });
+  document.addEventListener('pointercancel', function (ev) { micUp(ev, true); });
+  document.addEventListener('contextmenu', function (ev) { if (ev.target.closest && ev.target.closest('.fab.mic')) ev.preventDefault(); });
+  function saveVQ() { try { localStorage.setItem('rcal.voiceQ', JSON.stringify(VQ)); } catch (x) { /* too big for this phone's storage: it still goes out from memory */ } }
+  function queueVoice(blob) {
+    fileB64(blob).then(function (b64) {
+      VQ.push({id: 'v' + Date.now(), audio: b64, mime: blob.type || 'audio/webm', tries: 0, next: 0}); VQ = VQ.slice(-5); saveVQ();
+      toast('🎤 Got it! Adding to your calendar.', 'good');
+      runVoiceQ();
+    });
+  }
+  var VOICE_DROP = {bad_audio: 1, nothing_heard: 1, not_an_appointment: 1, ai_unreadable: 1, daily_limit: 1, no_api_key: 1, bad_api_key: 1, no_credit: 1, signed_out: 1, removed: 1};
+  function runVoiceQ() {
+    if (vqBusy || !VQ.length || !S.token || !navigator.onLine) return;
+    var it = VQ[0]; if (it.next > Date.now()) return;
+    vqBusy = true;
+    api('voice', {audio: it.audio, mime: it.mime, save: true}).then(function (j) {
+      vqBusy = false; VQ = VQ.filter(function (x) { return x.id !== it.id; }); saveVQ();
+      var e = j.event || {}, v = j.voice || {}, when = e.allDay ? dayLabel(String(e.start).slice(0, 10)) + ' (all day)' : dayLabel(dayKey(Date.parse(e.start))) + ' ' + hm(Date.parse(e.start));
+      toast('✅ Added: ' + (e.title || 'appointment') + ' · ' + when + (v.missing && v.missing.length ? ' · please check' : ''), 'good');
+      quietSync(true); runVoiceQ();
+    }, function (err) {
+      vqBusy = false; var code = err && (err.code || err.message);
+      if (VOICE_DROP[code] || ++it.tries >= 6) { VQ = VQ.filter(function (x) { return x.id !== it.id; }); saveVQ(); toast('🎤 Not added: ' + errText(err), 'bad'); return runVoiceQ(); }
+      it.next = Date.now() + Math.min(300e3, 15e3 * Math.pow(2, it.tries - 1)); saveVQ();   // network or busy: try again shortly
+    });
+  }
+  window.addEventListener('online', runVoiceQ);
+  /* entries made by voice that the agent has not checked yet */
+  function voiceToCheck() { var my = me().id; return rawEvents().filter(function (e) { return e.ownerId === my && e.source === 'voice'; }).sort(function (x, y) { return sMs(x) - sMs(y); }); }
+  function voiceCheckScreen() {
+    var list = voiceToCheck();
+    return topbar('🎤 Voice entries to check', {back: '#/'}) + '<main><p class="tiny muted">Saved from your voice notes. Check each one when you have time: tap ✓ Correct, or ✏️ Edit to fix it.</p>' +
+      (list.length ? list.map(function (e) {
+        var said = (String(e.notes || '').match(/🎤 You said: “([^”]*)”/) || [])[1] || '', miss = /Not said: ([^.]*)/.exec(e.notes || '');
+        return '<div class="card vchk"><a href="#/e/' + e.id + '"><b>' + esc(evTitle(e)) + '</b><br><span class="muted">' + esc(dayLabel(dayKey(sMs(e)), true)) + ' · ' + esc(evTime(e)) + (e.place ? ' · 📍 ' + esc(e.place) : '') + '</span></a>' +
+          (said ? '<p class="tiny">🎤 “' + esc(said) + '”</p>' : '') + (miss ? '<p class="tiny warn-t">⚠️ Not said: ' + esc(miss[1]) + '</p>' : '') +
+          '<div class="row"><button class="btn primary tiny" data-act="vcheck" data-id="' + e.id + '">✓ Correct</button><button class="btn tiny" data-act="edit" data-id="' + e.id + '">✏️ Edit</button><button class="link danger" data-act="vdel" data-id="' + e.id + '">Delete</button></div></div>';
+      }).join('') : '<p class="empty">All checked 👍</p>') + '</main>' + tabs('cal');
   }
 
   function signOutLocal(reason) {
@@ -839,15 +885,17 @@
     var p = me().partner, merged = S.filter.indexOf('me+') === 0 ? S.filter.slice(3) : '';
     // merged chips: partner (always), kept ones (📌, remove with ×), and the one just picked (📌 keep or × close)
     var kept = keptMerges().filter(function (id) { return id !== p && members().some(function (m) { return m.id === id && m.active !== false; }); });
-    var extra = []; if (p && mem(p).active !== false) extra.push(['me+' + p, '💑 Me + ' + shortName(mem(p)), mem(p).color]);
-    kept.forEach(function (id) { extra.push(['me+' + id, 'Me + ' + shortName(mem(id)), mem(id).color, 'kept', id]); });
-    if (merged && merged !== p && kept.indexOf(merged) < 0) extra.push([S.filter, 'Me + ' + shortName(mem(merged)), mem(merged).color, 'temp', merged]);
-    extra.push(['pick', 'Me + …', '#9CA3AF']);
-    var chips = [['all', 'Everyone', '#14213D'], ['me', 'Me', me().color]].concat(extra, list.filter(function (m) { return m.id !== my; }).map(function (m) { return [m.id, shortName(m), m.color]; }));
+    // chip icons are faces (photo, or initials in the person's colour until they upload one)
+    var face = function (m) { return avatar(m, 'chip'); }, pair = function (m) { return '<span class="cpair">' + face(me()) + face(m) + '</span>'; };
+    var extra = []; if (p && mem(p).active !== false) extra.push(['me+' + p, '💑 Me + ' + shortName(mem(p)), pair(mem(p))]);
+    kept.forEach(function (id) { extra.push(['me+' + id, 'Me + ' + shortName(mem(id)), pair(mem(id)), 'kept', id]); });
+    if (merged && merged !== p && kept.indexOf(merged) < 0) extra.push([S.filter, 'Me + ' + shortName(mem(merged)), pair(mem(merged)), 'temp', merged]);
+    extra.push(['pick', 'Me + …', '<span class="cpair">' + face(me()) + '<span class="av av-chip cplus">+</span></span>']);
+    var chips = [['all', 'Everyone', '<span class="av av-chip cteam"><img src="icons/team-mark.png" alt=""></span>'], ['me', 'Me', face(me())]].concat(extra, list.filter(function (m) { return m.id !== my; }).map(function (m) { return [m.id, shortName(m), face(m)]; }));
     return '<div class="chips">' + chips.map(function (c) {
       var tools = c[3] === 'temp' ? '<span class="ctool" data-act="merge-keep" data-id="' + c[4] + '" title="Keep this chip">📌</span><span class="ctool" data-act="merge-x" data-id="' + c[4] + '" title="Close">×</span>'
         : c[3] === 'kept' ? '<span class="ctool" data-act="merge-x" data-id="' + c[4] + '" title="Remove">×</span>' : '';
-      return '<button class="chip' + (S.filter === c[0] ? ' on' : '') + (tools ? ' has-tools' : '') + '" data-act="filter" data-id="' + c[0] + '"><i style="background:' + esc(c[2]) + '"></i>' + esc(c[1]) + tools + '</button>';
+      return '<button class="chip' + (S.filter === c[0] ? ' on' : '') + (tools ? ' has-tools' : '') + '" data-act="filter" data-id="' + c[0] + '">' + c[2] + esc(c[1]) + tools + '</button>';
     }).join('') + '</div>';
   }
   function pickMerge() {
@@ -910,8 +958,9 @@
       '<main class="cal" id="calmain">' + celebrateBar() + (!me().photoV ? '<a class="confirm-bar photo-bar" href="#/me">📷 Add your photo so the team knows it’s you <span>›</span></a>' : '') +
       (upcomingTeam().length ? '<a class="confirm-bar team-bar" href="#/teamevents"><img class="tlogo" src="icons/team-mark.png" alt=""> Upcoming team events <b>(' + upcomingTeam().length + ')</b>' + (teamToAnswer() ? ' · <b class="ans">' + teamToAnswer() + ' to answer</b>' : '') + ' <span>›</span></a>' : '') +
       (myInvites().length ? '<a class="confirm-bar invite" href="#/invites">📩 <b>' + myInvites().length + '</b> invitation' + (myInvites().length > 1 ? 's' : '') + ' waiting for your answer <span>›</span></a>' : '') +
+      (voiceToCheck().length ? '<a class="confirm-bar voicebar" href="#/voicecheck">🎤 <b>' + voiceToCheck().length + '</b> voice entr' + (voiceToCheck().length > 1 ? 'ies' : 'y') + ' to check <span>›</span></a>' : '') +
       (confirm.length ? '<a class="confirm-bar" href="#/confirm">✅ <b>' + confirm.length + '</b> activit' + (confirm.length > 1 ? 'ies' : 'y') + ' to confirm so your numbers count <span>›</span></a>' : '') +
-      body + (S.view !== 'day' ? legend() : '') + '</main><button class="fab mic" data-act="voice" aria-label="Add by voice">🎤</button><button class="fab" data-act="new" aria-label="Add event">+</button>' + tabs('cal');
+      body + (S.view !== 'day' ? legend() : '') + '</main><button class="fab mic" aria-label="Hold to record an appointment">🎤</button><button class="fab" data-act="new" aria-label="Add event">+</button>' + tabs('cal');
   }
   /* CNY day (first day of the lunar year) and the length of the 12th lunar month before it (2025-2029 have no 年三十) */
   var CNY = {2026: ['2026-02-17', 29], 2027: ['2027-02-06', 29], 2028: ['2028-01-26', 29], 2029: ['2029-02-13', 29], 2030: ['2030-02-03', 30]};
@@ -1035,7 +1084,7 @@
       (e.place ? '<p>📍 ' + esc(e.place) + '</p>' : '') +
       '<p>' + avatar(o, 'sm') + ' ' + esc(o.name) + ((e.with || []).length ? ' <span class="muted">with</span> ' + e.with.map(function (id) { return avatar(mem(id), 'sm') + ' ' + esc(shortName(mem(id))); }).join(' ') : '') + '</p>' +
       (e.notes ? '<p class="notes">' + esc(e.notes) + '</p>' : '') +
-      repNote + '<p class="muted tiny">' + (e.all ? '👥 Whole-team event: on everyone\'s calendar.' : e.vis === 'private' ? '🔒 Only ' + (mine ? 'you' : shortName(o)) + (e.with.length ? ' and the people tagged' : '') + ' can see this. Others see "Busy".' + (isWork(e) ? ' It still counts in the activity numbers.' : '') : '👥 The whole team can see this.') + (e.type === 'approach' ? ' · ' + (e.count || 1) + ' new friend(s)' : '') + '</p></div>' +
+      (mine && e.source === 'voice' ? '<div class="card vnote">🎤 Added from your voice note. Is it right?<div class="row"><button class="btn primary tiny" data-act="vcheck" data-id="' + e.id + '">✓ Correct</button><button class="btn tiny" data-act="edit" data-id="' + e.id + '">✏️ Edit</button></div></div>' : '') + repNote + '<p class="muted tiny">' + (e.all ? '👥 Whole-team event: on everyone\'s calendar.' : e.vis === 'private' ? '🔒 Only ' + (mine ? 'you' : shortName(o)) + (e.with.length ? ' and the people tagged' : '') + ' can see this. Others see "Busy".' + (isWork(e) ? ' It still counts in the activity numbers.' : '') : '👥 The whole team can see this.') + (e.type === 'approach' ? ' · ' + (e.count || 1) + ' new friend(s)' : '') + '</p></div>' +
       out + (e.all ? attendCard(e) : (e.with || []).length ? inviteCard(e) : '') +
       '<div class="cheers"><button class="cheer' + (iCheered ? ' on' : '') + '" data-act="cheer" data-id="' + e.id + '">👏 ' + (cheers.length || 'Cheer') + '</button><span class="muted tiny">' + esc(cheers.map(function (m) { return shortName(mem(m.from)); }).join(', ')) + '</span>' +
       '</div>' +
@@ -1240,7 +1289,7 @@
         if (!type) { type = C.detectType(f.title.value) || ''; if (!type) { toast('Pick what kind of activity this is.', 'bad'); sh.querySelector('.types').classList.add('shake'); return; } }
         var ad = f.allDay.checked, d = f.date.value;
         if (!d) return toast('Please pick a date.', 'bad');
-        var ev2 = {id: e.id, title: f.title.value, type: type, allDay: ad, place: f.place.value, notes: f.notes.value, vis: vis, all: vis !== 'private' && f.all.checked, with: withIds, remind: f.remind.value, count: f.count.value, source: e.source || 'manual', rep: f.rep.value, repEnd: f.rep.value ? f.repEnd.value : ''};
+        var ev2 = {id: e.id, title: f.title.value, type: type, allDay: ad, place: f.place.value, notes: f.notes.value, vis: vis, all: vis !== 'private' && f.all.checked, with: withIds, remind: f.remind.value, count: f.count.value, source: e.source === 'voice' ? 'voiceok' : (e.source || 'manual'), rep: f.rep.value, repEnd: f.rep.value ? f.repEnd.value : ''};
         if (ad) { ev2.start = d; ev2.end = f.date2.value && f.date2.value >= d ? f.date2.value : d; }
         else {
           if (!f.st.value) return toast('Please pick a start time.', 'bad');
@@ -1664,6 +1713,7 @@
   function route() { return (location.hash || '#/').slice(1); }
   var lastRoute = '';
   function render() {
+    if (HOLD) { S.renderLater = true; return; }   // never swap the screen while someone is holding 🎤 (their finger would lose the button)
     if (!S.token) { $app.innerHTML = signInScreen(); return; }
     if (!S.data) { $app.innerHTML = topbar('REDEFINE Calendar') + '<main><p class="empty">Loading your team…</p></main>'; return; }
     celebrate();
@@ -1695,6 +1745,7 @@
     else if (parts[0] === 'invites') html = invitesScreen();
     else if (parts[0] === 'teamevents') html = teamEventsScreen();
     else if (parts[0] === 'todo') html = todoScreen();
+    else if (parts[0] === 'voicecheck') html = voiceCheckScreen();
     else if (parts[0] === 'besttime') html = bestTimeScreen();
     else if (parts[0] === 'themes') html = themesScreen();
     else if (parts[0] === 'report') html = reportScreen(parts[1]);
@@ -1713,10 +1764,8 @@
     if (a === 'close-modal') return closeModal();
     if (a === 'btopt') { S.btOpt[b.dataset.k] = b.dataset.k === 'when' ? b.dataset.v : +b.dataset.v; return render(); }
     if (a === 'btset') { var bs = b.dataset.s, be = b.dataset.e; return editor(null, {date: dayKey(Date.parse(bs)), time: hm24(Date.parse(bs)), ev: {all: true, type: 'meeting', start: bs, end: be}}); }
-    if (a === 'voice') return voiceStart();
-    if (a === 'voice-stop') { if (REC && REC.rec.state !== 'inactive') REC.rec.stop(); return; }
-    if (a === 'voice-cancel') { if (REC) { REC.cancel = true; if (REC.rec.state !== 'inactive') REC.rec.stop(); } return closeModal(); }
-    if (a === 'voice-undo') { closeModal(); if (b.dataset.id) send('del', {id: b.dataset.id}, 'Removed'); return; }
+    if (a === 'vcheck') return send('checked', {id: b.dataset.id}, '✓ Checked');
+    if (a === 'vdel') return confirmBox('Delete this entry?', 'It is removed from your calendar.', 'Delete', true).then(function (y) { if (y) send('del', {id: b.dataset.id}, 'Deleted'); });
     if (a === 'feedget' || a === 'feedreset' || a === 'feedoff') {
       var go = function () { api('feed', a === 'feedreset' ? {reset: true} : a === 'feedoff' ? {off: true} : {}).then(function (j) { S.feedTok = j.feed; render(); if (a === 'feedreset') toast('New link made. Subscribe again with it on your other calendars.', 'good'); }, function (e) { toast(errText(e), 'bad'); }); };
       if (a === 'feedget') return go();
@@ -1889,7 +1938,7 @@
     if (!S.token || document.hidden) return;
     var fast = /^#\/e\//.test(location.hash), now = Date.now();
     if (now - lastPoll >= (fast ? 6e3 : 20e3)) { lastPoll = now; quietSync(); }
-    checkReminders();
+    checkReminders(); runVoiceQ();
   }, 3000);
   window.RCAL = {S: S, sync: sync, render: render, MUS: MUS};   // for testing in the browser console
 })();

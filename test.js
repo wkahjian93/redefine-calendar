@@ -553,6 +553,27 @@ function fresh() {
   s.setNow(null);
 }
 
+
+/* ---------- voice note saves straight into the calendar ---------- */
+{
+  const {s, h, join} = fresh();
+  const kj = join('WONG KAH JIAN', true), mj = join('LIM MAY JING');
+  s.setNow('2027-03-02T02:00:00.000Z');
+  const r = h({op: 'voice', token: mj.token, audio: 'A'.repeat(4000), mime: 'audio/mp4', save: true});
+  const ev = s.load('events').find(e => e.id === r.event.id);
+  ok(ev && ev.ownerId === mj.me.id && ev.source === 'voice' && ev.start === '2027-03-03T07:00:00.000Z' && ev.end === '2027-03-03T08:00:00.000Z', 'voice note saved at once: tomorrow 3pm for an hour');
+  ok(/You said: “Esok pukul 3 petang/.test(ev.notes) && !/Not said/.test(ev.notes) && ev.remind === '30', 'what was said is kept in the notes to check later');
+  const v2 = CORE.voiceToEvent(CORE.parseVoice(JSON.stringify({title: 'Jumpa Ali', type: 'open'}), 'jumpa ali', s.load('members')), Date.parse('2027-03-02T02:00:00.000Z'));
+  ok(v2.allDay && v2.start === '2027-03-02' && /Not said: the date, the time/.test(v2.notes), 'no date or time said: saved today as all-day, marked to check');
+  const v3 = CORE.voiceToEvent(CORE.parseVoice(JSON.stringify({title: '', date: '2027-03-05', start: '10:00'}), 'uh 5th 10am', s.load('members')), 0);
+  ok(v3.title === '🎤 uh 5th 10am' && v3.start === '2027-03-05T02:00:00.000Z', 'no title said: uses what was heard');
+  throws(() => h({op: 'checked', token: kj.token, id: ev.id}), 'not_yours', 'only the owner marks it checked');
+  h({op: 'checked', token: mj.token, id: ev.id});
+  ok(s.load('events').find(e => e.id === ev.id).source === 'voiceok', 'marked as checked');
+  ok(s.load('settings').some(x => /^reads_/.test(x.key)), 'counts towards the daily limit');
+  s.setNow(null);
+}
+
 /* ---------- sample team sanity ---------- */
 {
   const s = memStore(); seed(s, NOW);

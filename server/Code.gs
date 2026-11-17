@@ -333,7 +333,7 @@ var CORE = (function () {
       .filter(function (x, i, a) { return ids[x] && x !== me.id && a.indexOf(x) === i; }).slice(0, 20).join(',');
     e.remind = src.remind == null ? (allDay ? '' : '30') : REMIND.indexOf(String(src.remind)) >= 0 ? String(src.remind) : '30';   // default: 30 min before
     e.count = e.type === 'approach' ? String(Math.max(1, Math.min(999, Math.floor(+src.count) || 1))) : '';
-    e.source = ['manual', 'photo', 'ics', 'voice'].indexOf(src.source) >= 0 ? src.source : 'manual';
+    e.source = ['manual', 'photo', 'ics', 'voice', 'voiceok'].indexOf(src.source) >= 0 ? src.source : 'manual';
     e.rep = ['w', 'm', 'y'].indexOf(src.rep) >= 0 ? src.rep : '';
     e.repEnd = e.rep && isDate(str(src.repEnd, 10)) ? str(src.repEnd, 10) : '';
     return e;
@@ -819,6 +819,25 @@ var CORE = (function () {
     return {heard: str(heard, 600), clean: str(j.clean, 300), unclear: str(j.unclear, 200), missing: missing, complete: !missing.length,
       event: {title: title, type: type || 'meeting', date: date, start: start, end: end, allDay: allDay, place: str(j.place, 120), notes: str(j.notes, 500), with: ids, rep: /^[wmy]$/.test(j.repeat) ? j.repeat : ''}};
   }
+  /* Voice note -> calendar entry, saved straight away (the agent checks it later). Nothing said is never invented:
+     no date said = today, no time said = all day, and the note says what was missing. */
+  function voiceToEvent(v, nowMs) {
+    var x = v.event, date = x.date || mytDay(nowMs), ev = {title: x.title || ('🎤 ' + v.heard.slice(0, 80)), type: x.type || 'meeting', place: x.place, with: x.with, rep: x.rep, vis: 'team', source: 'voice'};
+    if (x.start) {
+      var st = Date.parse(date + 'T' + x.start + ':00+08:00'), en = x.end ? Date.parse(date + 'T' + x.end + ':00+08:00') : st + 3600e3;
+      if (!(en > st)) en = st + 3600e3;
+      ev.allDay = false; ev.start = new Date(st).toISOString(); ev.end = new Date(en).toISOString(); ev.remind = '30';
+    } else { ev.allDay = true; ev.start = date; ev.end = date; ev.remind = ''; }
+    var miss = v.missing.map(function (m) { return {what: 'what it is', date: 'the date', time: 'the time'}[m]; });
+    ev.notes = (x.notes ? x.notes + '\n\n' : '') + '🎤 You said: “' + v.heard + '”' + (miss.length ? '\n⚠️ Not said: ' + miss.join(', ') + '. Please check.' : '');
+    return ev;
+  }
+  function checkedOp(q, store, me) {   // "✓ Correct" on a voice entry
+    var rows = store.load('events'), e = rows.filter(function (x) { return x.id === q.id; })[0];
+    if (!e) fail('not_found'); if (e.ownerId !== me.id) fail('not_yours');
+    if (e.source === 'voice') { e.source = 'voiceok'; e.updated = nowIso(store); store.save('events', rows); store.version(true); }
+    return {id: e.id};
+  }
   var AUDIO_OK = {'audio/webm': 1, 'audio/mp4': 1, 'audio/mpeg': 1, 'audio/ogg': 1, 'audio/wav': 1, 'audio/x-m4a': 1, 'audio/aac': 1};
 
   /* ---------- Celebration themes: the OWNER uploads a poster (+ optional music); AI reads its colours and pictures ----------
@@ -1066,7 +1085,7 @@ var CORE = (function () {
 
   var READ_ONLY = {sync: 1, teamtotals: 1, photos: 1, progress: 1, file: 1, themes: 1, besttime: 1};
   var OPS = {sync: sync, save: saveEvent, del: delEvent, outcome: outcome, import: importEvents, send: send, delmsg: delMsg,
-    pushreg: pushReg, pushoff: pushOff, pushtest: pushTest, teamtotals: teamTotals, rsvp: rsvp, member: member, partner: partner, profile: profile, todo: todo, tododel: todoDel, goal: goal, changepin: changePin, progress: progress, feed: feedOp, besttime: bestTime, themes: themesList, theme: themeSave, themedel: themeDel, themeson: themesSwitch, file: getFile, photo: setPhoto, photos: getPhotos, signout: signOut};
+    pushreg: pushReg, pushoff: pushOff, pushtest: pushTest, teamtotals: teamTotals, rsvp: rsvp, member: member, partner: partner, profile: profile, todo: todo, tododel: todoDel, goal: goal, changepin: changePin, progress: progress, feed: feedOp, checked: checkedOp, besttime: bestTime, themes: themesList, theme: themeSave, themedel: themeDel, themeson: themesSwitch, file: getFile, photo: setPhoto, photos: getPhotos, signout: signOut};
   function handle(q, store) {
     if (!q || typeof q !== 'object') fail('bad_request');
     if (q.op === 'signin') {
@@ -1093,7 +1112,11 @@ var CORE = (function () {
       if (!heard) fail('nothing_heard');
       var nowMs = store.now().getTime(), team = store.load('members');
       var today = mytDay(nowMs), dow = DOW_EN[new Date(nowMs + 8 * 3600e3).getUTCDay()];
-      return {ok: true, voice: parseVoice(store.ai(voicePrompt(today, dow, team.filter(function (m) { return String(m.active) !== 'false' && m.id !== vm.id; }).map(shortOf), heard), ''), heard, team)};
+      var vv = parseVoice(store.ai(voicePrompt(today, dow, team.filter(function (m) { return String(m.active) !== 'false' && m.id !== vm.id; }).map(shortOf), heard), ''), heard, team);
+      if (!q.save) return {ok: true, voice: vv};
+      if (!vv.event.title && !vv.event.date && !vv.event.start) fail('not_an_appointment');
+      var saved = store.withLock(function () { var w2 = who(q, store); return saveEvent({event: voiceToEvent(vv, store.now().getTime())}, store, w2.me, w2.leader); });
+      return {ok: true, voice: vv, event: saved.event};
     }
     if (q.op === 'themeai') {   // owner only; poster read outside the lock, not kept
       if (!b64ok(q.poster, MAX_POSTER_B64)) fail('bad_photo');
@@ -1110,7 +1133,7 @@ var CORE = (function () {
   }
 
   return {TABLES: TABLES, TYPES: TYPES, TYPE_ORDER: TYPE_ORDER, PROSPECT: PROSPECT, COLORS: COLORS, REMIND: REMIND,
-    handle: handle, feedIcs: feedIcs, parseVoice: parseVoice, voicePrompt: voicePrompt, parseThemeAI: parseThemeAI, isOwner: isOwner, OCCASIONS: OCCASIONS, ANIMS: ANIMS, tick: tick, occurrences: occurrences, holidaysOn: holidaysOn, schoolHoliday: schoolHoliday, HOLIDAYS: HOLIDAYS, defaultShort: defaultShort, answers: answers, attendance: attendance, TEAM_REMIND: TEAM_REMIND, cents: cents, MODES: MODES, casesOf: casesOf, commentTargets: commentTargets, isAll: isAll, MAX_NOC: MAX_NOC, morning: morning, evening: evening, detectType: detectType, stats: stats, addStats: addStats,
+    handle: handle, voiceToEvent: voiceToEvent, feedIcs: feedIcs, parseVoice: parseVoice, voicePrompt: voicePrompt, parseThemeAI: parseThemeAI, isOwner: isOwner, OCCASIONS: OCCASIONS, ANIMS: ANIMS, tick: tick, occurrences: occurrences, holidaysOn: holidaysOn, schoolHoliday: schoolHoliday, HOLIDAYS: HOLIDAYS, defaultShort: defaultShort, answers: answers, attendance: attendance, TEAM_REMIND: TEAM_REMIND, cents: cents, MODES: MODES, casesOf: casesOf, commentTargets: commentTargets, isAll: isAll, MAX_NOC: MAX_NOC, morning: morning, evening: evening, detectType: detectType, stats: stats, addStats: addStats,
     ratios: ratios, parseRead: parseRead, parseICS: parseICS, readPrompt: readPrompt, startMs: startMs, endMs: endMs, myt: myt, whenText: whenText};
 })();
 
