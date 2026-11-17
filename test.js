@@ -574,6 +574,15 @@ function fresh() {
   s.setNow(null);
 }
 
+/* ---------- join field (陪访) type ---------- */
+{
+  ok(CORE.TYPES.joinfield && CORE.TYPE_ORDER.indexOf('joinfield') === 5, 'join field is an activity type');
+  ok(CORE.detectType('Join field Mr Lim with KJ') === 'joinfield' && CORE.detectType('陪访 Ali') === 'joinfield' && CORE.detectType('JF present Mr Tan') === 'joinfield', 'join field picked from the title (EN / 中文)');
+  ok(CORE.detectType('Present Mr Lim medical card') === 'present', 'other titles unchanged');
+  const st = CORE.stats([{ownerId: 'x', type: 'joinfield', start: '2026-11-03T02:00:00.000Z', end: '2026-11-03T03:00:00.000Z', out: 'done'}], 0, 9e15, 9e15).x;
+  ok(st.joinfield === 1 && st.P === 0, 'a confirmed join field counts as join field (not as a presentation)');
+}
+
 /* ---------- sample team sanity ---------- */
 {
   const s = memStore(); seed(s, NOW);

@@ -7,8 +7,8 @@
   var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   var MONTH = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   var DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  var APP_VERSION = '35';
-  var H8 = 8 * 3600e3, DAY = 864e5, SELLING = {approach: 1, open: 1, present: 1, followup: 1, close: 1, recruit: 1};
+  var APP_VERSION = '36';
+  var H8 = 8 * 3600e3, DAY = 864e5, SELLING = {approach: 1, open: 1, present: 1, followup: 1, close: 1, joinfield: 1, recruit: 1};
 
   /* ---------- storage (each phone) ---------- */
   var LS = {
@@ -54,7 +54,7 @@
   /* 成功宝典 Color System: green = sales (prospecting, fact-find, presentation, follow-up, closing);
      yellow = client building & admin (service, CRM, paperwork); orange = recruiting; blue = meeting / learning;
      red = personal. Team events stay black with the logo; other people's private events stay grey "Busy". */
-  var GROUP = {approach: 'g', open: 'g', present: 'g', followup: 'g', close: 'g', service: 'y', crm: 'y', paperwork: 'y', recruit: 'o', meeting: 'b', personal: 'r'};
+  var GROUP = {approach: 'g', open: 'g', present: 'g', followup: 'g', close: 'g', joinfield: 'g', service: 'y', crm: 'y', paperwork: 'y', recruit: 'o', meeting: 'b', personal: 'r'};
   var GROUP_COLOR = {g: '#22A049', y: '#F2C200', o: '#F08A24', b: '#3B82F6', r: '#E5484D'};
   function evGroup(e) { return GROUP[e.type || e.t] || 'b'; }
   function evColor(e) { if (e.bday) return '#EC4899'; if (e.busy) return '#9CA3AF'; if (e.all) return '#000000'; return GROUP_COLOR[evGroup(e)]; }
@@ -1405,7 +1405,7 @@
       '<div class="kpis">' + kpi('O/A', pct(r.OA), 'prospecting') + kpi('P/O', pct(r.PO), 'presentation') + kpi('F/P', pct(r.FP), 'follow-up') + kpi('NOC/P', pct(r.CP), 'closing') + '</div>' + ratioNote(r) +
       '<div class="mae"><div><small>Market</small><b>' + (r.M == null ? '–' : rm(r.M)) + '</b><span>avg case size</span></div><div><small>Activity</small><b>' + mine.P + '</b><span>presentations</span></div><div><small>Efficiency</small><b>' + pct(r.E) + '</b><span>closing ratio</span></div></div>' +
       '<p class="anp">ANP <b>' + rm(mine.anp) + '</b> from ' + mine.C + ' case' + (mine.C === 1 ? '' : 's') + (mine.C > mine.anpCases ? ' <span class="warn-t">(' + (mine.C - mine.anpCases) + ' without ANP yet)</span>' : '') + '</p>' +
-      '<p class="others">🌱 Recruit ' + mine.recruit + ' · 👥 Meetings ' + mine.meeting + ' · 🛠️ Service ' + mine.service + ' · 🎁 CRM ' + mine.crm + ' · 📝 Paperwork ' + mine.paperwork + '</p>' +
+      '<p class="others">🤝 Join field ' + (mine.joinfield || 0) + ' · 🌱 Recruit ' + mine.recruit + ' · 👥 Meetings ' + mine.meeting + ' · 🛠️ Service ' + mine.service + ' · 🎁 CRM ' + mine.crm + ' · 📝 Paperwork ' + mine.paperwork + '</p>' +
       (mine.unconfirmed ? '<a class="confirm-bar" href="#/confirm">⚠️ ' + mine.unconfirmed + ' past activit' + (mine.unconfirmed > 1 ? 'ies are' : 'y is') + ' not confirmed, so not counted <span>›</span></a>' : '') + '</div>';
     var ms = members().filter(function (m) { return m.active !== false; });
     var rows = ms.map(function (m) { return {m: m, s: by[m.id] || C.addStats([])}; });
