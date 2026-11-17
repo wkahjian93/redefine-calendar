@@ -487,3 +487,12 @@ html[data-celebrate] .calhead { background: color-mix(in srgb, var(--bg) 92%, tr
 .poster-prev img, .poster-full { max-width: 100%; max-height: 50vh; display: block; margin: 8px auto; border-radius: 10px; }
 .btn.big { width: 100%; margin: 6px 0 10px; }
 @media (min-width: 760px) { .fab.mic { right: max(36px, calc(50vw - 664px)); bottom: calc(152px + var(--safe-b)); } }
+
+/* ---------- best time for the team ---------- */
+.besttime .seg.small { margin-bottom: 6px; } .besttime .seg.small button { font-size: 12px; padding: 7px 4px; }
+.card.bt.best { border: 2px solid #22A049; }
+.bt-time { font-size: 20px; font-weight: 800; }
+.bt-count { text-align: center; font-size: 13px; color: var(--muted); } .bt-count b { font-size: 26px; color: #22A049; } .bt-count small { display: block; }
+.hol-t { color: #B45309; }
+.heat { width: 100%; border-collapse: separate; border-spacing: 3px; font-size: 12px; text-align: center; }
+.heat th { font-weight: 600; color: var(--muted); font-size: 11px; } .heat td { border-radius: 6px; padding: 8px 2px; font-weight: 700; }

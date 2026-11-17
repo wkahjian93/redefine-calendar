@@ -645,6 +645,82 @@ var CORE = (function () {
     return {signedOut: true};
   }
 
+  /* ---------- Best time for a team activity (leaders): counts who is free in each time slot of the coming weeks.
+     Known: everyone's appointments (private ones count as busy; cancelled ones and invitations they rejected don't;
+     all-day events block the day except yearly birthdays / anniversaries).
+     Usual: each person's pattern over the last 8 weeks (e.g. always busy on Wednesday nights), so slots that look free only
+     because nothing is booked yet are ranked lower. People with fewer than 5 appointments in 8 weeks are not counted. */
+  var BT_BLOCKS = [[9, 12, 'Morning'], [12, 14, 'Lunch'], [14, 18, 'Afternoon'], [18, 20, 'Evening'], [20, 22, 'Night']];
+  function bestTime(q, store, me, leader) {
+    if (!leader) fail('leader_only');
+    var now = store.now().getTime(), DAYMS = 864e5, HALF = 30 * 60e3;
+    var dur = [60, 90, 120, 180].indexOf(+q.dur) >= 0 ? +q.dur : 120, days = Math.max(7, Math.min(62, Math.floor(+q.days) || 28));
+    var when = ['any', 'evening', 'weekend', 'day'].indexOf(q.when) >= 0 ? q.when : 'any';
+    var dayStart = function (k) { return Date.parse(k + 'T00:00:00+08:00'); };
+    var today = mytDay(now), A = dayStart(today), B = A + (days + 1) * DAYMS, P0 = A - 56 * DAYMS;
+    var members = store.load('members').filter(function (m) { return String(m.active) !== 'false'; }), msgs = store.load('msgs'), info = {};
+    members.forEach(function (m) { info[m.id] = {m: m, fut: [], days: {}, seen: {}, hist: 0}; });
+    store.load('events').forEach(function (e) {
+      if (e.out === 'cancel') return;
+      var allDay = e.allDay === 'true' || e.allDay === true; if (allDay && e.rep === 'y') return;
+      var a = answers(e.id, msgs), people = (isAll(e) ? members.map(function (m) { return m.id; }) : [e.ownerId].concat(withList(e))).filter(function (id) { return id === e.ownerId || a[id] !== 'no'; });
+      occurrences(e, P0, B).forEach(function (o) {
+        people.forEach(function (id) {
+          var b = info[id]; if (!b) return;
+          if (allDay) { if (o.e > now) for (var d = o.s; d < o.e; d += DAYMS) b.days[mytDay(d)] = 1; return; }
+          if (o.e > now) { b.fut.push([o.s, o.e]); return; }
+          b.hist++;
+          var k = mytDay(o.s), base = dayStart(k);   // mark the half-hours (9:00-22:00) this past appointment covered
+          for (var t = Math.max(o.s, base + 9 * 3600e3); t < Math.min(o.e, base + 22 * 3600e3); t += HALF) {
+            var idx = Math.floor((t - base - 9 * 3600e3) / HALF); b.seen[new Date(base + 8 * 3600e3).getUTCDay() + ':' + idx + ':' + k] = 1;
+          }
+        });
+      });
+    });
+    var counted = members.filter(function (m) { return info[m.id].hist >= 5; }), N = counted.length;
+    counted.forEach(function (m) {   // rate[weekday][half-hour] = share of the last 8 weeks this person was busy then
+      var b = info[m.id], r = []; for (var w = 0; w < 7; w++) { r.push([]); for (var i = 0; i < 26; i++) r[w].push(0); }
+      Object.keys(b.seen).forEach(function (key) { var p = key.split(':'); r[+p[0]][+p[1]] += 1 / 8; });
+      b.rate = r;
+    });
+    var slots = [];
+    for (var dd = 0; dd <= days; dd++) {
+      var k = mytDay(A + dd * DAYMS + 12 * 3600e3), base = dayStart(k), wd = new Date(base + 8 * 3600e3).getUTCDay(), wkend = wd === 0 || wd === 6;
+      if (when === 'weekend' && !wkend) continue;
+      if (when === 'evening' && wkend) continue;
+      for (var mn = 9 * 60; mn + dur <= 22 * 60; mn += 30) {
+        if (when === 'evening' && mn < 18 * 60) continue;
+        if (when === 'day' && mn + dur > 18 * 60) continue;
+        var st = base + mn * 60e3, en = st + dur * 60e3; if (st < now + 60 * 60e3) continue;
+        var busy = [], usual = [], exp = 0, i0 = (mn - 540) / 30, i1 = i0 + dur / 30;
+        counted.forEach(function (m) {
+          var b = info[m.id];
+          if (b.days[k] || b.fut.some(function (iv) { return iv[0] < en && iv[1] > st; })) { busy.push(m); return; }
+          var mx = 0; for (var i = i0; i < i1; i++) mx = Math.max(mx, b.rate[wd][i] || 0);
+          exp += 1 - Math.min(1, mx); if (mx >= 0.5) usual.push(m);
+        });
+        slots.push({s: st, e: en, k: k, free: N - busy.length, exp: exp, busy: busy, usual: usual});
+      }
+    }
+    slots.sort(function (x, y) { return y.exp - x.exp || y.free - x.free || x.s - y.s; });
+    var pick = [], perDay = {};
+    for (var j = 0; j < slots.length && pick.length < 6; j++) {
+      var c = slots[j]; if ((perDay[c.k] || 0) >= 1) continue;
+      perDay[c.k] = 1; pick.push(c);
+    }
+    var names = function (list) { return list.map(shortOf).sort(); };
+    var heat = [1, 2, 3, 4, 5, 6, 0].map(function (w) {
+      return {wd: w, cells: BT_BLOCKS.map(function (bl) {
+        if (!N) return null;
+        var tot = 0; counted.forEach(function (m) { var r = info[m.id].rate[w], sum = 0, n = 0; for (var i = (bl[0] - 9) * 2; i < (bl[1] - 9) * 2; i++) { sum += r[i]; n++; } tot += 1 - Math.min(1, sum / n); });
+        return Math.round(tot / N * 100);
+      })};
+    });
+    return {of: N, dur: dur, days: days, when: when, blocks: BT_BLOCKS.map(function (b) { return b[2] + ' ' + b[0] + '–' + b[1]; }),
+      notCounted: names(members.filter(function (m) { return info[m.id].hist < 5; })), heat: heat,
+      slots: pick.map(function (c) { return {start: new Date(c.s).toISOString(), end: new Date(c.e).toISOString(), day: c.k, free: c.free, expected: Math.round(c.exp * 10) / 10, busy: names(c.busy), usual: names(c.usual), hol: holidaysOn(c.k).map(function (h) { return h.icon + ' ' + h.name; })}; })};
+  }
+
   /* ---------- Calendar subscription (Apple / Google Calendar): a private link per member ----------
      The link holds a long secret. Anyone who has it can read that member's appointments (private ones in full),
      so the app shows it only to the member and can replace it (old link stops working). Read-only: nothing can be changed through it. */
@@ -988,9 +1064,9 @@ var CORE = (function () {
     return {sent: n};
   }
 
-  var READ_ONLY = {sync: 1, teamtotals: 1, photos: 1, progress: 1, file: 1, themes: 1};
+  var READ_ONLY = {sync: 1, teamtotals: 1, photos: 1, progress: 1, file: 1, themes: 1, besttime: 1};
   var OPS = {sync: sync, save: saveEvent, del: delEvent, outcome: outcome, import: importEvents, send: send, delmsg: delMsg,
-    pushreg: pushReg, pushoff: pushOff, pushtest: pushTest, teamtotals: teamTotals, rsvp: rsvp, member: member, partner: partner, profile: profile, todo: todo, tododel: todoDel, goal: goal, changepin: changePin, progress: progress, feed: feedOp, themes: themesList, theme: themeSave, themedel: themeDel, themeson: themesSwitch, file: getFile, photo: setPhoto, photos: getPhotos, signout: signOut};
+    pushreg: pushReg, pushoff: pushOff, pushtest: pushTest, teamtotals: teamTotals, rsvp: rsvp, member: member, partner: partner, profile: profile, todo: todo, tododel: todoDel, goal: goal, changepin: changePin, progress: progress, feed: feedOp, besttime: bestTime, themes: themesList, theme: themeSave, themedel: themeDel, themeson: themesSwitch, file: getFile, photo: setPhoto, photos: getPhotos, signout: signOut};
   function handle(q, store) {
     if (!q || typeof q !== 'object') fail('bad_request');
     if (q.op === 'signin') {

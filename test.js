@@ -520,6 +520,39 @@ function fresh() {
   throws(() => h({op: 'profile', token: mj.token, merges: '<x>'}), 'bad_request', 'odd kept-chip list refused');
 }
 
+
+/* ---------- best time for a team activity ---------- */
+{
+  const {s, h, join} = fresh();
+  const kj = join('WONG KAH JIAN', true), a = join('ALICIA TAN'), b = join('BEN LIM'), c = join('CARMEN WONG'), quiet = join('QUIET NEWBIE');
+  s.setNow('2026-11-02T01:00:00.000Z');   // Mon 2 Nov 2026, 9am Malaysia time
+  const at = (d, hh, mins) => ({start: new Date(Date.parse(d + 'T' + hh + ':00+08:00')).toISOString(), end: new Date(Date.parse(d + 'T' + hh + ':00+08:00') + (mins || 120) * 60e3).toISOString()});
+  // past 8 weeks: Alicia and Ben always busy on Wednesday 8pm; everyone has some daytime work
+  for (let w = 1; w <= 8; w++) {
+    const day = new Date(Date.parse('2026-11-04T00:00:00Z') - w * 7 * 864e5).toISOString().slice(0, 10);
+    const mon = new Date(Date.parse('2026-11-02T00:00:00Z') - w * 7 * 864e5).toISOString().slice(0, 10);
+    for (const p of [a, b]) h({op: 'save', token: p.token, event: Object.assign({title: 'Class', type: 'personal'}, at(day, '20:00'))});
+    for (const p of [kj, c]) h({op: 'save', token: p.token, event: Object.assign({title: 'Present client', type: 'present'}, at(mon, '10:00'))});
+  }
+  // next week: Carmen booked on Thursday 8pm; Ben on leave all Friday
+  h({op: 'save', token: c.token, event: Object.assign({title: 'Dinner', type: 'personal', vis: 'private'}, at('2026-11-05', '20:00'))});
+  h({op: 'save', token: b.token, event: {title: 'Leave', type: 'personal', allDay: true, start: '2026-11-06', end: '2026-11-06'}});
+  throws(() => h({op: 'besttime', token: a.token}), 'leader_only', 'only leaders can look for the best time');
+  const r = h({op: 'besttime', token: kj.token, dur: 120, days: 14, when: 'evening'});
+  ok(r.of === 4 && r.notCounted.join() === 'QUIET', 'people who barely use the calendar are listed, not counted');
+  ok(r.slots.length >= 5 && r.slots.every(x => x.free === 4 || x.expected < r.slots[0].expected + 0.01), 'returns the best slots first');
+  ok(!r.slots.some(x => x.day === '2026-11-04' && x.start === '2026-11-04T12:00:00.000Z'), 'Wednesday 8pm is not suggested (2 people are usually busy then)');
+  ok(r.slots[0].free === 4 && r.slots[0].expected === 4, 'top slot: everyone free and usually free');
+  const thu = h({op: 'besttime', token: kj.token, dur: 120, days: 3, when: 'evening'}).slots.find(x => x.day === '2026-11-05');
+  ok(!thu || thu.free === 4 || !thu.busy.includes('CARMEN') || thu.start !== '2026-11-05T12:00:00.000Z', 'a booked private dinner counts as busy');
+  const all = h({op: 'besttime', token: kj.token, dur: 60, days: 7, when: 'any'});
+  const fri = all.slots.find(x => x.day === '2026-11-06');
+  ok(!fri || fri.busy.includes('BEN'), 'all-day leave blocks the whole day');
+  ok(r.heat.length === 7 && r.heat[2].cells[4] <= 50 && r.heat[0].cells[4] === 100, 'pattern table: Wednesday night usually busy, Monday night free');
+  ok(all.slots.every(x => Date.parse(x.start) >= Date.parse('2026-11-02T02:00:00.000Z')), 'never suggests a time already past or within the hour');
+  s.setNow(null);
+}
+
 /* ---------- sample team sanity ---------- */
 {
   const s = memStore(); seed(s, NOW);

@@ -7,7 +7,7 @@
   var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   var MONTH = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   var DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  var APP_VERSION = '30';
+  var APP_VERSION = '31';
   var H8 = 8 * 3600e3, DAY = 864e5, SELLING = {approach: 1, open: 1, present: 1, followup: 1, close: 1, recruit: 1};
 
   /* ---------- storage (each phone) ---------- */
@@ -1055,9 +1055,39 @@
   }
   function upcomingTeam() { var now = Date.now(); return events().filter(function (e) { return e.all && eMs(e) > now && e.out !== 'cancel'; }).sort(function (x, y) { return sMs(x) - sMs(y); }); }
   function teamToAnswer() { var my = me().id; return upcomingTeam().filter(function (e) { return e.ownerId !== my && !ansOf(e)[my]; }).length; }
+  /* ---------- Best time for a team activity (leaders): who is free, from everyone's calendars + their usual weekly pattern ---------- */
+  var BT_DAY = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  function bestTimeScreen() {
+    var head = topbar('Best time for the team', {back: '#/teamevents'}) + '<main class="besttime">';
+    if (!isLeader()) return head + '<p class="empty">For leaders.</p></main>' + tabs('cal');
+    var o = S.btOpt || (S.btOpt = {dur: 120, when: 'evening', days: 28}), key = o.dur + '|' + o.when + '|' + o.days;
+    var seg = function (name, list) { return '<div class="seg small">' + list.map(function (x) { return '<button class="' + (String(o[name]) === String(x[0]) ? 'on' : '') + '" data-act="btopt" data-k="' + name + '" data-v="' + x[0] + '">' + x[1] + '</button>'; }).join('') + '</div>'; };
+    var html = head + '<div class="card"><p class="tiny muted">How long</p>' + seg('dur', [[60, '1 h'], [90, '1.5 h'], [120, '2 h'], [180, '3 h']]) +
+      '<p class="tiny muted">When</p>' + seg('when', [['evening', 'Weekday nights'], ['weekend', 'Weekends'], ['day', 'Daytime'], ['any', 'Any time']]) +
+      '<p class="tiny muted">Looking ahead</p>' + seg('days', [[14, '2 weeks'], [28, '4 weeks'], [56, '8 weeks']]) + '</div>';
+    var r = S.bt && S.bt.key === key && Date.now() - S.bt.at < 120e3 ? S.bt.v : null;
+    if (!r) {
+      if (!S.btBusy) { S.btBusy = 1; api('besttime', {dur: o.dur, when: o.when, days: o.days}).then(function (j) { S.btBusy = 0; S.bt = {key: key, at: Date.now(), v: j}; render(); }, function (e) { S.btBusy = 0; toast(errText(e), 'bad'); }); }
+      return html + '<p class="empty">Checking everyone’s calendar…</p></main>' + tabs('cal');
+    }
+    if (!r.of) return html + '<p class="empty">Not enough calendar data yet: people need at least 5 appointments in the last 8 weeks to be counted.</p></main>' + tabs('cal');
+    html += '<h4 class="sub">Best times</h4>' + (r.slots.length ? r.slots.map(function (x, i) {
+      var st = Date.parse(x.start), pc = Math.round(x.free / r.of * 100);
+      return '<div class="card bt' + (i === 0 ? ' best' : '') + '"><div class="row between"><div><b>' + (i === 0 ? '⭐ ' : '') + esc(dayLabel(x.day, true)) + '</b><br><span class="bt-time">' + hm(st) + ' – ' + hm(Date.parse(x.end)) + '</span>' + (x.hol.length ? '<br><small class="hol-t">' + esc(x.hol.join(' · ')) + '</small>' : '') + '</div>' +
+        '<div class="bt-count"><b>' + x.free + '</b>/' + r.of + '<small>free</small></div></div>' +
+        '<div class="gbar"><i style="width:' + pc + '%"></i></div>' +
+        '<p class="tiny">' + (x.busy.length ? '📅 Booked: ' + esc(x.busy.join(', ')) : '✅ Nobody has anything booked') + (x.usual.length ? '<br>🕑 Usually busy then: ' + esc(x.usual.join(', ')) : '') + '</p>' +
+        '<button class="btn primary" data-act="btset" data-s="' + x.start + '" data-e="' + x.end + '">📣 Set team activity here</button></div>';
+    }).join('') : '<p class="empty">No free slot found. Try another time of day or a longer look-ahead.</p>');
+    html += '<h4 class="sub">Usual free time (last 8 weeks)</h4><div class="card"><table class="heat"><thead><tr><th></th>' + r.blocks.map(function (b) { return '<th>' + esc(b.replace(' ', '<br>')).replace('&lt;br&gt;', '<br>') + '</th>'; }).join('') + '</tr></thead><tbody>' +
+      r.heat.map(function (row) { return '<tr><th>' + BT_DAY[row.wd] + '</th>' + row.cells.map(function (v) { return '<td style="background:rgba(34,160,73,' + (v == null ? 0 : (v / 100 * 0.85).toFixed(2)) + ');color:' + (v >= 60 ? '#fff' : 'inherit') + '">' + (v == null ? '' : v + '%') + '</td>'; }).join('') + '</tr>'; }).join('') +
+      '</tbody></table><p class="tiny muted">Greener = more people are usually free then.</p></div>' +
+      '<p class="tiny muted">Counts ' + r.of + ' people, using their appointments in the coming weeks (private ones count as busy, details stay hidden) and their usual weekly pattern. ' + (r.notCounted.length ? 'Not counted because they hardly use the calendar yet: ' + esc(r.notCounted.join(', ')) + '.' : '') + '</p></main>';
+    return html + tabs('cal');
+  }
   function teamEventsScreen() {
     var list = upcomingTeam(), my = me().id;
-    return topbar('Team events', {back: '#/'}) + '<main><p class="tiny muted">Every upcoming whole-team event, next 3 months. Tap Going or Can\'t go any time; tap your answer again to clear it.</p>' + (list.length ? list.map(function (e) {
+    return topbar('Team events', {back: '#/'}) + '<main>' + (isLeader() ? '<a class="btn primary big" href="#/besttime">🔎 Find the time most people are free</a>' : '') + '<p class="tiny muted">Every upcoming whole-team event, next 3 months. Tap Going or Can\'t go any time; tap your answer again to clear it.</p>' + (list.length ? list.map(function (e) {
       var at = attendOf(e), mine = myAnswer(e), own = e.ownerId === my;
       return '<div class="card tev"><a class="tev-head" href="#/e/' + e.id + '"><img class="tlogo" src="icons/team-mark.png" alt=""><b>' + esc(e.title) + '</b><small>' + esc(dayLabel(dayKey(sMs(e)), true)) + ' · ' + esc(evTime(e)) + (e.place ? ' · 📍 ' + esc(e.place) : '') + '</small><small>by ' + esc(shortName(mem(e.ownerId))) + ' · ✅ ' + at.yes.length + ' going · ❌ ' + at.no.length + ' can\'t · ⏳ ' + at.none.length + ' no reply</small></a>' +
         '<div class="outs"><button class="out' + (mine === 'yes' ? ' on' : '') + '" data-act="rsvp" data-id="' + e.id + '" data-v="' + (mine === 'yes' ? '' : 'yes') + '">✅ Going</button><button class="out grey' + (mine === 'no' ? ' on' : '') + '" data-act="rsvp" data-id="' + e.id + '" data-v="' + (mine === 'no' ? '' : 'no') + '">❌ Can\'t go</button></div>' +
@@ -1665,6 +1695,7 @@
     else if (parts[0] === 'invites') html = invitesScreen();
     else if (parts[0] === 'teamevents') html = teamEventsScreen();
     else if (parts[0] === 'todo') html = todoScreen();
+    else if (parts[0] === 'besttime') html = bestTimeScreen();
     else if (parts[0] === 'themes') html = themesScreen();
     else if (parts[0] === 'report') html = reportScreen(parts[1]);
     else html = calendarScreen();
@@ -1680,6 +1711,8 @@
     var b = ev.target.closest('[data-act]'); if (!b || b.tagName === 'FORM' || b.tagName === 'INPUT') return;
     var a = b.dataset.act, today = dayKey(Date.now());
     if (a === 'close-modal') return closeModal();
+    if (a === 'btopt') { S.btOpt[b.dataset.k] = b.dataset.k === 'when' ? b.dataset.v : +b.dataset.v; return render(); }
+    if (a === 'btset') { var bs = b.dataset.s, be = b.dataset.e; return editor(null, {date: dayKey(Date.parse(bs)), time: hm24(Date.parse(bs)), ev: {all: true, type: 'meeting', start: bs, end: be}}); }
     if (a === 'voice') return voiceStart();
     if (a === 'voice-stop') { if (REC && REC.rec.state !== 'inactive') REC.rec.stop(); return; }
     if (a === 'voice-cancel') { if (REC) { REC.cancel = true; if (REC.rec.state !== 'inactive') REC.rec.stop(); } return closeModal(); }
