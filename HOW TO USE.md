@@ -45,7 +45,7 @@ You stay signed in on that phone for good, like WhatsApp. Only two things sign y
 ## More (app version 29)
 - **🎤 Voice booking:** tap the 🎤 button above **+** and say the appointment in any mix of English, 华语, Cantonese, Hokkien or Malay, e.g. "Esok 3 点 present medical card to Mr Lim at Gurney". Up to 1 minute. If the app heard what, the date and the time, it saves straight away (with **Undo**). If something is missing it opens the form with what it heard, and you fill in the rest. Hokkien is understood less well than the other languages. Each recording counts towards the daily photo-reading limit, and recordings are not kept.
 - **📅 Calendar subscription (Me):** shows your appointments in Apple Calendar or Google Calendar, so their Home Screen widgets show what's next. The setup steps are in the card. Keep adding and changing appointments in this app; the other calendar picks up changes when it refreshes (Apple: as often as you set it; Google: usually every few hours, up to a day). TimeTree can't subscribe to a link. **The link shows all your appointments, private ones too:** don't share it, and tap **New link** if you did.
-- **🎵 Music & animations (Me, per device):** calm background music is **off** until you switch it on. Celebration animations can be switched off too.
+- **🎵 Music & animations (Me, per device):** light, cheerful background music (轻快) is **off** until you switch it on. Celebration animations can be switched off too.
 - **All your devices:** phone, iPad and laptop show the same data, which is kept on the server. Deleting the app or changing phone loses nothing: sign in again with your name and PIN. Kept "Me + …" chips also follow you. Only the music and animation switches are per device.
 
 ## Celebration themes (owner only)

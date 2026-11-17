@@ -7,7 +7,7 @@
   var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   var MONTH = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   var DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  var APP_VERSION = '29';
+  var APP_VERSION = '30';
   var H8 = 8 * 3600e3, DAY = 864e5, SELLING = {approach: 1, open: 1, present: 1, followup: 1, close: 1, recruit: 1};
 
   /* ---------- storage (each phone) ---------- */
@@ -432,7 +432,7 @@
   });
   document.addEventListener('input', function (ev) {
     var el = ev.target; if (!el || !el.dataset || el.dataset.act !== 'musicvol') return;
-    var v = +el.value; LS.set('musicVol', v); if (MUS.audio) MUS.audio.volume = v; if (MUS.master && MUS.ctx) MUS.master.gain.setTargetAtTime(v * 0.5, MUS.ctx.currentTime, 0.2);
+    var v = +el.value; LS.set('musicVol', v); if (MUS.audio) MUS.audio.volume = v; if (MUS.master && MUS.ctx) MUS.master.gain.setTargetAtTime(v, MUS.ctx.currentTime, 0.2);
   });
   function askNewPin(force) {
     if (!force && !(S.data && S.data.me && S.data.me.mustChange)) return;
@@ -497,7 +497,7 @@
   function soundCard() {
     var on = LS.get('music', false), vol = LS.get('musicVol', 0.4), fx = LS.get('fx', true), t = activeTheme();
     return '<div class="card"><h4>🎵 Music & animations <small class="muted">(this device)</small></h4>' +
-      '<label class="switch"><input type="checkbox" data-act="music"' + (on ? ' checked' : '') + '> Calm background music' + (t && t.music ? ' (now: ' + esc(t.musicName || 'celebration song') + ')' : '') + '</label>' +
+      '<label class="switch"><input type="checkbox" data-act="music"' + (on ? ' checked' : '') + '> Background music (light & cheerful 轻快)' + (t && t.music ? ' (now: ' + esc(t.musicName || 'celebration song') + ')' : '') + '</label>' +
       '<label>Volume<input type="range" min="0" max="1" step="0.05" value="' + vol + '" data-act="musicvol"></label>' +
       '<label class="switch"><input type="checkbox" data-act="fx"' + (fx ? ' checked' : '') + '> Celebration animations</label></div>';
   }
@@ -516,33 +516,55 @@
     if (MUS.audio) { MUS.audio.pause(); MUS.audio = null; }
     if (MUS.ctx) { var c = MUS.ctx; try { MUS.master.gain.setTargetAtTime(0, c.currentTime, 0.3); } catch (e) {} setTimeout(function () { c.close().catch(function () {}); }, 1500); MUS.ctx = null; }
   }
-  /* Generated calm music: a soft pad (C – Am – F – G) with slow pentatonic notes and an echo. Nothing is downloaded. */
+  /* Generated light, cheerful music (轻快): 112 BPM, C – G – Am – F, bouncy bass, offbeat chord stabs, soft drums
+     and a plucked melody that changes every 8 bars. Made on the device; nothing is downloaded. */
   function genStart() {
     var AC = window.AudioContext || window.webkitAudioContext; if (!AC) return;
-    var c = new AC(), master = c.createGain(), lp = c.createBiquadFilter(), dl = c.createDelay(), fb = c.createGain(), wet = c.createGain();
-    master.gain.value = 0; master.gain.setTargetAtTime(musicVol() * 0.5, c.currentTime, 1.5);
-    lp.type = 'lowpass'; lp.frequency.value = 1800; dl.delayTime.value = 0.42; fb.gain.value = 0.35; wet.gain.value = 0.35;
-    lp.connect(master); lp.connect(dl); dl.connect(fb); fb.connect(dl); dl.connect(wet); wet.connect(master); master.connect(c.destination);
+    var c = new AC(), master = c.createGain(), comp = c.createDynamicsCompressor(), dl = c.createDelay(), fb = c.createGain(), wet = c.createGain(), mel = c.createGain();
+    master.gain.value = 0; master.gain.setTargetAtTime(musicVol(), c.currentTime, 0.8);
+    dl.delayTime.value = 60 / 112 * 0.75; fb.gain.value = 0.25; wet.gain.value = 0.22;
+    mel.connect(master); mel.connect(dl); dl.connect(fb); fb.connect(dl); dl.connect(wet); wet.connect(master);
+    master.connect(comp); comp.connect(c.destination);
     MUS.ctx = c; MUS.master = master;
-    var CH = [[48, 52, 55], [45, 48, 52], [41, 45, 48], [43, 47, 50]], PENTA = [0, 2, 4, 7, 9], ci = 0;
+    var STEP = 60 / 112 / 4, CH = [[60, 64, 67], [55, 59, 62], [57, 60, 64], [53, 57, 60]], SCALE = [0, 2, 4, 7, 9, 12, 14, 16];
     var hz = function (n) { return 440 * Math.pow(2, (n - 69) / 12); };
-    var tone = function (n, at, len, peak, type) {
-      var o = c.createOscillator(), g = c.createGain(); o.type = type || 'sine'; o.frequency.value = hz(n);
-      g.gain.setValueAtTime(0, at); g.gain.linearRampToValueAtTime(peak, at + Math.min(1.5, len / 3)); g.gain.setTargetAtTime(0, at + len * 0.6, len / 4);
-      o.connect(g); g.connect(lp); o.start(at); o.stop(at + len * 1.6);
+    var noise = c.createBuffer(1, c.sampleRate * 0.3, c.sampleRate), nd = noise.getChannelData(0); for (var i = 0; i < nd.length; i++) nd[i] = Math.random() * 2 - 1;
+    var osc = function (n, at, len, peak, type, dest, attack) {
+      var o = c.createOscillator(), g = c.createGain(); o.type = type; o.frequency.value = hz(n);
+      g.gain.setValueAtTime(0.0001, at); g.gain.exponentialRampToValueAtTime(peak, at + (attack || 0.006)); g.gain.exponentialRampToValueAtTime(0.0001, at + len);
+      o.connect(g); g.connect(dest || master); o.start(at); o.stop(at + len + 0.05);
     };
-    var chord = function () {
+    var hit = function (at, len, peak, type, freq) {
+      var s = c.createBufferSource(), f = c.createBiquadFilter(), g = c.createGain(); s.buffer = noise; f.type = type; f.frequency.value = freq;
+      g.gain.setValueAtTime(peak, at); g.gain.exponentialRampToValueAtTime(0.0001, at + len); s.connect(f); f.connect(g); g.connect(master); s.start(at); s.stop(at + len + 0.02);
+    };
+    var kick = function (at) { var o = c.createOscillator(), g = c.createGain(); o.frequency.setValueAtTime(120, at); o.frequency.exponentialRampToValueAtTime(45, at + 0.15); g.gain.setValueAtTime(0.35, at); g.gain.exponentialRampToValueAtTime(0.0001, at + 0.22); o.connect(g); g.connect(master); o.start(at); o.stop(at + 0.25); };
+    var RHY = [[1,0,1,0, 0,0,1,0, 1,0,0,1, 0,0,1,0], [1,0,0,1, 0,0,1,0, 0,0,1,0, 1,0,0,0], [1,0,1,1, 0,0,1,0, 1,0,1,0, 0,0,0,0], [0,0,1,0, 1,0,1,0, 0,1,0,1, 0,0,1,0]];
+    var melody = [];
+    var newMelody = function () {   // 8 bars: A A' B A'' built from two short rhythms and a stepwise walk on the pentatonic scale
+      var ra = RHY[Math.floor(Math.random() * 4)], rb = RHY[Math.floor(Math.random() * 4)], pos = 2 + Math.floor(Math.random() * 3), bars = [];
+      var bar = function (rh, ch) { return rh.map(function (on, s) { if (!on) return null; pos = Math.max(0, Math.min(SCALE.length - 1, pos + [-1, -1, 0, 1, 1, 2, -2][Math.floor(Math.random() * 7)])); var n = 72 + SCALE[pos]; if (s % 8 === 0) { var best = ch.map(function (x) { return x + 12; }).concat(ch.map(function (x) { return x + 24; })).sort(function (x, y) { return Math.abs(x - n) - Math.abs(y - n); })[0]; n = best; } return n; }); };
+      for (var b = 0; b < 8; b++) bars.push(bar(b === 4 || b === 5 ? rb : ra, CH[b % 4]));
+      melody = bars;
+    };
+    newMelody();
+    var step = 0, next = c.currentTime + 0.1;
+    var tick = function () {
       if (!MUS.on || MUS.ctx !== c) return;
-      var now = c.currentTime + 0.05; CH[ci % 4].forEach(function (n) { tone(n, now, 9, 0.05, 'sine'); tone(n + 12, now, 9, 0.012, 'triangle'); }); ci++;
-      MUS.timers.push(setTimeout(chord, 8000));
+      while (next < c.currentTime + 0.25) {
+        var s = step % 16, barN = Math.floor(step / 16) % 8, ch = CH[barN % 4], at = next;
+        if (step % 128 === 0 && step) newMelody();
+        if (s === 0 || s === 8) kick(at);
+        if (s === 4 || s === 12) hit(at, 0.12, 0.09, 'bandpass', 1800);
+        if (s % 2 === 0) hit(at, 0.04, s % 4 === 2 ? 0.05 : 0.025, 'highpass', 8000);
+        if (s === 0 || s === 6 || s === 8 || s === 14) osc((s === 6 || s === 14 ? ch[2] : ch[0]) - 24, at, 0.28, 0.22, 'triangle');
+        if (s === 2 || s === 6 || s === 10 || s === 14) ch.forEach(function (n) { osc(n, at, 0.16, 0.035, 'triangle'); });
+        var m = melody[barN][s]; if (m) { osc(m, at, 0.32, 0.09, 'triangle', mel); osc(m + 12, at, 0.18, 0.02, 'sine', mel); }
+        step++; next += STEP;
+      }
+      MUS.timers[0] = setTimeout(tick, 60);
     };
-    var note = function () {
-      if (!MUS.on || MUS.ctx !== c) return;
-      var root = CH[(ci + 3) % 4][0] + 24, n = root + PENTA[Math.floor(Math.random() * 5)] - (Math.random() < 0.3 ? 12 : 0);
-      tone(n, c.currentTime + 0.05, 3.5, 0.07, 'sine');
-      MUS.timers.push(setTimeout(note, 1800 + Math.random() * 2600));
-    };
-    chord(); MUS.timers.push(setTimeout(note, 1200));
+    tick();
   }
   // browsers only allow sound after a tap: start on the first tap when music is switched on
   document.addEventListener('pointerdown', function () { if (LS.get('music', false) && !MUS.on) musicStart(); }, {passive: true});
