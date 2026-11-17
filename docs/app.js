@@ -7,7 +7,7 @@
   var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   var MONTH = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   var DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  var APP_VERSION = '38';
+  var APP_VERSION = '39';
   var H8 = 8 * 3600e3, DAY = 864e5, SELLING = {approach: 1, open: 1, present: 1, followup: 1, close: 1, joinfield: 1, recruit: 1};
 
   /* ---------- storage (each phone) ---------- */
@@ -570,7 +570,7 @@
     tick();
   }
   // browsers only allow sound after a tap: start on the first tap when music is switched on
-  document.addEventListener('pointerdown', function () { if (LS.get('music', false) && !MUS.on) musicStart(); }, {passive: true});
+  document.addEventListener('pointerdown', function (ev) { if (ev.target.closest && ev.target.closest('.fab.mic')) return; if (LS.get('music', false) && !MUS.on && !HOLD) musicStart(); }, {passive: true});
   document.addEventListener('visibilitychange', function () { if (document.hidden) musicStop(); });
 
   /* files (posters, music) are fetched once and kept on the device */
@@ -785,7 +785,8 @@
     ev.preventDefault();
     try { btn.setPointerCapture(ev.pointerId); } catch (x) {}
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.MediaRecorder) return toast('Voice recording isn’t supported here. Update your phone or use Chrome / Safari.', 'bad');
-    var h = HOLD = {x0: ev.clientX, t0: Date.now(), btn: btn, up: false, cancel: false, slide: false};
+    var h = HOLD = {x0: ev.clientX, t0: Date.now(), btn: btn, up: false, cancel: false, slide: false, music: MUS.on};
+    if (MUS.on) musicStop();   // background music off while recording, back on after
     holdUI(h);
     navigator.mediaDevices.getUserMedia({audio: true}).then(function (stream) {
       if (h.up) {   // let go before the microphone was ready (e.g. the first-time "allow microphone" question)
@@ -812,6 +813,7 @@
   function micMove(ev) { if (!HOLD) return; var s = ev.clientX - HOLD.x0 < -70; if (s !== HOLD.slide) { HOLD.slide = s; holdUI(HOLD); } }
   function micUp(ev, cancel) {
     var h = HOLD; if (!h) return; HOLD = null; h.up = true; h.cancel = !!cancel || h.slide; holdUI(null);
+    if (h.music) setTimeout(function () { if (!HOLD) musicStart(); }, 800);
     if (S.renderLater) { S.renderLater = false; setTimeout(render, 0); }
     if (h.rec && h.rec.state !== 'inactive') h.rec.stop();
     else if (!h.rec && Date.now() - h.t0 < 600) toast('Hold the 🎤 button while you speak, then let go.', '');
