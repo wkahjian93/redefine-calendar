@@ -33,6 +33,14 @@ You stay signed in on that phone for good, like WhatsApp. Only two things sign y
   - Under every comment box, the app shows exactly who will be notified.
 - **🔔 Comments tab:** every comment and cheer meant for you, newest first, with an unread count.
 
+## Planning tools (app version 28)
+- **🔁 Repeat:** in a new event, choose Every week / month / year and an optional *Until* date. Editing changes every repeat. ✓ Done / 💰 Closed are marked on the first one only; repeat copies never count in your numbers.
+- **Holidays:** Malaysia + Penang public holidays (red date), festivals, and school holidays (light blue days) show on the calendar. You get a pop-up the day before and on the day.
+- **🎂 Birthdays:** Me → **My birthday** (day + month only) puts it on everyone's calendar with a pop-up that morning. Me → **Important people** adds yearly birthdays and anniversaries for family or clients (🔒 only you by default).
+- **✅ To-do tab:** 4 boxes: 🔴 urgent & important, 🟠 urgent, 🔵 important, ⚪ neither. Pick a box, type, Add. *Today* shows today's and overdue items; *All time* shows everything. To-dos are private.
+- **🎯 Goals (Activity tab):** set an ANP goal for the month, quarter, half-year or year. The app works out how many approaches, opens, presentations and closes you need **each week**, from your own last 90 days (or the team's if you're new). **📄 Monthly report** compares you with the team average and adds a coach's note.
+- **📖 Tour:** Me → Take the tour, any time.
+
 ## Inviting teammates to your event
 - On the event form, pick people under **Invite**. They get a pop-up: "Alicia invited you 📩 … Accept or reject?"
 - On their calendar the event shows **faded** with "📩 Invited: tap to answer", and a **📩 invitations waiting** bar lists them.
@@ -56,6 +64,7 @@ You stay signed in on that phone for good, like WhatsApp. Only two things sign y
   - **Needs a check-in** lists agents with no confirmed selling activity in 5 days.
   - **📋 Copy WhatsApp report** pastes straight into your group. **⬇ CSV** opens in Excel.
 - **Me → Manage members:** make someone a leader, or remove someone who has left. Removing signs them out everywhere, and their events stay.
+- **Forgot PIN:** Me → Manage members → **🔑 Reset PIN** on that person. Tell them the 6-digit temporary PIN (shown once). They sign in with it and must choose their own PIN straight away. Their other phones stay signed in.
 
 **Everyone** sees the team totals at the top of the board (total activities, NOC, ANP, average case), each agent's **NOC and ANP**, and a **Team total** row. Ratios (O/A, P/O, F/P, NOC/P), average case per agent, unconfirmed counts and last seen are for leaders only.
 
