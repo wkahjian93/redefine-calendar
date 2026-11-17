@@ -7,7 +7,7 @@
   var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   var MONTH = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   var DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  var APP_VERSION = '39';
+  var APP_VERSION = '40';
   var H8 = 8 * 3600e3, DAY = 864e5, SELLING = {approach: 1, open: 1, present: 1, followup: 1, close: 1, joinfield: 1, recruit: 1};
 
   /* ---------- storage (each phone) ---------- */
@@ -1159,7 +1159,7 @@
       var at = attendOf(e), mine = myAnswer(e), own = e.ownerId === my;
       return '<div class="card tev"><a class="tev-head" href="#/e/' + e.id + '"><img class="tlogo" src="icons/team-mark.png" alt=""><b>' + esc(e.title) + '</b><small>' + esc(dayLabel(dayKey(sMs(e)), true)) + ' · ' + esc(evTime(e)) + (e.place ? ' · 📍 ' + esc(e.place) : '') + '</small><small>by ' + esc(shortName(mem(e.ownerId))) + ' · ✅ ' + at.yes.length + ' going · ❌ ' + at.no.length + ' can\'t · ⏳ ' + at.none.length + ' no reply</small></a>' +
         '<div class="outs"><button class="out' + (mine === 'yes' ? ' on' : '') + '" data-act="rsvp" data-id="' + e.id + '" data-v="' + (mine === 'yes' ? '' : 'yes') + '">✅ Going</button><button class="out grey' + (mine === 'no' ? ' on' : '') + '" data-act="rsvp" data-id="' + e.id + '" data-v="' + (mine === 'no' ? '' : 'no') + '">❌ Can\'t go</button></div>' +
-        (!mine && !own ? '<p class="tiny warn-t">You haven\'t answered yet.</p>' : own && !mine ? '<p class="tiny muted">You created this one.</p>' : '') + '<p>' + '<button class="btn wa" data-act="wa-team" data-id="' + e.id + '">📋 Copy for WhatsApp</button>' + '</p></div>';
+        (!mine && !own ? '<p class="tiny warn-t">You haven\'t answered yet.</p>' : own && !mine ? '<p class="tiny muted">You created this one.</p>' : '') + '<p>' + '<div class="row wrap wa-row"><button class="btn wa primary" data-act="wa-send" data-id="' + e.id + '">🟢 Send to WhatsApp</button><button class="btn wa" data-act="wa-team" data-id="' + e.id + '">📋 Copy</button></div>' + '</p></div>';
     }).join('') : '<p class="empty">No upcoming team events.</p>') + '</main>' + tabs('cal');
   }
   /* ---------- To-do: Urgent & important / Urgent, not important / Important, not urgent / Not urgent, not important ---------- */
@@ -1202,6 +1202,12 @@
       .concat(e.place ? ['📍 ' + e.place] : []).concat(e.notes ? ['', e.notes] : [])
       .concat(['', '✅ Going (' + at.yes.length + '): ' + nm(at.yes), '❌ Can\'t go (' + at.no.length + '): ' + nm(at.no), '⏳ No reply (' + at.none.length + '): ' + nm(at.none), '', 'Answer in REDEFINE Calendar 👉 ' + link]).join('\n');
   }
+  /* Open WhatsApp with the message typed in; the person picks the group and taps send (WhatsApp does not let apps post by themselves). */
+  function waSend(text) { var u = 'https://wa.me/?text=' + encodeURIComponent(text); var w = window.open(u, '_blank'); if (!w) location.href = u; }
+  function askWhatsApp(e) {
+    modal('<h3>📣 Tell the team on WhatsApp?</h3><p class="muted">Send the event to your team group so everyone sees it and answers Going / Can’t go.</p><pre class="closelist">' + esc(teamShareText(e)) + '</pre>' +
+      '<div class="row end wrap"><button class="btn ghost" data-act="close-modal">Not now</button><button class="btn" data-act="wa-team" data-id="' + e.id + '">📋 Copy</button><button class="btn wa primary" data-act="wa-send" data-id="' + e.id + '">🟢 Send to WhatsApp</button></div>');
+  }
   /* Copy the message so it can be pasted straight into the WhatsApp group (works on iPhone, Android and PC). */
   function copyText(text) {
     var done = function () { toast('📋 Copied! Open your WhatsApp group and paste.', 'good'); };
@@ -1221,7 +1227,7 @@
       '<div class="alist"><b>✅ Going (' + at.yes.length + ')</b>' + names(at.yes) + '</div>' +
       '<div class="alist"><b>❌ Can\'t go (' + at.no.length + ')</b>' + names(at.no) + '</div>' +
       '<div class="alist"><b>⏳ No reply (' + at.none.length + ')</b>' + names(at.none) + '</div>' +
-      '<p class="tiny muted">🔔 Everyone gets a pop-up 1 hour before.</p>' + '<button class="btn wa" data-act="wa-team" data-id="' + e.id + '">📋 Copy for WhatsApp</button>' + '</div>';
+      '<p class="tiny muted">🔔 Everyone gets a pop-up 1 hour before.</p>' + '<div class="row wrap wa-row"><button class="btn wa primary" data-act="wa-send" data-id="' + e.id + '">🟢 Send to WhatsApp</button><button class="btn wa" data-act="wa-team" data-id="' + e.id + '">📋 Copy</button></div>' + '</div>';
   }
   /* tells the writer exactly who will get the pop-up */
   function whoHears(e, comments) {
@@ -1321,7 +1327,7 @@
         closeModal(); S.sel = dayKey(sMs(view));
         if (!isNew) location.hash = '#/e/' + e.id;
         optimistic(function (d) { if (isNew) d.events.push(view); else d.events = d.events.map(function (x) { return x.id === e.id ? Object.assign({}, x, view) : x; }); }, 'save', {event: ev2}, isNew ? 'Added 📅' : 'Saved',
-          function (j) { S.data.events = S.data.events.map(function (x) { return x.id === tmpId ? j.event : x; }); if (location.hash === '#/e/' + tmpId) location.hash = '#/e/' + j.event.id; })
+          function (j) { S.data.events = S.data.events.map(function (x) { return x.id === tmpId ? j.event : x; }); if (location.hash === '#/e/' + tmpId) location.hash = '#/e/' + j.event.id; if (isNew && j.event && j.event.all) askWhatsApp(j.event); })
           .catch(function () { editor(Object.assign({}, view, {id: isNew ? undefined : e.id})); });
       };
     });
@@ -1838,6 +1844,7 @@
       var iv = b.dataset.v, go = function () { return send('rsvp', {id: b.dataset.id, answer: iv}, iv === 'yes' ? '✅ Accepted. It is on your calendar.' : 'Rejected. Removed from your calendar.'); };
       return iv === 'no' ? confirmBox('Reject this invitation?', 'It will disappear from your calendar and the owner will be told. You can still accept later from the event link.', 'Reject', true).then(function (y) { if (y) go(); }) : go();
     }
+    if (a === 'wa-send') { closeModal(); var ws = events().filter(function (x) { return x.id === b.dataset.id; })[0]; if (ws) waSend(teamShareText(ws)); return; }
     if (a === 'wa-team') { var we = events().filter(function (x) { return x.id === b.dataset.id; })[0]; if (we) copyText(teamShareText(we)); return; }
     if (a === 'rsvp') return send('rsvp', {id: b.dataset.id, answer: b.dataset.v}, b.dataset.v === 'yes' ? '✅ See you there!' : b.dataset.v === 'no' ? 'Noted: can\'t go' : 'Answer cleared');
     if (a === 'period') { S.statsPeriod = b.dataset.p; LS.set('statsPeriod', S.statsPeriod); return render(); }

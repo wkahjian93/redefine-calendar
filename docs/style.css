@@ -538,3 +538,7 @@ html[data-celebrate] .calhead { background: color-mix(in srgb, var(--bg) 92%, tr
 .bday-row .bar { height: 8px; border-radius: 4px; background: var(--soft); overflow: hidden; } .bday-row .bar i { display: block; height: 100%; border-radius: 4px; }
 .bday-row b { text-align: right; } .bday-row.top3 { font-weight: 700; } .bday-row.top3 .d { color: #22A049; }
 .bt-link { margin: 4px 0 10px; }
+
+/* ---------- send team event to WhatsApp ---------- */
+.btn.wa.primary { background: #25D366; border-color: #25D366; color: #fff; }
+.wa-row { gap: 8px; margin-top: 6px; }
