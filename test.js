@@ -388,6 +388,66 @@ function fresh() {
   ok(!h({op: 'sync', token: kj.token, force: true}).members.find(m => m.id === mj.me.id).photoV, 'photo can be removed');
 }
 
+
+/* ---------- Release 2: repeats, holidays, to-do, goals, birthdays, PIN reset ---------- */
+{
+  const {s, h, join} = fresh();
+  const kj = join('WONG KAH JIAN', true), mj = join('LIM MAY JING'), wx = join('WONG XIN');
+  // repeating events
+  const wk = h({op: 'save', token: mj.token, event: {title: 'Gym', type: 'personal', start: '2026-11-02T11:00:00.000Z', end: '2026-11-02T12:00:00.000Z', rep: 'w', repEnd: '2026-11-30'}}).event;
+  ok(wk.rep === 'w' && wk.repEnd === '2026-11-30', 'repeat weekly saved with an end date');
+  const occ = CORE.occurrences(s.load('events').find(e => e.id === wk.id), Date.parse('2026-11-01T00:00:00+08:00'), Date.parse('2026-12-31T00:00:00+08:00'));
+  ok(occ.length === 5 && new Date(occ[4].s).toISOString() === '2026-11-30T11:00:00.000Z', 'weekly: 5 Mondays in Nov, stops at the end date');
+  const mo = {start: '2026-01-31T02:00:00.000Z', end: '2026-01-31T03:00:00.000Z', rep: 'm', allDay: 'false'};
+  ok(CORE.occurrences(mo, Date.parse('2026-01-01T00:00:00Z'), Date.parse('2026-06-01T00:00:00Z')).length === 3, 'monthly on the 31st skips months without a 31st (Jan, Mar, May)');
+  const yr = {start: '2026-03-08', end: '2026-03-08', allDay: 'true', rep: 'y'};
+  ok(CORE.occurrences(yr, Date.parse('2027-03-01T00:00:00+08:00'), Date.parse('2027-03-31T00:00:00+08:00')).length === 1, 'yearly birthday shows again next year');
+  ok(h({op: 'sync', token: kj.token, from: '2027-02-28T16:00:00.000Z', to: '2027-03-31T16:00:00.000Z', force: true}).events.length === 0, 'nothing yearly yet for next March');
+  h({op: 'save', token: mj.token, event: {title: '🎂 Mum birthday', type: 'personal', allDay: true, start: '2026-03-08', end: '2026-03-08', rep: 'y', vis: 'private'}});
+  const mar27 = h({op: 'sync', token: mj.token, from: '2027-02-28T16:00:00.000Z', to: '2027-03-31T16:00:00.000Z', force: true}).events;
+  ok(mar27.some(e => /Mum birthday/.test(e.title)), 'a yearly event made in 2026 is sent for March 2027');
+  ok(CORE.stats([Object.assign({}, wk, {occ: '2026-11-09', out: '', type: 'present'})], 0, 9e15, 9e15)[mj.me.id] === undefined, 'repeat copies never count in activity numbers');
+  // reminder for the next weekly occurrence, once each week
+  s.pushes.length = 0; s.setNow('2026-11-09T10:35:00.000Z'); CORE.tick(s);
+  ok(s.pushes.some(p => /Gym/.test(p.note.title)), 'repeating event reminder for this week’s Gym');
+  CORE.tick(s); ok(s.pushes.filter(p => /Gym/.test(p.note.title)).length === 1, 'only once for that week');
+  s.setNow('2026-11-16T10:35:00.000Z'); CORE.tick(s); ok(s.pushes.filter(p => /Gym/.test(p.note.title)).length === 2, 'and again next week');
+  // holidays
+  ok(CORE.holidaysOn('2026-11-08')[0].name === 'Deepavali' && CORE.holidaysOn('2027-02-06')[0].name === 'Chinese New Year', 'Deepavali 2026 and CNY 2027 on the calendar');
+  ok(CORE.schoolHoliday('2026-12-10') && !CORE.schoolHoliday('2026-11-17'), 'school holidays (Kumpulan B)');
+  // birthday + morning pop-up for the team
+  h({op: 'profile', token: mj.token, bday: '11-20'});
+  ok(h({op: 'sync', token: kj.token, force: true}).members.find(m => m.id === mj.me.id).bday === '11-20', 'birthday (day + month only) shared with the team');
+  throws(() => h({op: 'profile', token: mj.token, bday: '02-30'}), 'bad_date', 'impossible birthday refused');
+  s.pushes.length = 0; s.setNow('2026-11-20T00:00:00.000Z'); CORE.morning(s);
+  ok(s.pushes.some(p => p.ids[0] === kj.me.id && /MJ’s birthday today/.test(p.note.title + p.note.body)), 'team gets a birthday pop-up in the morning');
+  ok(s.pushes.some(p => p.ids[0] === mj.me.id && /Happy birthday/.test(p.note.title + p.note.body)), 'the birthday person gets a happy birthday');
+  s.pushes.length = 0; s.setNow('2026-11-07T00:00:00.000Z'); CORE.morning(s);
+  ok(s.pushes.some(p => /Tomorrow: Deepavali/.test(p.note.title + p.note.body)), 'holiday reminder the day before');
+  s.setNow(null);
+  // to-do
+  const td = h({op: 'todo', token: mj.token, item: {text: 'Call Mr Lim about claim', q: 1, due: '2026-11-17'}}).todo;
+  ok(td.q === '1' && td.due === '2026-11-17', 'to-do saved in quadrant 1');
+  h({op: 'todo', token: mj.token, item: {id: td.id, text: td.text, q: 1, done: true}});
+  ok(h({op: 'sync', token: mj.token, force: true}).todos[0].done, 'ticked as done');
+  ok(!h({op: 'sync', token: kj.token, force: true}).todos.length, 'to-dos are private (leader sees none of MJ’s)');
+  throws(() => h({op: 'tododel', token: kj.token, id: td.id}), 'not_found', 'cannot delete someone else’s to-do');
+  // goals
+  h({op: 'goal', token: mj.token, key: 'M2026-11', anp: 20000});
+  ok(h({op: 'sync', token: mj.token, force: true}).goals.find(g => g.key === 'M2026-11').anp === '20000', 'monthly goal saved');
+  throws(() => h({op: 'goal', token: mj.token, key: 'X1', anp: 5}), 'bad_request', 'odd goal period refused');
+  // PIN reset by a leader
+  throws(() => h({op: 'member', token: wx.token, id: mj.me.id, reset: true}), 'leader_only', 'only leaders can reset a PIN');
+  const tmp = h({op: 'member', token: kj.token, id: mj.me.id, reset: true}).tempPin;
+  ok(/^\d{6}$/.test(tmp), 'leader gets a 6-digit temporary PIN');
+  s.resetFails(); throws(() => h({op: 'signin', code: 'test-team', name: 'LIM MAY JING', pin: '1234'}), 'wrong_pin', 'old PIN no longer works');
+  s.resetFails(); const back = h({op: 'signin', code: 'test-team', name: 'lim may jing', pin: tmp});
+  ok(back.mustChange, 'signing in with the temporary PIN asks for a new one');
+  h({op: 'changepin', token: back.token, pin: '2468'}); s.resetFails();
+  ok(!h({op: 'signin', code: 'test-team', name: 'LIM MAY JING', pin: '2468'}).mustChange, 'new PIN works, no more prompt');
+  ok(h({op: 'sync', token: mj.token, force: true}).me.name === 'LIM MAY JING', 'her other phone stays signed in after the reset');
+}
+
 /* ---------- sample team sanity ---------- */
 {
   const s = memStore(); seed(s, NOW);

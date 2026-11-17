@@ -6,10 +6,12 @@
    hash(text) -> hex, version(bump) -> number, ai(prompt, imageBase64) -> text, push(memberIds, note). */
 var CORE = (function () {
   var TABLES = {
-    members: ['id', 'name', 'pin', 'role', 'color', 'created', 'active', 'partner', 'partnerReq', 'short', 'photoV'],
+    members: ['id', 'name', 'pin', 'role', 'color', 'created', 'active', 'partner', 'partnerReq', 'short', 'photoV', 'bday', 'pinTemp'],
     photos: ['memberId', 'data', 'updated'],
     sessions: ['token', 'memberId', 'created', 'lastSeen', 'device'],
-    events: ['id', 'ownerId', 'title', 'type', 'start', 'end', 'allDay', 'place', 'notes', 'vis', 'with', 'remind', 'count', 'out', 'anp', 'source', 'remSent', 'created', 'updated', 'noc', 'all', 'cases'],
+    events: ['id', 'ownerId', 'title', 'type', 'start', 'end', 'allDay', 'place', 'notes', 'vis', 'with', 'remind', 'count', 'out', 'anp', 'source', 'remSent', 'created', 'updated', 'noc', 'all', 'cases', 'rep', 'repEnd'],
+    todos: ['id', 'ownerId', 'text', 'q', 'due', 'done', 'created', 'updated'],
+    goals: ['memberId', 'key', 'anp', 'updated'],
     msgs: ['id', 'to', 'from', 'kind', 'text', 'created'],
     devices: ['token', 'memberId', 'created'],
     settings: ['key', 'value'],
@@ -84,6 +86,57 @@ var CORE = (function () {
   }
   function mytDay(ms) { return myt(ms).slice(0, 10); }
 
+  /* Malaysian public holidays that apply in Penang, festivals / observances, and Penang (Kumpulan B) school holidays.
+     Sources: timeanddate.com Malaysia 2026 + 2027 and ecentral.my (KPM calendar). 2027 Islamic dates are tentative.
+     ph = public holiday, fest = festival / observance (not a holiday). Add the next year here each year. */
+  var HOLIDAYS = {
+    '2026-01-01': [['New Year’s Day', 'ph', '🎆']], '2026-02-01': [['Thaipusam', 'ph', '🪔']], '2026-02-02': [['Thaipusam (day off)', 'ph', '🪔']],
+    '2026-02-14': [['Valentine’s Day', 'fest', '💝']], '2026-02-17': [['Chinese New Year', 'ph', '🧧']], '2026-02-18': [['Chinese New Year (2nd day)', 'ph', '🧧']],
+    '2026-03-07': [['Nuzul Al-Quran', 'ph', '🌙']], '2026-03-08': [['三八妇女节 Women’s Day', 'fest', '🌷']],
+    '2026-03-21': [['Hari Raya Aidilfitri', 'ph', '🌙']], '2026-03-22': [['Hari Raya Aidilfitri (2nd day)', 'ph', '🌙']],
+    '2026-04-05': [['清明节 Qingming', 'fest', '🕯️']], '2026-05-01': [['Labour Day', 'ph', '🛠️']], '2026-05-10': [['Mother’s Day', 'fest', '💐']],
+    '2026-05-27': [['Hari Raya Haji', 'ph', '🌙']], '2026-05-31': [['Wesak Day', 'ph', '🪷']], '2026-06-01': [['Agong’s Birthday', 'ph', '👑']],
+    '2026-06-17': [['Awal Muharram', 'ph', '🌙']], '2026-06-21': [['Father’s Day', 'fest', '👔']],
+    '2026-07-07': [['George Town Heritage Day', 'ph', '🏛️']], '2026-07-11': [['Penang Governor’s Birthday', 'ph', '🎉']],
+    '2026-08-25': [['Maulidur Rasul', 'ph', '🌙']], '2026-08-31': [['Merdeka (National Day)', 'ph', '🇲🇾']], '2026-09-16': [['Malaysia Day', 'ph', '🇲🇾']],
+    '2026-11-08': [['Deepavali', 'ph', '🪔']], '2026-12-24': [['Christmas Eve', 'fest', '🎄']], '2026-12-25': [['Christmas', 'ph', '🎄']], '2026-12-31': [['New Year’s Eve', 'fest', '🎆']],
+    '2027-01-01': [['New Year’s Day', 'ph', '🎆']], '2027-01-22': [['Thaipusam', 'ph', '🪔']], '2027-02-06': [['Chinese New Year', 'ph', '🧧']], '2027-02-07': [['Chinese New Year (2nd day)', 'ph', '🧧']],
+    '2027-02-14': [['Valentine’s Day', 'fest', '💝']], '2027-02-24': [['Nuzul Al-Quran (tentative)', 'ph', '🌙']], '2027-03-08': [['三八妇女节 Women’s Day', 'fest', '🌷']],
+    '2027-03-10': [['Hari Raya Aidilfitri (tentative)', 'ph', '🌙']], '2027-03-11': [['Hari Raya Aidilfitri (2nd day)', 'ph', '🌙']],
+    '2027-04-05': [['清明节 Qingming', 'fest', '🕯️']], '2027-05-01': [['Labour Day', 'ph', '🛠️']], '2027-05-09': [['Mother’s Day', 'fest', '💐']],
+    '2027-05-17': [['Hari Raya Haji (tentative)', 'ph', '🌙']], '2027-05-20': [['Wesak Day', 'ph', '🪷']], '2027-06-06': [['Awal Muharram (tentative)', 'ph', '🌙']],
+    '2027-06-07': [['Agong’s Birthday', 'ph', '👑']], '2027-06-20': [['Father’s Day', 'fest', '👔']], '2027-07-07': [['George Town Heritage Day', 'ph', '🏛️']],
+    '2027-07-10': [['Penang Governor’s Birthday', 'ph', '🎉']], '2027-08-15': [['Maulidur Rasul (tentative)', 'ph', '🌙']], '2027-08-31': [['Merdeka (National Day)', 'ph', '🇲🇾']],
+    '2027-09-16': [['Malaysia Day', 'ph', '🇲🇾']], '2027-10-28': [['Deepavali', 'ph', '🪔']], '2027-12-24': [['Christmas Eve', 'fest', '🎄']], '2027-12-25': [['Christmas', 'ph', '🎄']], '2027-12-31': [['New Year’s Eve', 'fest', '🎆']]
+  };
+  var SCHOOL = [   // Kumpulan B (Penang): term breaks, plus 2027 festive extra days
+    ['2026-03-21', '2026-03-29'], ['2026-05-23', '2026-06-07'], ['2026-08-29', '2026-09-06'], ['2026-12-05', '2026-12-31'],
+    ['2027-02-05', '2027-02-05'], ['2027-02-09', '2027-02-12'], ['2027-03-06', '2027-03-14'], ['2027-05-18', '2027-05-19'], ['2027-05-21', '2027-05-21'],
+    ['2027-05-22', '2027-06-06'], ['2027-08-28', '2027-09-05'], ['2027-10-27', '2027-10-27'], ['2027-10-29', '2027-10-29'], ['2027-12-04', '2027-12-31']
+  ];
+  function holidaysOn(k) { return (HOLIDAYS[k] || []).map(function (h) { return {name: h[0], kind: h[1], icon: h[2]}; }); }
+  function schoolHoliday(k) { return SCHOOL.some(function (r) { return k >= r[0] && k <= r[1]; }); }
+
+  /* ---------- repeating events: weekly / monthly / yearly (Malaysia time) ---------- */
+  function occurrences(e, fromMs, toMs) {
+    var s0 = startMs(e), dur = Math.max(0, endMs(e) - s0), out = [];
+    if (!e.rep) { if (s0 < toMs && s0 + dur > fromMs) out.push({s: s0, e: s0 + dur, n: 0}); return out; }
+    var end = e.repEnd ? Date.parse(String(e.repEnd).slice(0, 10) + 'T00:00:00+08:00') + 864e5 : Infinity;
+    var d0 = new Date(s0 + 8 * 3600e3), y = d0.getUTCFullYear(), mo = d0.getUTCMonth(), da = d0.getUTCDate(), tod = s0 + 8 * 3600e3 - Date.UTC(y, mo, da);
+    var start = 0;
+    if (e.rep === 'w' && fromMs - dur > s0) start = Math.floor((fromMs - dur - s0) / (7 * 864e5));
+    for (var n = start; n < start + 800; n++) {
+      var t;
+      if (e.rep === 'w') t = s0 + n * 7 * 864e5;
+      else if (e.rep === 'm') { var dm = new Date(Date.UTC(y, mo + n, da)); if (dm.getUTCDate() !== da) continue; t = dm.getTime() + tod - 8 * 3600e3; }
+      else if (e.rep === 'y') { var dy = new Date(Date.UTC(y + n, mo, da)); if (dy.getUTCMonth() !== mo) continue; t = dy.getTime() + tod - 8 * 3600e3; }
+      else break;
+      if (t >= toMs || t >= end) break;
+      if (t + dur > fromMs) out.push({s: t, e: t + dur, n: n});
+    }
+    return out;
+  }
+
   /* ---------- guess the activity type from a title (English, 中文, Bahasa) ---------- */
   var DETECT = [
     ['close', /\b(clos(e|ing|ed)|sign(ing)?|signed|collect (cheque|payment)|submit case|nb submit)\b|签单|签约|成交|收钱|tutup jualan|tandatangan/i],
@@ -115,7 +168,7 @@ var CORE = (function () {
   function stats(events, fromMs, toMs, nowMs) {
     var by = {};
     events.forEach(function (e) {
-      var t = e.type || e.t; if (!TYPES[t] || !TYPES[t].work) return;
+      var t = e.type || e.t; if (e.occ || !TYPES[t] || !TYPES[t].work) return;
       var s = startMs(e); if (!(s >= fromMs && s < toMs)) return;
       var o = by[e.ownerId] || (by[e.ownerId] = blankStats());
       o.events++;
@@ -177,7 +230,7 @@ var CORE = (function () {
       if (me.pin !== h) { store.fails(1); fail('wrong_pin'); }
       if (String(me.active) === 'false') fail('removed');
       if (role === 'leader' && me.role !== 'leader') { me.role = 'leader'; store.save('members', members); store.version(true); }
-      return {me: me};
+      return {me: me, mustChange: me.pinTemp === 'true'};
     }
     if (!q.create) fail('new_name');            // app asks "Create a new member?" first
     me = {id: newId(store, 8), name: name, pin: h, role: role, color: COLORS[members.length % COLORS.length], created: nowIso(store), active: 'true'};
@@ -209,14 +262,14 @@ var CORE = (function () {
     if (!canSeeDetails(e, me)) {
       // Grey "Busy" block. Hidden WORK events still count in the activity numbers, so type + result go along (no title,
       // place, notes or client). Hidden PERSONAL events reveal nothing but the time.
-      var b = {id: e.id, ownerId: e.ownerId, start: e.start, end: e.end, allDay: e.allDay === 'true', busy: 1};
+      var b = {id: e.id, ownerId: e.ownerId, start: e.start, end: e.end, allDay: e.allDay === 'true', busy: 1, rep: e.rep || '', repEnd: e.repEnd || ''};
       if (work) { b.t = e.type; b.out = e.out; b.count = +e.count || 0; if (e.out === 'closed') { b.noc = nocOf(e); b.anp = +e.anp || 0; b.cases = casesOf(e) || []; } }   // closed cases are shared with the team (plan, ANP, mode; never the client)
       return b;
     }
     var mine = e.ownerId === me.id;
     return {id: e.id, ownerId: e.ownerId, title: e.title, type: e.type, start: e.start, end: e.end, allDay: e.allDay === 'true',
       place: e.place, notes: e.notes, vis: e.vis, with: withList(e), all: isAll(e), remind: mine ? e.remind : '', count: +e.count || 0, out: e.out, noc: e.out === 'closed' ? nocOf(e) : 0, cases: e.out === 'closed' ? (casesOf(e) || []) : [],
-      anp: +e.anp || 0, source: mine ? e.source : '', created: e.created, updated: e.updated};
+      rep: e.rep || '', repEnd: e.repEnd || '', anp: +e.anp || 0, source: mine ? e.source : '', created: e.created, updated: e.updated};
   }
   function canSeeMsg(m, visibleEv) { return m.to.indexOf('ev:') === 0 && !!visibleEv[m.to.slice(3)]; }   // comments only (no chat)
 
@@ -228,7 +281,7 @@ var CORE = (function () {
     if (isNaN(from)) from = now - 40 * 864e5; if (isNaN(to)) to = now + 75 * 864e5;
     if (to - from > MAX_RANGE_DAYS * 864e5 || to <= from) fail('bad_range');
     var members = store.load('members'), visibleEv = {};
-    var events = store.load('events').filter(function (e) { return endMs(e) > from && startMs(e) < to; }).map(function (e) {
+    var events = store.load('events').filter(function (e) { return occurrences(e, from, to).length > 0; }).map(function (e) {
       var v = viewEvent(e, me, leader); if (!v.busy) visibleEv[e.id] = 1; return v;
     });
     var evc = store.load('msgs').filter(function (m) { return canSeeMsg(m, visibleEv); });
@@ -237,10 +290,12 @@ var CORE = (function () {
     var myDevices = store.load('devices').filter(function (d) { return d.memberId === me.id; }).length;
     return {
       ver: ver, now: nowIso(store),
-      me: {id: me.id, name: me.name, short: shortOf(me), shortSet: !!me.short, photoV: me.photoV || '', role: me.role, color: me.color, leader: leader, devices: myDevices, partner: me.partner || '', partnerReq: me.partnerReq || '',
+      todos: store.load('todos').filter(function (t) { return t.ownerId === me.id; }).slice(-1000),
+      goals: store.load('goals').filter(function (g) { return g.memberId === me.id; }),
+      me: {id: me.id, name: me.name, short: shortOf(me), bday: me.bday || '', mustChange: me.pinTemp === 'true', shortSet: !!me.short, photoV: me.photoV || '', role: me.role, color: me.color, leader: leader, devices: myDevices, partner: me.partner || '', partnerReq: me.partnerReq || '',
         partnerAsks: members.filter(function (m) { return m.partnerReq === me.id && String(m.active) !== 'false'; }).map(function (m) { return m.id; })},
       members: members.filter(function (m) { return String(m.active) !== 'false' || leader; }).map(function (m) {
-        var o = {id: m.id, name: m.name, short: shortOf(m), role: m.role, color: m.color, active: String(m.active) !== 'false', partner: m.partner || '', photoV: m.photoV || ''}; if (leader) o.seen = seen[m.id] || ''; return o;
+        var o = {id: m.id, name: m.name, short: shortOf(m), role: m.role, color: m.color, active: String(m.active) !== 'false', partner: m.partner || '', photoV: m.photoV || '', bday: m.bday || ''}; if (leader) o.seen = seen[m.id] || ''; return o;
       }),
       events: events, msgs: evc.map(function (m) { return {id: m.id, to: m.to, from: m.from, kind: m.kind, text: m.text, created: m.created}; })
     };
@@ -272,6 +327,8 @@ var CORE = (function () {
     e.remind = src.remind == null ? (allDay ? '' : '30') : REMIND.indexOf(String(src.remind)) >= 0 ? String(src.remind) : '30';   // default: 30 min before
     e.count = e.type === 'approach' ? String(Math.max(1, Math.min(999, Math.floor(+src.count) || 1))) : '';
     e.source = ['manual', 'photo', 'ics'].indexOf(src.source) >= 0 ? src.source : 'manual';
+    e.rep = ['w', 'm', 'y'].indexOf(src.rep) >= 0 ? src.rep : '';
+    e.repEnd = e.rep && isDate(str(src.repEnd, 10)) ? str(src.repEnd, 10) : '';
     return e;
   }
   function whenText(e) {
@@ -461,6 +518,66 @@ var CORE = (function () {
     fail('bad_request');
   }
 
+  /* ---------- my to-do list (4 quadrants, private to the owner) ---------- */
+  function todo(q, store, me) {
+    var it = q.item || {}, rows = store.load('todos'), now = nowIso(store), text = str(it.text, 300);
+    if (!text) fail('empty');
+    var qd = ['1', '2', '3', '4'].indexOf(String(it.q)) >= 0 ? String(it.q) : '1', due = isDate(str(it.due, 10)) ? str(it.due, 10) : '';
+    var row = it.id ? rows.filter(function (r) { return r.id === it.id && r.ownerId === me.id; })[0] : null;
+    if (it.id && !row) fail('not_found');
+    if (!row) { if (rows.filter(function (r) { return r.ownerId === me.id; }).length >= 1000) fail('too_many'); row = {id: newId(store, 10), ownerId: me.id, created: now}; rows.push(row); }
+    row.text = text; row.q = qd; row.due = due; row.done = it.done ? (row.done || now) : ''; row.updated = now;
+    store.save('todos', rows); store.version(true);
+    return {todo: row};
+  }
+  function todoDel(q, store, me) {
+    var rows = store.load('todos'), keep = rows.filter(function (r) { return !(r.id === q.id && r.ownerId === me.id); });
+    if (keep.length === rows.length) fail('not_found');
+    store.save('todos', keep); store.version(true); return {deleted: q.id};
+  }
+  /* ---------- my goals: ANP per year / half-year / quarter / month ---------- */
+  function goal(q, store, me) {
+    var key = str(q.key, 12); if (!/^(Y\d{4}|H\d{4}-[12]|Q\d{4}-[1-4]|M\d{4}-\d{2})$/.test(key)) fail('bad_request');
+    var anp = q.anp === '' || q.anp == null ? '' : Math.round(+q.anp); if (anp !== '' && !(anp >= 0 && anp <= 1e8)) fail('bad_anp');
+    var rows = store.load('goals').filter(function (g) { return !(g.memberId === me.id && g.key === key); });
+    if (anp !== '') rows.push({memberId: me.id, key: key, anp: String(anp), updated: nowIso(store)});
+    store.save('goals', rows); store.version(true); return {key: key, anp: anp};
+  }
+  /* ---------- goal progress: my numbers this month / quarter / half / year, my + team ratios of the last 90 days,
+     and (for the monthly report) one month for me and the team average per agent ---------- */
+  function periodsFor(ms) {
+    var d = new Date(ms + 8 * 3600e3), y = d.getUTCFullYear(), m = d.getUTCMonth(), q = Math.floor(m / 3), hh = m < 6 ? 0 : 1;
+    var at = function (yy, mm) { return Date.UTC(yy, mm, 1) - 8 * 3600e3; };
+    return [
+      {key: 'M' + y + '-' + ('0' + (m + 1)).slice(-2), label: 'month', from: at(y, m), to: at(y, m + 1)},
+      {key: 'Q' + y + '-' + (q + 1), label: 'quarter', from: at(y, q * 3), to: at(y, q * 3 + 3)},
+      {key: 'H' + y + '-' + (hh + 1), label: 'half-year', from: at(y, hh * 6), to: at(y, hh * 6 + 6)},
+      {key: 'Y' + y, label: 'year', from: at(y, 0), to: at(y + 1, 0)}
+    ];
+  }
+  function progress(q, store, me) {
+    var now = store.now().getTime(), evs = store.load('events'), active = {};
+    store.load('members').forEach(function (m) { if (String(m.active) !== 'false') active[m.id] = 1; });
+    var periods = periodsFor(now).map(function (p) { var st = stats(evs, p.from, p.to, now)[me.id] || blankStats(); return {key: p.key, label: p.label, from: p.from, to: p.to, s: st}; });
+    var by90 = stats(evs, now - 90 * 864e5, now, now), team90 = addStats(Object.keys(active).map(function (id) { return by90[id] || blankStats(); }));
+    var out = {periods: periods, r90: {me: by90[me.id] || blankStats(), team: team90, agents: Object.keys(active).length}};
+    var mk = str(q.month, 7);
+    if (/^\d{4}-\d{2}$/.test(mk)) {
+      var y = +mk.slice(0, 4), m = +mk.slice(5) - 1, a = Date.UTC(y, m, 1) - 8 * 3600e3, b = Date.UTC(y, m + 1, 1) - 8 * 3600e3, byM = stats(evs, a, b, now);
+      var ids = Object.keys(active), tot = addStats(ids.map(function (id) { return byM[id] || blankStats(); })), n = Math.max(1, ids.length), avg = {};
+      Object.keys(tot).forEach(function (k) { avg[k] = tot[k] / n; });
+      out.month = {key: mk, me: byM[me.id] || blankStats(), teamAvg: avg, agents: ids.length};
+    }
+    return out;
+  }
+
+  /* ---------- PIN: a leader gives a temporary PIN; the member chooses a new one at sign-in ---------- */
+  function changePin(q, store, me) {
+    var pin = str(q.pin, 12); if (!/^\d{4,6}$/.test(pin)) fail('pin_4_digits');
+    var rows = store.load('members'); rows.forEach(function (m) { if (m.id === me.id) { m.pin = store.hash('rcal|' + pin + '|' + normName(m.name)); m.pinTemp = ''; } });
+    store.save('members', rows); log(store, me.id, 'pin', 'changed'); return {changed: true};
+  }
+
   /* ---------- leader: members ---------- */
   function member(q, store, me, leader) {
     if (!leader) fail('leader_only');
@@ -469,8 +586,10 @@ var CORE = (function () {
     if (q.active === false) { rows.forEach(function (x) { if (x.partner === m.id) x.partner = ''; if (x.partnerReq === m.id) x.partnerReq = ''; }); m.partner = ''; m.partnerReq = ''; m.active = 'false'; store.save('sessions', store.load('sessions').filter(function (s) { return s.memberId !== m.id; })); store.save('devices', store.load('devices').filter(function (d) { return d.memberId !== m.id; })); }
     if (q.active === true) m.active = 'true';
     if (q.role === 'leader' || q.role === 'agent') m.role = q.role;
+    var temp = '';
+    if (q.reset) { for (var i = 0; i < 6; i++) temp += String(Math.floor(store.random() * 10)); m.pin = store.hash('rcal|' + temp + '|' + normName(m.name)); m.pinTemp = 'true'; }
     store.save('members', rows); store.version(true); log(store, me.id, 'member', m.name + ' ' + JSON.stringify({active: q.active, role: q.role}));
-    return {member: {id: m.id, name: m.name, role: m.role, active: m.active !== 'false'}};
+    return {member: {id: m.id, name: m.name, role: m.role, active: m.active !== 'false'}, tempPin: temp};
   }
   /* Short name: what the team sees on chips, Team day, attendance and the close case list (e.g. KJ, MJ, Rex). */
   function defaultShort(name) {
@@ -500,6 +619,7 @@ var CORE = (function () {
   }
   function profile(q, store, me) {
     var rows = store.load('members'), my = rows.filter(function (m) { return m.id === me.id; })[0], out = {};
+    if (q.bday != null) { var bd = str(q.bday, 5); if (bd && !(/^\d{2}-\d{2}$/.test(bd) && isDate('2024-' + bd))) fail('bad_date'); my.bday = bd; out.bday = bd; }
     if (q.color != null) { var c = str(q.color, 7); if (!/^#[0-9A-Fa-f]{6}$/.test(c)) fail('bad_request'); my.color = c; out.color = c; }
     if (q.short != null) {
       var sh = str(q.short, 12).replace(/\s+/g, ' ');
@@ -619,14 +739,16 @@ var CORE = (function () {
     var now = store.now().getTime(), rows = store.load('events'), members = store.load('members'), msgs = null, sent = 0;
     rows.forEach(function (e) {
       var all = isAll(e);
-      if (e.out === 'cancel' || e.remSent || (e.remind === '' && !all) || e.allDay === 'true') return;
-      var st = startMs(e), r = all ? TEAM_REMIND : +e.remind; if (!isFinite(r)) return;   // whole-team events: always 1 hour before, to everyone
+      if (e.out === 'cancel' || (e.remSent && !e.rep) || (e.remind === '' && !all) || e.allDay === 'true') return;
+      var r = all ? TEAM_REMIND : +e.remind; if (!isFinite(r)) return;   // whole-team events: always 1 hour before, to everyone
+      var st = startMs(e), occKey = '';
+      if (e.rep) { var nx = occurrences(e, now - 10 * 60e3, now + r * 60e3 + 864e5)[0]; if (!nx) return; st = nx.s; occKey = 'o' + nx.s; if (e.remSent === occKey) return; }
       if (now >= st - r * 60e3 && now < st + 10 * 60e3) {
         var lead = Math.round((st - now) / 60e3), extra = '';
         if (all) { var at = attendance(e, msgs || (msgs = store.load('msgs')), members); extra = ' · ✅ ' + at.yes.length + ' going, ❌ ' + at.no.length + ' can\'t, ⏳ ' + at.none.length + ' no reply'; }
         store.push(peopleOf(e, members, msgs || (msgs = store.load('msgs'))), {title: '⏰ ' + e.title, body: (lead > 1 ? 'In ' + (lead >= 120 ? Math.round(lead / 60) + ' hours' : lead + ' min') : 'Starting now') + ' · ' + whenText(e) + (e.place ? ' · ' + e.place : '') + extra, tag: 'ev-' + e.id, url: '#/e/' + e.id});
-        e.remSent = nowIso(store); sent++;
-      } else if (now >= st + 10 * 60e3) { e.remSent = 'past'; sent++; }
+        e.remSent = occKey || nowIso(store); sent++;
+      } else if (!e.rep && now >= st + 10 * 60e3) { e.remSent = 'past'; sent++; }
     });
     if (sent) store.save('events', rows);
     return {sent: sent};
@@ -634,16 +756,24 @@ var CORE = (function () {
   function dayEvents(store, memberId, dayKey, msgs) {
     msgs = msgs || store.load('msgs');
     return store.load('events').filter(function (e) {
-      return (e.ownerId === memberId || (withList(e).indexOf(memberId) >= 0 && answers(e.id, msgs)[memberId] !== 'no') || isAll(e)) && e.out !== 'cancel' && mytDay(startMs(e)) <= dayKey && mytDay(endMs(e) - 1) >= dayKey;
+      var a = Date.parse(dayKey + 'T00:00:00+08:00');
+      return (e.ownerId === memberId || (withList(e).indexOf(memberId) >= 0 && answers(e.id, msgs)[memberId] !== 'no') || isAll(e)) && e.out !== 'cancel' && occurrences(e, a, a + 864e5).length > 0;
     }).sort(function (a, b) { return startMs(a) - startMs(b); });
   }
   function morning(store) {
-    var day = mytDay(store.now().getTime()), n = 0;
+    var now = store.now().getTime(), day = mytDay(now), n = 0, tomorrow = mytDay(now + 864e5);
+    var lastMonth = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'][(new Date(now + 8 * 3600e3).getUTCMonth() + 11) % 12];
+    var bdays = store.load('members').filter(function (x) { return String(x.active) !== 'false' && x.bday === day.slice(5); }).map(function (x) { return {id: x.id, name: shortOf(x)}; });
     store.load('members').forEach(function (m) {
       if (String(m.active) === 'false') return;
-      var list = dayEvents(store, m.id, day); if (!list.length) return;
+      var list = dayEvents(store, m.id, day), extra = [];
+      holidaysOn(day).forEach(function (h) { extra.push(h.icon + ' Today: ' + h.name); });
+      holidaysOn(tomorrow).forEach(function (h) { if (h.kind === 'ph' || /Valentine|Mother|Father|妇女节|Qingming/.test(h.name)) extra.push(h.icon + ' Tomorrow: ' + h.name); });
+      bdays.forEach(function (b) { if (b.id !== m.id) extra.push('🎂 ' + b.name + '’s birthday today!'); else extra.unshift('🎂 Happy birthday, ' + b.name + '! 🎉'); });
+      if (day.slice(8) === '01') extra.push('📄 Your ' + lastMonth + ' report is ready in Activity');
+      if (!list.length && !extra.length) return;
       var timed = list.filter(function (e) { return e.allDay !== 'true'; })[0] || list[0];
-      store.push([m.id], {title: '☀️ Today: ' + list.length + ' event' + (list.length > 1 ? 's' : ''), body: 'First: ' + timed.title + ' · ' + whenText(timed).split(', ').pop(), tag: 'today', url: '#/'}); n++;
+      store.push([m.id], {title: list.length ? '☀️ Today: ' + list.length + ' event' + (list.length > 1 ? 's' : '') : extra[0], body: (timed ? 'First: ' + timed.title + ' · ' + whenText(timed).split(', ').pop() : '') + (extra.length ? (timed ? ' · ' : '') + extra.slice(list.length ? 0 : 1).join(' · ') : ''), tag: 'today', url: '#/'}); n++;
     });
     return {sent: n};
   }
@@ -659,15 +789,15 @@ var CORE = (function () {
     return {sent: n};
   }
 
-  var READ_ONLY = {sync: 1, teamtotals: 1, photos: 1};
+  var READ_ONLY = {sync: 1, teamtotals: 1, photos: 1, progress: 1};
   var OPS = {sync: sync, save: saveEvent, del: delEvent, outcome: outcome, import: importEvents, send: send, delmsg: delMsg,
-    pushreg: pushReg, pushoff: pushOff, pushtest: pushTest, teamtotals: teamTotals, rsvp: rsvp, member: member, partner: partner, profile: profile, photo: setPhoto, photos: getPhotos, signout: signOut};
+    pushreg: pushReg, pushoff: pushOff, pushtest: pushTest, teamtotals: teamTotals, rsvp: rsvp, member: member, partner: partner, profile: profile, todo: todo, tododel: todoDel, goal: goal, changepin: changePin, progress: progress, photo: setPhoto, photos: getPhotos, signout: signOut};
   function handle(q, store) {
     if (!q || typeof q !== 'object') fail('bad_request');
     if (q.op === 'signin') {
       return store.withLock(function () {
         var r = signIn(q, store);
-        return {ok: true, me: {id: r.me.id, name: r.me.name, leader: r.me.role === 'leader'}, created: !!r.created, token: newSession(store, r.me, q.device)};
+        return {ok: true, me: {id: r.me.id, name: r.me.name, leader: r.me.role === 'leader'}, created: !!r.created, mustChange: !!r.mustChange, token: newSession(store, r.me, q.device)};
       });
     }
     if (q.op === 'pushtest' && q.delay) {   // "test in 15 s": wait OUTSIDE the lock so nobody else is blocked
@@ -691,7 +821,7 @@ var CORE = (function () {
   }
 
   return {TABLES: TABLES, TYPES: TYPES, TYPE_ORDER: TYPE_ORDER, PROSPECT: PROSPECT, COLORS: COLORS, REMIND: REMIND,
-    handle: handle, tick: tick, defaultShort: defaultShort, answers: answers, attendance: attendance, TEAM_REMIND: TEAM_REMIND, cents: cents, MODES: MODES, casesOf: casesOf, commentTargets: commentTargets, isAll: isAll, MAX_NOC: MAX_NOC, morning: morning, evening: evening, detectType: detectType, stats: stats, addStats: addStats,
+    handle: handle, tick: tick, occurrences: occurrences, holidaysOn: holidaysOn, schoolHoliday: schoolHoliday, HOLIDAYS: HOLIDAYS, defaultShort: defaultShort, answers: answers, attendance: attendance, TEAM_REMIND: TEAM_REMIND, cents: cents, MODES: MODES, casesOf: casesOf, commentTargets: commentTargets, isAll: isAll, MAX_NOC: MAX_NOC, morning: morning, evening: evening, detectType: detectType, stats: stats, addStats: addStats,
     ratios: ratios, parseRead: parseRead, parseICS: parseICS, readPrompt: readPrompt, startMs: startMs, endMs: endMs, myt: myt, whenText: whenText};
 })();
 if (typeof module !== 'undefined') module.exports = CORE;

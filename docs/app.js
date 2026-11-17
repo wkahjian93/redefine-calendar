@@ -7,7 +7,7 @@
   var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   var MONTH = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   var DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  var APP_VERSION = '27';
+  var APP_VERSION = '28';
   var H8 = 8 * 3600e3, DAY = 864e5, SELLING = {approach: 1, open: 1, present: 1, followup: 1, close: 1, recruit: 1};
 
   /* ---------- storage (each phone) ---------- */
@@ -57,9 +57,9 @@
   var GROUP = {approach: 'g', open: 'g', present: 'g', followup: 'g', close: 'g', service: 'y', crm: 'y', paperwork: 'y', recruit: 'o', meeting: 'b', personal: 'r'};
   var GROUP_COLOR = {g: '#22A049', y: '#F2C200', o: '#F08A24', b: '#3B82F6', r: '#E5484D'};
   function evGroup(e) { return GROUP[e.type || e.t] || 'b'; }
-  function evColor(e) { if (e.busy) return '#9CA3AF'; if (e.all) return '#000000'; return GROUP_COLOR[evGroup(e)]; }
+  function evColor(e) { if (e.bday) return '#EC4899'; if (e.busy) return '#9CA3AF'; if (e.all) return '#000000'; return GROUP_COLOR[evGroup(e)]; }
   function evStyle(e) { return '--c:' + evColor(e) + (!e.busy && !e.all && evGroup(e) === 'y' ? ';--fg:#1F2937' : ''); }
-  function legend() { return '<div class="legend"><span><i style="background:#22A049"></i>Sales</span><span><i style="background:#F2C200"></i>Client & admin</span><span><i style="background:#F08A24"></i>Recruit</span><span><i style="background:#3B82F6"></i>Meeting / learning</span><span><i style="background:#E5484D"></i>Personal</span></div>'; }
+  function legend() { return '<div class="legend"><span><b class="ph-dot">8</b>Public holiday</span><span><i class="sch-dot"></i>School holiday</span><span><i style="background:#EC4899"></i>Birthday</span><span><i style="background:#22A049"></i>Sales</span><span><i style="background:#F2C200"></i>Client & admin</span><span><i style="background:#F08A24"></i>Recruit</span><span><i style="background:#3B82F6"></i>Meeting / learning</span><span><i style="background:#E5484D"></i>Personal</span></div>'; }
   /* portraits: downloaded only when a member's photo version changes, kept on the phone */
   var photoCache = LS.get('photos', {});
   function photoOf(m) { var p = m && m.photoV && photoCache[m.id]; return p && p.v === m.photoV ? p.d : ''; }
@@ -76,7 +76,7 @@
   var ansCache = {ver: -1, map: {}};
   function ansOf(e) {   // {memberId: 'yes'|'no'} for this event (invitations + team-event attendance)
     if (ansCache.ver !== S.ver || ansCache.data !== S.data) { ansCache = {ver: S.ver, data: S.data, map: {}}; ((S.data && S.data.msgs) || []).forEach(function (m) { if (m.kind === 'rsvp') { var k = m.to.slice(3); (ansCache.map[k] = ansCache.map[k] || {})[m.from] = m.text; } }); }
-    return ansCache.map[e.id] || {};
+    return ansCache.map[e.base || e.id] || {};
   }
   function invited(e, id) { return !e.all && e.ownerId !== id && (e.with || []).indexOf(id) >= 0; }
   function pendingFor(e, id) { return invited(e, id) && !ansOf(e)[id]; }
@@ -85,8 +85,31 @@
   function involves(e, id) { return e.ownerId === id || ((e.with || []).indexOf(id) >= 0 && ansOf(e)[id] !== 'no') || !!e.all; }
   function myInvites() { var my = me().id; return events().filter(function (e) { return pendingFor(e, my) && eMs(e) > Date.now() && e.out !== 'cancel'; }).sort(function (a, b) { return sMs(a) - sMs(b); }); }
   function isWork(e) { var t = e.type || e.t; return !!(C.TYPES[t] && C.TYPES[t].work); }
-  function needsConfirm(e) { return e.ownerId === me().id && !e.busy && isWork(e) && !e.out && eMs(e) <= Date.now(); }
-  function events() { return (S.data && S.data.events) || []; }
+  function needsConfirm(e) { return !e.occ && !e.bday && e.ownerId === me().id && !e.busy && isWork(e) && !e.out && eMs(e) <= Date.now(); }
+  function rawEvents() { return (S.data && S.data.events) || []; }
+  /* Repeating events are expanded into their dates; team birthdays (Me → My birthday) appear for everyone. Cached per data version. */
+  var expCache = {k: null, src: null, v: []};
+  function events() {
+    var src = rawEvents(), ms = members(), k = S.ver + '|' + mutSeq + '|' + src.length + '|' + (S.range ? S.range.from + S.range.to : '') + '|' + ms.map(function (m) { return m.bday || ''; }).join(',');
+    if (expCache.src === src && expCache.k === k) return expCache.v;
+    var A = S.range ? Date.parse(S.range.from) : Date.now() - 60 * DAY, B = S.range ? Date.parse(S.range.to) : Date.now() + 120 * DAY, out = [];
+    src.forEach(function (e) {
+      if (!e.rep) { out.push(e); return; }
+      C.occurrences(e, A, B).forEach(function (o) {
+        if (o.n === 0) { out.push(e); return; }
+        var c = Object.assign({}, e, {id: e.id + '~' + dayKey(o.s), base: e.id, occ: dayKey(o.s), out: '', anp: 0, noc: 0, cases: []});
+        if (e.allDay) { c.start = dayKey(o.s); c.end = dayKey(o.e - 1); } else { c.start = new Date(o.s).toISOString(); c.end = new Date(o.e).toISOString(); }
+        out.push(c);
+      });
+    });
+    var y0 = P(A).y, y1 = P(B).y;
+    ms.forEach(function (m) {
+      if (!m.bday || m.active === false) return;
+      for (var y = y0; y <= y1; y++) { var kk = y + '-' + m.bday; if (keyMs(kk) >= A - DAY && keyMs(kk) < B) out.push({id: 'bd-' + m.id + '-' + y, ownerId: m.id, title: '🎂 ' + shortName(m) + '’s birthday', type: 'personal', allDay: true, start: kk, end: kk, vis: 'team', with: [], out: '', bday: true}); }
+    });
+    expCache = {k: k, src: src, v: out};
+    return out;
+  }
   var fCache = {k: null, v: null};
   function filtered() {
     var key = S.filter + '|' + S.ver + '|' + mutSeq + '|' + (S.data && S.data.events && S.data.events.length);
@@ -160,6 +183,7 @@
       if (!LS.get('since', '')) LS.set('since', j.now);
       notifyNew(old, j);
       setTimeout(loadPhotos, 0);
+      if (j.me.mustChange) setTimeout(askNewPin, 300);
       if (pushOn() && j.me.devices === 0 && !S.repairTried) { S.repairTried = true; repairPush(false); }   // server lost this phone: reconnect quietly
       render();
       return true;
@@ -211,7 +235,11 @@
       } else d.msgs.push({id: tmp, to: q.to, from: my, kind: 'text', text: q.text, created: now});
     };
     if (op === 'delmsg') return function (d) { d.msgs = d.msgs.filter(function (m) { return m.id !== q.id; }); };
+    if (op === 'profile' && q.bday != null) return function (d) { d.me.bday = q.bday; d.members.forEach(function (m) { if (m.id === my) m.bday = q.bday; }); };
     if (op === 'profile') return function (d) { [d.me].concat(d.members.filter(function (m) { return m.id === my; })).forEach(function (m) { if (q.color) m.color = q.color; if (q.short) { m.short = q.short; d.me.shortSet = true; } }); };
+    if (op === 'todo') return function (d) { var it = q.item; d.todos = d.todos || []; var ex = d.todos.filter(function (x) { return x.id === it.id; })[0]; if (ex) { ex.text = it.text; ex.q = String(it.q); ex.due = it.due || ''; ex.done = it.done ? (ex.done || now) : ''; } else d.todos.push({id: it.id || tmp, text: it.text, q: String(it.q), due: it.due || '', done: '', created: now}); };
+    if (op === 'tododel') return function (d) { d.todos = (d.todos || []).filter(function (x) { return x.id !== q.id; }); };
+    if (op === 'goal') return function (d) { d.goals = (d.goals || []).filter(function (g) { return g.key !== q.key; }); if (q.anp !== '') d.goals.push({key: q.key, anp: String(q.anp)}); };
     if (op === 'del') return function (d) { d.events = d.events.filter(function (x) { return x.id !== q.id; }); };
     return null;
   }
@@ -379,7 +407,7 @@
       '<label>Your name<input name="name" required maxlength="40" placeholder="e.g. Alicia Tan"></label>' +
       '<label>PIN (4–6 digits)<input name="pin" required inputmode="numeric" pattern="\\d{4,6}" maxlength="6" type="password"></label>' +
       '<button class="btn primary big" type="submit">Sign in</button></form>' +
-      '<p class="tiny muted">First time? Type your name and choose a PIN. You stay signed in on this phone, like WhatsApp.</p></div>';
+      '<p class="tiny muted">First time? Type your name and choose a PIN. You stay signed in on this phone, like WhatsApp.</p><p class="tiny muted"><b>Forgot your PIN or the exact name you used?</b> Ask a leader: they can see your name and give you a temporary PIN in Me → Manage members. Your calendar and data stay safe.</p></div>';
   }
   function doSignIn(form, create) {
     var f = new FormData(form), body = {code: f.get('code'), name: f.get('name'), pin: f.get('pin'), device: navigator.userAgent.slice(0, 60), create: !!create};
@@ -390,11 +418,52 @@
       S.token = j.token; LS.set('token', j.token); LS.set('since', new Date().toISOString());
       toast(j.created ? 'Welcome to REDEFINE Calendar, ' + j.me.name + '!' : 'Welcome back, ' + j.me.name, 'good');
       return sync(true);
-    }).then(function () { location.hash = after; render(); }, function (e) {
+    }).then(function () { location.hash = after; render(); askNewPin(); }, function (e) {
       btn.disabled = false; btn.textContent = 'Sign in';
       if (e.code === 'new_name') return confirmBox('New member?', 'No one called "' + body.name + '" yet. Create a new member with this name and PIN?', 'Create').then(function (y) { if (y) doSignIn(form, true); });
       toast(errText(e), 'bad');
     });
+  }
+  function askNewPin(force) {
+    if (!force && !(S.data && S.data.me && S.data.me.mustChange)) return;
+    if (S.pinAsked && !force) return; S.pinAsked = !force;
+    modal('<h3>🔑 Choose your ' + (force ? 'new ' : 'own ') + 'PIN</h3>' + (force ? '' : '<p class="muted">You signed in with a temporary PIN. Pick your own now (4–6 digits).</p>') + '<label>New PIN<input id="np1" type="password" inputmode="numeric" maxlength="6"></label><label>Type it again<input id="np2" type="password" inputmode="numeric" maxlength="6"></label><div class="row end">' + (force ? '<button class="btn ghost" data-act="close-modal">Cancel</button>' : '') + '<button class="btn primary" id="npok">Save PIN</button></div>', function (sh) {
+      sh.querySelector('#npok').onclick = function () {
+        var p1 = sh.querySelector('#np1').value, p2 = sh.querySelector('#np2').value;
+        if (!/^\d{4,6}$/.test(p1)) return toast('PIN must be 4–6 digits.', 'bad'); if (p1 !== p2) return toast('The two PINs are different.', 'bad');
+        api('changepin', {pin: p1}).then(function () { closeModal(); if (S.data) S.data.me.mustChange = false; toast('PIN saved 🔑', 'good'); }, function (e) { toast(errText(e), 'bad'); });
+      };
+    });
+  }
+  /* Guided tour: highlights each part with a short note. Skip any time. */
+  var TOUR = [
+    ['#/', '.seg', '📅 Views', 'Month, Agenda (whole month as a list), Team day (who is free) and List. They stay at the top while you scroll.'],
+    ['#/', '.chips', '👥 Whose calendar', 'Everyone, only Me, or Me + someone (e.g. your partner). 📌 keeps a Me + chip, × closes it.'],
+    ['#/', '.grid, .ag', '👆 Days', 'Tap a day to choose it (scroll inside to see all). Tap it again to open that day. Swipe sideways to change month.'],
+    ['#/', '.fab', '➕ Add', 'Add an appointment. Type the title: the app picks the type and colour. You can repeat it weekly / monthly / yearly.'],
+    ['#/', '.team-bar', '📣 Team events', 'Black with the REDEFINE logo. Answer Going / Can’t go here; everyone gets a reminder 1 hour before.'],
+    ['#/', '.legend', '🎨 Colours', 'Green sales, yellow client & admin, orange recruit, blue meeting, red personal. Holidays and birthdays are marked too.'],
+    ['#/', '.tabs a[href="#/todo"]', '✅ To-do', 'Your to-do list in 4 boxes: urgent & important first.'],
+    ['#/', '.tabs a[href="#/stats"]', '📈 Activity', 'Your numbers, your goals (what you need each week), the monthly report and the team board.'],
+    ['#/', '.tabs a[href="#/me"]', '👤 Me', 'Your photo, short name, birthday, important people, notifications, partner calendar and this tour.']
+  ];
+  function tour(i) {
+    i = i || 0; var root = document.getElementById('tour');
+    if (!root) { root = document.createElement('div'); root.id = 'tour'; document.body.appendChild(root); }
+    if (i >= TOUR.length) { root.remove(); toast('That’s it! Tap 📖 in Me any time to see it again.', 'good'); return; }
+    var st = TOUR[i];
+    if (location.hash !== st[0] && !(st[0] === '#/' && (location.hash === '' || location.hash === '#/'))) location.hash = st[0];
+    setTimeout(function () {
+      var el = null; st[1].split(', ').some(function (sel) { el = document.querySelector(sel); return el; });
+      if (!el) return tour(i + 1);
+      el.scrollIntoView({block: 'center'});
+      setTimeout(function () {
+        var r = el.getBoundingClientRect(), below = r.top < window.innerHeight / 2;
+        root.innerHTML = '<div class="tour-hole" style="left:' + (r.left - 6) + 'px;top:' + (r.top - 6) + 'px;width:' + (r.width + 12) + 'px;height:' + (r.height + 12) + 'px"></div>' +
+          '<div class="tour-tip" style="' + (below ? 'top:' + Math.min(window.innerHeight - 220, r.bottom + 14) : 'bottom:' + Math.min(window.innerHeight - 220, window.innerHeight - r.top + 14)) + 'px"><small>' + (i + 1) + ' / ' + TOUR.length + '</small><b>' + st[2] + '</b><p>' + st[3] + '</p><div class="row between"><button class="link" data-tour="skip">Skip tour</button><div>' + (i ? '<button class="btn ghost tiny" data-tour="back">Back</button> ' : '') + '<button class="btn primary tiny" data-tour="next">' + (i === TOUR.length - 1 ? 'Finish' : 'Next') + '</button></div></div></div>';
+        root.onclick = function (ev) { var b = ev.target.closest('[data-tour]'); if (!b) return; var w = b.dataset.tour; if (w === 'skip') return root.remove(); tour(w === 'back' ? i - 1 : i + 1); };
+      }, 250);
+    }, 250);
   }
   function signOutLocal(reason) {
     S.token = ''; S.data = null; LS.del('token'); LS.del('cache'); LS.del('pushToken');
@@ -406,7 +475,7 @@
   function logoSvg(s) { return '<svg width="' + s + '" height="' + s + '" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="14" fill="#14213D"/><rect x="12" y="16" width="40" height="36" rx="6" fill="#fff"/><rect x="12" y="16" width="40" height="10" rx="5" fill="#E8505B"/><rect x="12" y="22" width="40" height="4" fill="#E8505B"/><circle cx="23" cy="36" r="4" fill="#2E86DE"/><circle cx="32" cy="36" r="4" fill="#10AC84"/><circle cx="41" cy="36" r="4" fill="#F39C12"/><circle cx="23" cy="45" r="4" fill="#8E44AD"/><circle cx="32" cy="45" r="4" fill="#E8505B"/></svg>'; }
   function tabs(active) {
     var u = unreadAll(), c = toConfirm().length + myInvites().length;
-    var t = [['cal', '#/', '📅', 'Calendar', c], ['feed', '#/feed', '🔔', 'Comments', u], ['stats', '#/stats', '📈', 'Activity', 0], ['me', '#/me', '👤', 'Me', 0]];
+    var t = [['cal', '#/', '📅', 'Calendar', c], ['feed', '#/feed', '🔔', 'Comments', u], ['todo', '#/todo', '✅', 'To-do', todoDue()], ['stats', '#/stats', '📈', 'Activity', 0], ['me', '#/me', '👤', 'Me', 0]];
     return '<nav class="tabs">' + t.map(function (x) { return '<a href="' + x[1] + '" class="' + (active === x[0] ? 'on' : '') + '"><span class="ti">' + x[2] + (x[4] ? '<i class="badge">' + (x[4] > 99 ? '99+' : x[4]) + '</i>' : '') + '</span>' + x[3] + '</a>'; }).join('') + '</nav>';
   }
   function topbar(title, opts) {
@@ -439,6 +508,13 @@
     modal('<h3>Merge my calendar with…</h3><p class="tiny muted">Shows your events and theirs together. Their private events still show as Busy unless you are linked partners (Me → Partner calendar).</p><div class="withpick">' +
       list.map(function (m) { return '<button class="wp" data-act="merge" data-id="' + m.id + '">' + avatar(m, 'xs') + esc(m.name) + '</button>'; }).join('') + '</div><div class="row end"><button class="btn ghost" data-act="close-modal">Cancel</button></div>');
   }
+  /* important people: yearly all-day birthdays / anniversaries in my own calendar */
+  function peopleCard() {
+    var mine = rawEvents().filter(function (e) { return e.ownerId === me().id && e.rep === 'y' && /^(🎂|💍)/.test(e.title || ''); }).sort(function (x, y) { return String(x.start).slice(5).localeCompare(String(y.start).slice(5)); });
+    return '<div class="card"><h4>🎂 Important people</h4><p class="tiny muted">Birthdays and anniversaries of family or clients. They repeat every year and remind you that morning.</p>' +
+      (mine.length ? mine.map(function (e) { return '<div class="td"><span class="tt">' + esc(e.title) + '<small>' + esc(dayLabel(String(e.start).slice(0, 10)).replace(/^.*?, /, '')) + (e.vis === 'private' ? ' · 🔒' : '') + '</small></span><button class="link danger" data-act="person-del" data-id="' + e.id + '">✕</button></div>'; }).join('') : '') +
+      '<form id="personadd" class="person-add"><input name="n" maxlength="60" placeholder="Name, e.g. Mum / Mr Lim" required><div class="two"><label>What<select name="k"><option value="b">🎂 Birthday</option><option value="a">💍 Anniversary</option></select></label><label>Date<input name="d" type="date" required></label></div><div class="two"><label>Who<select name="w"><option value="personal">Family / friend</option><option value="crm">Client</option></select></label><label>Who can see<select name="v"><option value="private">🔒 Only me</option><option value="team">👥 Team</option></select></label></div><button class="btn primary">+ Add</button></form></div>';
+  }
   function partnerCard() {
     var m = me(), asks = (m.partnerAsks || []).filter(function (id) { return mem(id).active !== false; }), body;
     if (m.partner) body = '<p>💑 Linked with ' + avatar(mem(m.partner), 'sm') + ' <b>' + esc(mem(m.partner).name) + '</b>. You see each other\'s private events; the team still sees Busy.</p><div class="row"><button class="btn ghost" data-act="filter" data-id="me+' + m.partner + '" onclick="location.hash=\'#/\'">View Me + ' + esc(shortName(mem(m.partner))) + '</button><button class="btn danger ghost" data-act="partner" data-do="unlink">Unlink</button></div>';
@@ -456,7 +532,7 @@
     var c = S.cursor, days = new Date(Date.UTC(c.y, c.m + 1, 0)).getUTCDate(), today = dayKey(Date.now()), list = filtered(), my = me().id, html = '<div class="ag">';
     for (var n = 1; n <= days; n++) {
       var k = c.y + '-' + pad(c.m + 1) + '-' + pad(n), p = P(keyMs(k)), evs = onDay(list, k).sort(function (x, y) { return (y.allDay ? 1 : 0) - (x.allDay ? 1 : 0) || sMs(x) - sMs(y); });
-      html += '<div class="ag-day' + (k === today ? ' today' : '') + (p.w === 0 ? ' sun' : '') + '" id="ag-' + k + '"><button class="ag-date" data-act="ag-new" data-k="' + k + '" aria-label="Add on ' + k + '"><b>' + n + '</b><small>' + WEEKDAY[p.w] + '</small>' + (lunarLabel(k) ? '<em class="lun">' + lunarLabel(k) + '</em>' : '') + '</button><div class="ag-evs">' +
+      html += '<div class="ag-day' + (k === today ? ' today' : '') + (p.w === 0 ? ' sun' : '') + '" id="ag-' + k + '"><button class="ag-date" data-act="ag-new" data-k="' + k + '" aria-label="Add on ' + k + '"><b>' + n + '</b><small>' + WEEKDAY[p.w] + '</small>' + (lunarLabel(k) ? '<em class="lun">' + lunarLabel(k) + '</em>' : '') + '</button><div class="ag-evs">' + holHtml(k, 'ag-hol') +
         evs.map(function (e) {
           var o = mem(e.ownerId), startsToday = dayKey(sMs(e)) === k;
           var t = e.allDay || !startsToday ? 'All-day' : hmLong(sMs(e));
@@ -500,6 +576,10 @@
     if (diff === -3 && c[1] === 30) return '年廿八';
     return '';
   }
+  function holHtml(k, cls) {
+    var hs = C.holidaysOn(k), sc = C.schoolHoliday(k);
+    return hs.map(function (h) { return '<span class="' + cls + (h.kind === 'ph' ? ' ph' : '') + '">' + h.icon + ' ' + esc(h.name) + '</span>'; }).join('') + (sc && cls !== 'hol' ? '<span class="' + cls + ' sch">🏫 School holiday</span>' : '');
+  }
   function monthGrid() {
     var c = S.cursor, first = Date.UTC(c.y, c.m, 1), dow = (new Date(first).getUTCDay() + 6) % 7, start = dayKey(first - H8 - dow * DAY + 3600e3), today = dayKey(Date.now());
     var list = filtered(), html = '<div class="grid"><div class="gh">' + ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(function (d) { return '<span>' + d + '</span>'; }).join('') + '</div>';
@@ -508,8 +588,8 @@
       html += '<div class="gw">';
       for (var d = 0; d < 7; d++) {
         var k = addDays(start, w * 7 + d), p = P(keyMs(k)), evs = onDay(list, k).sort(function (x, y) { return (y.all ? 1 : 0) - (x.all ? 1 : 0); });   // team events always visible first
-        var lun = lunarLabel(k), showOwner = S.filter === 'all' || S.filter.indexOf('me+') === 0;
-        html += '<div role="button" tabindex="0" class="gd' + (p.m !== c.m ? ' dim' : '') + (k === today ? ' today' : '') + (k === S.sel ? ' sel' : '') + (evs.length > 3 ? ' many' : '') + '" data-act="sel" data-k="' + k + '"><span class="dn">' + p.d + (lun ? '<em class="lun">' + lun + '</em>' : '') + '</span><div class="gd-evs">' +
+        var lun = lunarLabel(k), showOwner = S.filter === 'all' || S.filter.indexOf('me+') === 0, hs = C.holidaysOn(k), isPh = hs.some(function (h) { return h.kind === 'ph'; });
+        html += '<div role="button" tabindex="0" class="gd' + (C.schoolHoliday(k) ? ' school' : '') + (p.m !== c.m ? ' dim' : '') + (k === today ? ' today' : '') + (k === S.sel ? ' sel' : '') + (evs.length > 3 ? ' many' : '') + '" data-act="sel" data-k="' + k + '"><span class="dn' + (isPh ? ' ph' : '') + '">' + p.d + (lun ? '<em class="lun">' + lun + '</em>' : '') + '</span>' + (hs.length ? '<span class="hol' + (isPh ? ' ph' : '') + '">' + hs[0].icon + ' ' + esc(hs[0].name) + '</span>' : '') + '<div class="gd-evs">' +
           evs.map(function (e) { var o = mem(e.ownerId); return '<span class="bar' + (e.busy ? ' busy' : '') + (faded(e, me().id) ? ' pend' : '') + (e.out === 'cancel' ? ' x' : '') + (e.all ? ' team' : '') + '" style="' + evStyle(e) + '">' + (showOwner ? avatar(o, 'xxs') : '') + (e.all ? '<img class="tlogo" src="icons/team-mark.png" alt="">' : '') + esc(e.busy ? 'Busy' : e.title) + '</span>'; }).join('') +
           '</div>' + (evs.length > 3 ? '<span class="more">+' + (evs.length - 3) + '</span>' : '') + '</div>';
       }
@@ -528,7 +608,7 @@
   function openDay(k) {
     var evs = onDay(filtered(), k), lun = lunarLabel(k);
     modal('<div class="row between"><h3>' + esc(dayLabel(k, true)) + (lun ? ' · <span class="lun-t">' + lun + '</span>' : '') + '</h3><button type="button" class="icon-btn" data-act="close-modal" aria-label="Close">✕</button></div>' +
-      (evs.length ? evs.map(function (e) { return evRow(e); }).join('') : '<p class="empty">Nothing yet.</p>') +
+      '<div class="day-hols">' + holHtml(k, 'ag-hol') + '</div>' + (evs.length ? evs.map(function (e) { return evRow(e); }).join('') : '<p class="empty">Nothing yet.</p>') +
       '<button class="btn primary big" data-act="ag-new" data-k="' + k + '">+ Add event on this day</button>');
   }
   function dayAgenda(k) {
@@ -568,22 +648,28 @@
     }).join('');
     var hours = ''; for (var h = H0; h < H1; h += 2) hours += '<span style="left:' + ((h - H0) / (H1 - H0) * 100) + '%">' + ((h % 12) || 12) + (h < 12 ? 'a' : 'p') + '</span>';
     var nowLine = isToday && now > a + H0 * 3600e3 && now < a + H1 * 3600e3 ? '<i class="now" style="left:calc(var(--nw) + (100% - var(--nw)) * ' + ((now - a - H0 * 3600e3) / span).toFixed(4) + ')"></i>' : '';
-    return (isToday ? '<p class="freenow"><b>Free now:</b> ' + (freeNow.length ? freeNow.map(function (m) { return esc(m.id === my ? 'Me' : shortName(m)); }).join(', ') : 'nobody') + ' <span class="muted">· busy: ' + busyNow.length + '</span></p>' : '') +
+    return '<div class="day-hols">' + holHtml(k, 'ag-hol') + '</div>' + (isToday ? '<p class="freenow"><b>Free now:</b> ' + (freeNow.length ? freeNow.map(function (m) { return esc(m.id === my ? 'Me' : shortName(m)); }).join(', ') : 'nobody') + ' <span class="muted">· busy: ' + busyNow.length + '</span></p>' : '') +
       '<div class="team"><div class="tr th"><div class="tn"></div><div class="tl hours">' + hours + '</div></div><div class="rows">' + rows + nowLine + '</div></div>' +
       '<p class="tiny muted">Grey = private (busy, no details). Tap a block to see it. Blank = free.</p>';
   }
 
   /* ---------- event detail ---------- */
+  function birthdayScreen(id) {
+    var mid = id.split('-')[1], m = mem(mid), parts = id.split('-'), when = parts[2] + '-' + m.bday;
+    return topbar('Birthday', {back: '#/'}) + '<main><div class="card bday-card">' + avatar(m, 'xl') + '<h2>🎂 ' + esc(shortName(m)) + '’s birthday</h2><p>' + esc(dayLabel(when, true)) + '</p><p class="muted">Send your wishes! 🎉</p></div></main>' + tabs('cal');
+  }
   function eventScreen(id) {
+    if (/^bd-/.test(id)) return birthdayScreen(id);
     var e = events().filter(function (x) { return x.id === id; })[0];
+    if (e && e.base) e = Object.assign({}, e, {id: e.base});   // a repeat: everything below acts on the real event
     if (!e) return topbar('Event', {back: '#/'}) + '<main><p class="empty">This event is not in the dates loaded, or it was deleted.</p></main>' + tabs('cal');
-    var o = mem(e.ownerId), mine = e.ownerId === me().id;
+    var o = mem(e.ownerId), mine = e.ownerId === me().id, repNote = e.rep ? '<p class="tiny muted">🔁 Repeats ' + ({w: 'every week', m: 'every month', y: 'every year'})[e.rep] + (e.repEnd ? ' until ' + esc(dayLabel(e.repEnd)) : '') + '. Editing changes every repeat.' + (e.occ ? ' Done / Closed can only be marked on the first one.' : '') + '</p>' : '';
     if (e.busy) return topbar('Busy', {back: '#/'}) + '<main><div class="card evhead" style="' + evStyle(e) + '"><h2>🔒 Busy</h2><p>' + esc(dayLabel(dayKey(sMs(e)), true)) + '<br>' + esc(evTime(e)) + '</p><p>' + avatar(o, 'sm') + ' ' + esc(o.name) + '</p><p class="muted">This is private. Only ' + esc(shortName(o)) + ' can see the details.</p></div></main>' + tabs('cal');
     var thread = (S.data.msgs || []).filter(function (m) { return m.to === 'ev:' + e.id; });
     var cheers = thread.filter(function (m) { return m.kind === 'cheer'; }), comments = thread.filter(function (m) { return m.kind !== 'cheer' && m.kind !== 'rsvp'; });
     var iCheered = cheers.some(function (m) { return m.from === me().id; });
     var out = '';
-    if (mine && isWork(e) && sMs(e) <= Date.now()) {
+    if (mine && !e.occ && isWork(e) && sMs(e) <= Date.now()) {
       out = '<div class="card"><h4>What happened?</h4><div class="outs">' +
         '<button class="out' + (e.out === 'done' ? ' on' : '') + '" data-act="out" data-id="' + e.id + '" data-v="done">✓ Done</button>' +
         (C.PROSPECT[e.type] ? '<button class="out gold' + (e.out === 'closed' ? ' on' : '') + '" data-act="out" data-id="' + e.id + '" data-v="closed">💰 Closed</button>' : '') +
@@ -600,7 +686,7 @@
       (e.place ? '<p>📍 ' + esc(e.place) + '</p>' : '') +
       '<p>' + avatar(o, 'sm') + ' ' + esc(o.name) + ((e.with || []).length ? ' <span class="muted">with</span> ' + e.with.map(function (id) { return avatar(mem(id), 'sm') + ' ' + esc(shortName(mem(id))); }).join(' ') : '') + '</p>' +
       (e.notes ? '<p class="notes">' + esc(e.notes) + '</p>' : '') +
-      '<p class="muted tiny">' + (e.all ? '👥 Whole-team event: on everyone\'s calendar.' : e.vis === 'private' ? '🔒 Only ' + (mine ? 'you' : shortName(o)) + (e.with.length ? ' and the people tagged' : '') + ' can see this. Others see "Busy".' + (isWork(e) ? ' It still counts in the activity numbers.' : '') : '👥 The whole team can see this.') + (e.type === 'approach' ? ' · ' + (e.count || 1) + ' new friend(s)' : '') + '</p></div>' +
+      repNote + '<p class="muted tiny">' + (e.all ? '👥 Whole-team event: on everyone\'s calendar.' : e.vis === 'private' ? '🔒 Only ' + (mine ? 'you' : shortName(o)) + (e.with.length ? ' and the people tagged' : '') + ' can see this. Others see "Busy".' + (isWork(e) ? ' It still counts in the activity numbers.' : '') : '👥 The whole team can see this.') + (e.type === 'approach' ? ' · ' + (e.count || 1) + ' new friend(s)' : '') + '</p></div>' +
       out + (e.all ? attendCard(e) : (e.with || []).length ? inviteCard(e) : '') +
       '<div class="cheers"><button class="cheer' + (iCheered ? ' on' : '') + '" data-act="cheer" data-id="' + e.id + '">👏 ' + (cheers.length || 'Cheer') + '</button><span class="muted tiny">' + esc(cheers.map(function (m) { return shortName(mem(m.from)); }).join(', ')) + '</span>' +
       '</div>' +
@@ -628,6 +714,28 @@
         '<div class="outs"><button class="out' + (mine === 'yes' ? ' on' : '') + '" data-act="rsvp" data-id="' + e.id + '" data-v="' + (mine === 'yes' ? '' : 'yes') + '">✅ Going</button><button class="out grey' + (mine === 'no' ? ' on' : '') + '" data-act="rsvp" data-id="' + e.id + '" data-v="' + (mine === 'no' ? '' : 'no') + '">❌ Can\'t go</button></div>' +
         (!mine && !own ? '<p class="tiny warn-t">You haven\'t answered yet.</p>' : own && !mine ? '<p class="tiny muted">You created this one.</p>' : '') + '<p>' + '<button class="btn wa" data-act="wa-team" data-id="' + e.id + '">📋 Copy for WhatsApp</button>' + '</p></div>';
     }).join('') : '<p class="empty">No upcoming team events.</p>') + '</main>' + tabs('cal');
+  }
+  /* ---------- To-do: Urgent & important / Urgent, not important / Important, not urgent / Not urgent, not important ---------- */
+  var QUAD = [['1', '🔴', 'Urgent & important', 'Do it now'], ['2', '🟠', 'Urgent, not important', 'Quick / delegate'], ['3', '🔵', 'Important, not urgent', 'Plan a time'], ['4', '⚪', 'Not urgent, not important', 'Later or drop']];
+  function todos() { return (S.data && S.data.todos) || []; }
+  function todoDue() { var t = dayKey(Date.now()); return todos().filter(function (x) { return !x.done && x.due && x.due <= t; }).length; }
+  function todoScreen() {
+    var tab = S.todoTab || 'today', t = dayKey(Date.now()), list = todos().filter(function (x) {
+      if (tab === 'all') return S.showDone || !x.done;
+      return x.done ? x.done.slice(0, 10) === new Date(Date.now()).toISOString().slice(0, 10) || dayKey(Date.parse(x.done)) === t : (!x.due || x.due <= t);
+    });
+    var addQ = S.todoQ || '1';
+    var html = topbar('To-do') + '<main class="todo"><div class="seg"><button class="' + (tab === 'today' ? 'on' : '') + '" data-act="todotab" data-v="today">Today</button><button class="' + (tab === 'all' ? 'on' : '') + '" data-act="todotab" data-v="all">All time</button></div>' +
+      '<form class="todo-add" id="todoadd"><input name="t" maxlength="300" placeholder="Add a to-do…" autocomplete="off"><div class="qpick">' + QUAD.map(function (q) { return '<button type="button" class="qb' + (addQ === q[0] ? ' on' : '') + '" data-act="todoq" data-q="' + q[0] + '">' + q[1] + ' ' + q[2] + '</button>'; }).join('') + '</div>' +
+      '<div class="row"><label class="switch"><input type="checkbox" name="today"' + (tab === 'today' ? ' checked' : '') + '> For today</label><input type="date" name="due" class="due-in"><button class="btn primary">Add</button></div></form>' +
+      '<div class="quads">' + QUAD.map(function (q) {
+        var items = list.filter(function (x) { return x.q === q[0]; }).sort(function (x, y) { return (x.done ? 1 : 0) - (y.done ? 1 : 0) || String(x.due || '9').localeCompare(String(y.due || '9')); });
+        return '<section class="quad q' + q[0] + '"><h4>' + q[1] + ' ' + q[2] + '<small>' + q[3] + '</small></h4>' + (items.length ? items.map(function (x) {
+          var late = !x.done && x.due && x.due < t;
+          return '<div class="td' + (x.done ? ' done' : '') + '"><button class="tick-btn" data-act="todotick" data-id="' + x.id + '" aria-label="Done">' + (x.done ? '✅' : '⬜') + '</button><span class="tt">' + esc(x.text) + (x.due ? '<small class="' + (late ? 'late' : '') + '">' + (x.due === t ? 'Today' : esc(dayLabel(x.due))) + '</small>' : '') + '</span><button class="link danger" data-act="tododel" data-id="' + x.id + '" aria-label="Delete">✕</button></div>';
+        }).join('') : '<p class="empty small">Nothing here.</p>') + '</section>';
+      }).join('') + '</div>' + (tab === 'all' ? '<p class="center"><button class="link" data-act="todoshowdone">' + (S.showDone ? 'Hide' : 'Show') + ' finished ones</button></p>' : '') + '</main>';
+    return html + tabs('todo');
   }
   function invitesScreen() {
     var list = myInvites();
@@ -710,6 +818,8 @@
       '<p class="tiny muted" id="vis-help"></p>' +
       '<label class="switch" id="all-row"><input type="checkbox" name="all"' + (e.all ? ' checked' : '') + '> 👥 Everyone\'s in it (team meeting, training, roadshow)</label><p class="tiny muted" id="all-help">Shows on every member\'s calendar. Everyone answers Going / Can\'t go, gets a pop-up for comments, and a reminder 1 hour before.</p>' +
       '<div class="lbl" id="inv-lbl">Invite (optional): they accept or reject</div><div class="withpick">' + members().filter(function (m) { return m.id !== me().id && m.active !== false; }).map(function (m) { return '<button type="button" class="wp' + ((e.with || []).indexOf(m.id) >= 0 ? ' on' : '') + '" data-id="' + m.id + '">' + avatar(m, 'xs') + esc(shortName(m)) + '</button>'; }).join('') + '</div>' +
+      '<div class="two"><label>🔁 Repeat<select name="rep">' + [['', 'Does not repeat'], ['w', 'Every week'], ['m', 'Every month'], ['y', 'Every year']].map(function (r) { return '<option value="' + r[0] + '"' + ((e.rep || '') === r[0] ? ' selected' : '') + '>' + r[1] + '</option>'; }).join('') + '</select></label>' +
+      '<label class="rep-only">Until (optional)<input name="repEnd" type="date" value="' + esc(e.repEnd || '') + '"></label></div>' +
       '<label>Remind me<select name="remind">' + [['', 'No reminder'], ['0', 'At start'], ['10', '10 min before'], ['30', '30 min before'], ['60', '1 hour before'], ['120', '2 hours before'], ['1440', '1 day before']].map(function (r) { return '<option value="' + r[0] + '"' + (String(e.remind) === r[0] ? ' selected' : '') + '>' + r[1] + '</option>'; }).join('') + '</select></label>' +
       '<div class="row end sticky-actions">' + (!isNew ? '<button type="button" class="btn danger ghost" data-x="del">Delete</button>' : '') + '<button class="btn primary big" type="submit">' + (isNew ? 'Add to calendar' : 'Save') + '</button></div></form>';
     modal(html, function (sh) {
@@ -718,6 +828,7 @@
         sh.querySelectorAll('.tp').forEach(function (b) { b.classList.toggle('on', b.dataset.t === type); });
         sh.querySelectorAll('.vb').forEach(function (b) { b.classList.toggle('on', b.dataset.v === vis); });
         sh.querySelector('.count-row').hidden = type !== 'approach';
+        sh.querySelector('.rep-only').hidden = !f.rep.value;
         sh.querySelector('#all-row').hidden = sh.querySelector('#all-help').hidden = vis === 'private';
         var everyone = vis !== 'private' && f.all.checked;   // whole-team event: everybody is in it, so every name shows selected
         sh.querySelectorAll('.wp').forEach(function (b) { b.classList.toggle('on', everyone || withIds.indexOf(b.dataset.id) >= 0); b.disabled = everyone; });
@@ -734,7 +845,7 @@
       sh.querySelectorAll('.tp').forEach(function (b) { b.onclick = function () { type = b.dataset.t; picked = true; if (!visPicked) vis = type === 'personal' ? 'private' : 'team'; sh.querySelector('#detect').textContent = ''; paint(); }; });
       sh.querySelectorAll('.vb').forEach(function (b) { b.onclick = function () { vis = b.dataset.v; visPicked = true; paint(); }; });
       sh.querySelectorAll('.wp').forEach(function (b) { b.onclick = function () { var i = withIds.indexOf(b.dataset.id); if (i >= 0) withIds.splice(i, 1); else withIds.push(b.dataset.id); b.classList.toggle('on'); }; });
-      f.allDay.onchange = paint; f.all.onchange = paint;
+      f.allDay.onchange = paint; f.all.onchange = paint; f.rep.onchange = paint;
       f.st.addEventListener('change', function () { var s = f.st.value.split(':'), en = f.et.value.split(':'); if (f.et.value <= f.st.value) f.et.value = pad(Math.min(23, +s[0] + 1)) + ':' + s[1]; });
       paint(); if (isNew) setTimeout(function () { f.title.focus(); if (f.title.value) f.title.dispatchEvent(new Event('input')); }, 50);   // a pre-filled title still picks its type
       var del = sh.querySelector('[data-x=del]');
@@ -749,7 +860,7 @@
         if (!type) { type = C.detectType(f.title.value) || ''; if (!type) { toast('Pick what kind of activity this is.', 'bad'); sh.querySelector('.types').classList.add('shake'); return; } }
         var ad = f.allDay.checked, d = f.date.value;
         if (!d) return toast('Please pick a date.', 'bad');
-        var ev2 = {id: e.id, title: f.title.value, type: type, allDay: ad, place: f.place.value, notes: f.notes.value, vis: vis, all: vis !== 'private' && f.all.checked, with: withIds, remind: f.remind.value, count: f.count.value, source: e.source || 'manual'};
+        var ev2 = {id: e.id, title: f.title.value, type: type, allDay: ad, place: f.place.value, notes: f.notes.value, vis: vis, all: vis !== 'private' && f.all.checked, with: withIds, remind: f.remind.value, count: f.count.value, source: e.source || 'manual', rep: f.rep.value, repEnd: f.rep.value ? f.repEnd.value : ''};
         if (ad) { ev2.start = d; ev2.end = f.date2.value && f.date2.value >= d ? f.date2.value : d; }
         else {
           if (!f.st.value) return toast('Please pick a start time.', 'bad');
@@ -758,7 +869,7 @@
           ev2.end = new Date(en).toISOString();
         }
         var tmpId = isNew ? 'tmp' + Date.now() : e.id;
-        var view = {id: tmpId, ownerId: isNew ? me().id : e.ownerId, title: ev2.title.trim(), type: type, start: ev2.start, end: ev2.end, allDay: ad, place: ev2.place, notes: ev2.notes, vis: vis, all: !!ev2.all, with: withIds.slice(), remind: ev2.remind, count: type === 'approach' ? (+ev2.count || 1) : 0, out: isNew ? '' : e.out, anp: isNew ? 0 : e.anp, noc: isNew ? 0 : e.noc, cases: isNew ? [] : (e.cases || []), source: ev2.source};
+        var view = {id: tmpId, ownerId: isNew ? me().id : e.ownerId, title: ev2.title.trim(), type: type, start: ev2.start, end: ev2.end, allDay: ad, place: ev2.place, notes: ev2.notes, vis: vis, all: !!ev2.all, with: withIds.slice(), remind: ev2.remind, count: type === 'approach' ? (+ev2.count || 1) : 0, out: isNew ? '' : e.out, anp: isNew ? 0 : e.anp, noc: isNew ? 0 : e.noc, cases: isNew ? [] : (e.cases || []), source: ev2.source, rep: ev2.rep, repEnd: ev2.repEnd};
         closeModal(); S.sel = dayKey(sMs(view));
         if (!isNew) location.hash = '#/e/' + e.id;
         optimistic(function (d) { if (isNew) d.events.push(view); else d.events = d.events.map(function (x) { return x.id === e.id ? Object.assign({}, x, view) : x; }); }, 'save', {event: ev2}, isNew ? 'Added 📅' : 'Saved',
@@ -860,7 +971,7 @@
     if (!d.events) return topbar('Activity') + '<main>' + seg + '<p class="empty">Loading…</p></main>' + tabs('stats');
     var by = C.stats(d.events, d.r.from, d.r.to, Date.now()), mine = by[my] || C.addStats([]), r = C.ratios(mine);
     var funnel = [['A', 'Approach', mine.A], ['O', 'Open', mine.O], ['P', 'Present', mine.P], ['F', 'Follow-up', mine.F], ['C', 'Close', mine.C]], top = Math.max.apply(null, funnel.map(function (f) { return f[2]; }).concat([1]));
-    var html = topbar('Activity') + '<main class="stats">' + seg +
+    var html = topbar('Activity') + '<main class="stats">' + seg + goalsCard() +
       '<div class="card"><h4>My ' + esc(/^(This|Last) /.test(d.r.label) ? d.r.label.toLowerCase() : d.r.label) + '</h4><div class="funnel">' + funnel.map(function (f) { return '<div class="fr"><span class="fl"><b>' + f[0] + '</b> ' + f[1] + '</span><span class="fb"><i style="width:' + (f[2] / top * 100) + '%"></i></span><b class="fv">' + f[2] + '</b></div>'; }).join('') + '</div>' +
       '<div class="kpis">' + kpi('O/A', pct(r.OA), 'prospecting') + kpi('P/O', pct(r.PO), 'presentation') + kpi('F/P', pct(r.FP), 'follow-up') + kpi('NOC/P', pct(r.CP), 'closing') + '</div>' + ratioNote(r) +
       '<div class="mae"><div><small>Market</small><b>' + (r.M == null ? '–' : rm(r.M)) + '</b><span>avg case size</span></div><div><small>Activity</small><b>' + mine.P + '</b><span>presentations</span></div><div><small>Efficiency</small><b>' + pct(r.E) + '</b><span>closing ratio</span></div></div>' +
@@ -921,6 +1032,64 @@
     return {lines: lines, text: '🔥' + head + ' CLOSE CASE LIST🔥\n\n' + lines.join('\n') + '\n\n\nTotal ANP: ' + money(total)};
   }
   function actTotal(s) { return s.A + s.O + s.P + s.F + s.recruit; }   // selling activities; NOC (results) shown separately
+  /* ---------- goals: required weekly activity from my own ratios (last 90 days), or the team’s if I have too little history ---------- */
+  function loadProgress(month) {
+    var k = month || '';
+    if (S.prog && S.prog.k === k && Date.now() - S.prog.at < 60e3) return S.prog.v;
+    if (!S.progBusy) { S.progBusy = 1; api('progress', month ? {month: month} : {}).then(function (j) { S.progBusy = 0; S.prog = {k: k, at: Date.now(), v: j}; render(); }, function () { S.progBusy = 0; }); }
+    return S.prog && S.prog.k === k ? S.prog.v : null;
+  }
+  function goalOf(key) { var g = ((S.data && S.data.goals) || []).filter(function (x) { return x.key === key; })[0]; return g ? +g.anp : 0; }
+  function ratioBase(pr) {
+    var m = pr.r90.me, t = pr.r90.team, okMe = m.P >= 5 && m.C >= 2 && m.anpCases >= 2;
+    var s = okMe ? m : t;
+    return {who: okMe ? 'your last 90 days' : 'the team’s last 90 days (you need a bit more history)', avg: s.anpCases ? s.anp / s.anpCases : null, CP: s.P ? s.C / s.P : null, PO: s.O ? s.P / s.O : null, OA: s.A ? s.O / s.A : null};
+  }
+  function needWeekly(remain, weeks, rb) {
+    if (remain <= 0) return null;
+    var out = {}, cases = rb.avg ? Math.ceil(remain / rb.avg) : null;
+    if (cases == null) return {msg: 'Not enough closed cases with ANP yet to work this out.'};
+    out.C = cases; out.P = rb.CP ? Math.ceil(cases / rb.CP) : null; out.O = out.P != null && rb.PO ? Math.ceil(out.P / rb.PO) : null; out.A = out.O != null && rb.OA ? Math.ceil(out.O / rb.OA) : null;
+    var wk = {}; Object.keys(out).forEach(function (k2) { wk[k2] = out[k2] == null ? null : Math.ceil(out[k2] / weeks); });
+    return {total: out, week: wk};
+  }
+  function goalsCard() {
+    var pr = loadProgress(''); if (!pr) return '<div class="card goals"><h4>🎯 My goals</h4><p class="muted">Loading…</p></div>';
+    var sel = S.goalP || 0, p = pr.periods[sel], goal = goalOf(p.key), got = p.s.anp, rb = ratioBase(pr);
+    var weeks = Math.max(1, Math.ceil((p.to - Date.now()) / (7 * DAY))), need = goal ? needWeekly(goal - got, weeks, rb) : null, pc = goal ? Math.min(100, Math.round(got / goal * 100)) : 0;
+    var h = '<div class="card goals"><div class="row between"><h4>🎯 My goals</h4><a class="btn tiny ghost" href="#/report">📄 Monthly report</a></div><div class="seg small">' + pr.periods.map(function (x, i) { return '<button class="' + (i === sel ? 'on' : '') + '" data-act="goalp" data-i="' + i + '">' + ({month: 'Month', quarter: 'Quarter', 'half-year': 'Half-year', year: 'Year'})[x.label] + '</button>'; }).join('') + '</div>' +
+      '<div class="row"><label class="grow">ANP goal this ' + p.label + ' (RM)<input id="goalin" type="number" inputmode="numeric" min="0" step="100" value="' + (goal || '') + '" placeholder="e.g. 30000"></label><button class="btn primary" data-act="goalsave" data-key="' + p.key + '">Save</button></div>';
+    if (!goal) return h + '<p class="tiny muted">Set a goal and the app works out how many approaches, opens, presentations and closes you need each week.</p></div>';
+    h += '<div class="gbar"><i style="width:' + pc + '%"></i></div><p><b>' + rm(got) + '</b> of ' + rm(goal) + ' (' + pc + '%) · ' + weeks + ' week' + (weeks > 1 ? 's' : '') + ' left</p>';
+    if (got >= goal) return h + '<p class="ok-t">🎉 Goal reached! Raise the bar?</p></div>';
+    if (need && need.msg) return h + '<p class="muted">' + need.msg + '</p></div>';
+    var cell = function (lbl, k2) { return '<div class="kpi"><small>' + lbl + '</small><b>' + (need.week[k2] == null ? '–' : need.week[k2]) + '</b><span>per week</span></div>'; };
+    return h + '<h4 class="sub">You need each week</h4><div class="kpis">' + cell('A', 'A') + cell('O', 'O') + cell('P', 'P') + cell('C', 'C') + '</div><p class="tiny muted">Remaining ' + rm(goal - got) + ' ÷ avg case ' + (rb.avg ? rm(rb.avg) : '–') + ' = ' + need.total.C + ' cases → ' + (need.total.P == null ? '–' : need.total.P) + ' presentations → ' + (need.total.O == null ? '–' : need.total.O) + ' opens → ' + (need.total.A == null ? '–' : need.total.A) + ' approaches, using ' + rb.who + '.</p></div>';
+  }
+  /* ---------- monthly report with a coach’s note (rules, not AI) ---------- */
+  function coachNote(ms, team, goal) {
+    var out = [], r = C.ratios(ms), tr = C.ratios(team);
+    if (goal) { var pc = Math.round(ms.anp / goal * 100); out.push(pc >= 100 ? '🎉 Goal reached: ' + rm(ms.anp) + ' of ' + rm(goal) + '. Set a bigger one for next month.' : pc >= 70 ? '💪 Close: ' + pc + '% of your goal. One or two more closes would do it.' : '📈 ' + pc + '% of your goal. The funnel below shows where to push.'); }
+    else out.push('🎯 No goal set for this month. Set one in Activity → My goals so the app can plan your week.');
+    if (!ms.A) out.push('👋 No new approaches logged. Everything starts here: aim for a few new friends every week.');
+    if (ms.P < team.P) out.push('📊 Presentations: ' + ms.P + ' (team average ' + team.P.toFixed(1) + '). More presentations = more closes.');
+    else if (ms.P) out.push('📊 Strong presentation activity: ' + ms.P + ' (team average ' + team.P.toFixed(1) + ').');
+    var gaps = [['OA', 'Turn more approaches into appointments: ask for the meeting on the spot.'], ['PO', 'Turn more fact-finds into presentations: book the presentation before you leave.'], ['CP', 'Your closing ratio is below the team: follow up within 48 hours and ask for the decision.']]
+      .map(function (g) { return {g: g, gap: r[g[0]] != null && tr[g[0]] != null ? tr[g[0]] - r[g[0]] : 0}; }).sort(function (x, y) { return y.gap - x.gap; });
+    if (gaps[0].gap > 0.05) out.push('🔍 ' + gaps[0].g[1]);
+    if (ms.unconfirmed) out.push('✅ ' + ms.unconfirmed + (ms.unconfirmed > 1 ? ' activities were' : ' activity was') + ' not confirmed, so ' + (ms.unconfirmed > 1 ? 'they' : 'it') + ' did not count. Confirm them after each meeting.');
+    return out;
+  }
+  function reportScreen(month) {
+    var now = P(Date.now()), def = new Date(Date.UTC(now.y, now.m - 1, 1)).toISOString().slice(0, 7), mk = /^\d{4}-\d{2}$/.test(month || '') ? month : def, pr = loadProgress(mk);
+    var y = +mk.slice(0, 4), m = +mk.slice(5) - 1, prev = new Date(Date.UTC(y, m - 1, 1)).toISOString().slice(0, 7), next = new Date(Date.UTC(y, m + 1, 1)).toISOString().slice(0, 7);
+    var head = topbar('Monthly report', {back: '#/stats'}) + '<main class="stats"><div class="monthnav"><a class="nav" href="#/report/' + prev + '">‹</a><b>' + MONTH[m] + ' ' + y + '</b><a class="nav" href="#/report/' + next + '">›</a></div>';
+    if (!pr || !pr.month) return head + '<p class="empty">Loading…</p></main>' + tabs('stats');
+    var ms = pr.month.me, t = pr.month.teamAvg, goal = goalOf('M' + mk), row = function (lbl, k2) { return '<tr><td class="l">' + lbl + '</td><td><b>' + ms[k2] + '</b></td><td>' + (+t[k2]).toFixed(1) + '</td></tr>'; };
+    return head + '<div class="card"><h4>My numbers</h4><table class="board"><thead><tr><th class="l"></th><th>Me</th><th>Team avg</th></tr></thead><tbody>' + row('👋 Approach', 'A') + row('☕ Open', 'O') + row('📊 Present', 'P') + row('🔁 Follow-up', 'F') + row('✍️ NOC', 'C') +
+      '<tr><td class="l">💰 ANP</td><td><b>' + rm(ms.anp) + '</b></td><td>' + rm(t.anp) + '</td></tr>' + (goal ? '<tr><td class="l">🎯 Goal</td><td><b>' + rm(goal) + '</b></td><td></td></tr>' : '') + '</tbody></table></div>' +
+      '<div class="card coach"><h4>📝 Coach’s note</h4>' + coachNote(ms, t, goal).map(function (l) { return '<p>' + esc(l) + '</p>'; }).join('') + '</div></main>' + tabs('stats');
+  }
   function kpi(k, v, l) { return '<div class="kpi"><small>' + k + '</small><b>' + v + '</b><span>' + l + '</span></div>'; }
   function reportRows() {
     var d = statsData(S.statsPeriod); if (!d.events) return null;
@@ -963,11 +1132,14 @@
       '<div class="card"><h4>My short name</h4><p class="tiny muted">What the team sees on chips, Team day, attendance and the close case list. Avoid surnames, e.g. KJ, MJ, Rex.</p><div class="row"><input id="shortin" maxlength="12" value="' + esc(me().short || '') + '" placeholder="e.g. KJ" style="flex:1;min-width:120px"><button class="btn primary" data-act="short">Save</button></div>' + (!me().shortSet ? '<p class="tiny warn-t">Suggested from your name. Change it if you like, then tap Save.</p>' : '') + '</div>' +
       '<div class="card who-photo"><h4>My photo</h4>' + avatar(m, 'xl') + '<p class="tiny muted">Your face shows on the calendar, Team day and the board so everyone knows it’s you.</p><label class="btn primary file">📷 ' + (m.photoV ? 'Change photo' : 'Upload my photo') + '<input type="file" accept="image/*" data-act="pick-photo" hidden></label></div>' +
       '<div class="card"><h4>Notifications</h4>' + push + '</div>' +
+      '<div class="card"><h4>🎂 My birthday</h4><p class="tiny muted">The team sees it on the calendar and gets a reminder on the day. Only the day and month are shared.</p><div class="row"><input id="bdayin" type="date" value="' + (m.bday ? '2000-' + m.bday : '') + '" style="flex:1;min-width:150px"><button class="btn primary" data-act="bdaysave">Save</button>' + (m.bday ? '<button class="btn ghost" data-act="bdayclear">Remove</button>' : '') + '</div></div>' +
+      peopleCard() +
       partnerCard() +
       '<div class="card"><h4>Move my calendar here</h4><p class="muted">Google Calendar, TimeTree, iPhone, or a paper diary: snap photos or screenshots and the AI copies them in. You check every row first.</p><a class="btn primary" href="#/import">⤓ Import calendar</a></div>' +
       (!standalone() ? '<div class="card"><h4>Install</h4><p class="muted">Add REDEFINE Calendar to your home screen so it opens like an app.</p><button class="btn ghost" data-act="install">How?</button></div>' : '') +
       (m.leader ? '<div class="card"><h4>Leader</h4><a class="btn ghost" href="#/members">👥 Manage members</a></div>' : '') +
       '<div class="card"><h4>How counting works</h4><p class="tiny muted">Each event has a type (👋 Approach, ☕ Open, 📊 Present, 🔁 Follow-up, ✍️ Closing, 🌱 Recruit, 👥 Meeting, 🛠️ Service, 🎁 CRM, 📝 Paperwork, 🏠 Personal). The app guesses it from the title. After the event, tap ✓ Done, 💰 Closed (with ANP) or ✕ Didn\'t happen. Only confirmed events count. O/A = prospecting, P/O = presentation, F/P = follow-up, NOC/P = closing ratio. Personal events never count.</p></div>' +
+      '<div class="card"><h4>Help & security</h4><div class="row"><button class="btn primary" data-act="tour">📖 Take the tour</button><button class="btn ghost" data-act="pinchange">🔑 Change my PIN</button></div></div>' +
       '<p class="center tiny muted">App version ' + APP_VERSION + ' · ' + (isIOS() ? 'iPhone' : 'Android / other') + (standalone() ? ' · home-screen app' : ' · browser') + ' · notifications: ' + ('Notification' in window ? Notification.permission : 'not supported') + ' · server has ' + (me().devices || 0) + ' phone(s) for you</p>' +
       '<p class="center"><button class="link danger" data-act="signout">Sign out of this phone</button></p></main>' + tabs('me');
   }
@@ -978,7 +1150,7 @@
         var you = m.id === me().id;
         return '<div class="card mrow' + (m.active === false ? ' off' : '') + '">' + avatar(m, 'sm') + '<div class="grow"><b>' + esc(m.name) + '</b><small class="muted">' + (m.role === 'leader' ? '⭐ Leader' : 'Agent') + (m.active === false ? ' · removed' : '') + ' · last seen ' + (m.seen ? ago(m.seen) : 'never') + '</small></div>' +
           (you ? '<small class="muted">you</small>' : m.active === false ? '<button class="btn tiny ghost" data-act="mem" data-id="' + m.id + '" data-do="back">Bring back</button>'
-            : '<button class="btn tiny ghost" data-act="mem" data-id="' + m.id + '" data-do="' + (m.role === 'leader' ? 'agent' : 'leader') + '">' + (m.role === 'leader' ? 'Make agent' : 'Make leader') + '</button><button class="btn tiny danger ghost" data-act="mem" data-id="' + m.id + '" data-do="remove">Remove</button>') + '</div>';
+            : '<button class="btn tiny ghost" data-act="mem" data-id="' + m.id + '" data-do="' + (m.role === 'leader' ? 'agent' : 'leader') + '">' + (m.role === 'leader' ? 'Make agent' : 'Make leader') + '</button><button class="btn tiny danger ghost" data-act="mem" data-id="' + m.id + '" data-do="remove">Remove</button><button class="btn tiny ghost" data-act="mem" data-id="' + m.id + '" data-do="reset">🔑 Reset PIN</button>') + '</div>';
       }).join('') + '</main>';
   }
 
@@ -1115,7 +1287,10 @@
     if (!S.data) { $app.innerHTML = topbar('REDEFINE Calendar') + '<main><p class="empty">Loading your team…</p></main>'; return; }
     var r = route(), parts = r.split('/').filter(Boolean), html;
     var active = document.activeElement, typing = active && /INPUT|TEXTAREA|SELECT/.test(active.tagName) && $app.contains(active);
-    if (typing && r === lastRoute) {   // don't wipe what someone is typing: only refresh the live lists
+    if (typing && active.closest('#todoadd')) {   // quick to-do entry: refresh the boxes, keep the cursor and what is typed
+      var keepT = active.value, keepN = active.name;
+      setTimeout(function () { var el = document.querySelector('#todoadd [name="' + keepN + '"]'); if (el && el.type !== 'checkbox') { el.value = keepT; el.focus(); } }, 0);
+    } else if (typing && r === lastRoute) {   // don't wipe what someone is typing: only refresh the live lists
       var live = $app.querySelector('[data-live]');
       if (live && live.dataset.live === 'comments') live.innerHTML = commentList((S.data.msgs || []).filter(function (m) { return m.to === 'ev:' + parts[1] && m.kind !== 'cheer' && m.kind !== 'rsvp'; }));
       return;
@@ -1137,6 +1312,8 @@
     else if (parts[0] === 'confirm') html = confirmScreen();
     else if (parts[0] === 'invites') html = invitesScreen();
     else if (parts[0] === 'teamevents') html = teamEventsScreen();
+    else if (parts[0] === 'todo') html = todoScreen();
+    else if (parts[0] === 'report') html = reportScreen(parts[1]);
     else html = calendarScreen();
     var y = r === lastRoute ? window.scrollY : 0;
     $app.innerHTML = html; lastRoute = r;
@@ -1150,6 +1327,18 @@
     var b = ev.target.closest('[data-act]'); if (!b || b.tagName === 'FORM' || b.tagName === 'INPUT') return;
     var a = b.dataset.act, today = dayKey(Date.now());
     if (a === 'close-modal') return closeModal();
+    if (a === 'tour') { location.hash = '#/'; return setTimeout(function () { tour(0); }, 200); }
+    if (a === 'pinchange') return askNewPin(true);
+    if (a === 'todotab') { S.todoTab = b.dataset.v; return render(); }
+    if (a === 'todoq') { S.todoQ = b.dataset.q; var keep = (document.querySelector('#todoadd [name=t]') || {}).value; render(); var ti = document.querySelector('#todoadd [name=t]'); if (ti) { ti.value = keep || ''; ti.focus(); } return; }
+    if (a === 'todoshowdone') { S.showDone = !S.showDone; return render(); }
+    if (a === 'todotick') { var tx = todos().filter(function (x) { return x.id === b.dataset.id; })[0]; if (!tx) return; return send('todo', {item: {id: tx.id, text: tx.text, q: tx.q, due: tx.due, done: !tx.done}}, tx.done ? '' : '✅ Done!'); }
+    if (a === 'tododel') return send('tododel', {id: b.dataset.id});
+    if (a === 'goalp') { S.goalP = +b.dataset.i; return render(); }
+    if (a === 'goalsave') { var gv = (document.getElementById('goalin') || {}).value || ''; if (gv !== '' && !(+gv >= 0)) return toast('Type the ANP goal in RM.', 'bad'); S.prog = null; return send('goal', {key: b.dataset.key, anp: gv === '' ? '' : Math.round(+gv)}, gv === '' ? 'Goal removed' : '🎯 Goal saved'); }
+    if (a === 'bdaysave') { var bv = (document.getElementById('bdayin') || {}).value || ''; if (!bv) return toast('Pick your birthday first.', 'bad'); return send('profile', {bday: bv.slice(5)}, '🎂 Birthday saved'); }
+    if (a === 'bdayclear') return send('profile', {bday: ''}, 'Removed');
+    if (a === 'person-del') return confirmBox('Remove this?', 'It will no longer repeat every year.', 'Remove', true).then(function (y) { if (y) send('del', {id: b.dataset.id}, 'Removed'); });
     if (a === 'filter' && b.dataset.id === 'pick') return pickMerge();
     if (a === 'filter') { S.filter = b.dataset.id; LS.set('filter', S.filter); return render(); }
     if (a === 'merge-keep') { var mk = LS.get('merges', []); if (mk.indexOf(b.dataset.id) < 0) mk.push(b.dataset.id); LS.set('merges', mk.slice(-6)); toast('Kept. It stays on your chips.', 'good'); return render(); }
@@ -1171,7 +1360,7 @@
     if (a === 'new') return editor(null);
     if (a === 'ag-new') { closeModal(); S.sel = b.dataset.k; return editor(null); }
     if ((a === 'edit' || a === 'out' || a === 'cheer' || a === 'invite' || a === 'rsvp') && /^tmp/.test(b.dataset.id || '')) return toast('Still saving… one moment.');
-    if (a === 'edit') return editor(events().filter(function (e) { return e.id === b.dataset.id; })[0]);
+    if (a === 'edit') { var eid = String(b.dataset.id || '').split('~')[0]; return editor(rawEvents().filter(function (e) { return e.id === eid; })[0]); }
     if (a === 'out') return setOutcome(b.dataset.id, b.dataset.v);
     if (a === 'cheer') return send('send', {to: 'ev:' + b.dataset.id, kind: 'cheer'});
     if (a === 'invite') {
@@ -1193,6 +1382,12 @@
     if (a === 'color') return send('profile', {color: b.dataset.c});
     if (a === 'short') { var sv = (document.getElementById('shortin') || {}).value || ''; if (!sv.trim()) return toast('Type a short name first.', 'bad'); return send('profile', {short: sv.trim()}, 'Saved: the team now sees you as ' + sv.trim()); }
     if (a === 'signout') return confirmBox('Sign out?', 'You will need the team code, your name and PIN to sign in again on this phone.', 'Sign out', true).then(function (y) { if (y) api('signout', {pushToken: LS.get('pushToken', '')}).catch(function () {}).then(function () { signOutLocal(); }); });
+    if (a === 'mem' && b.dataset.do === 'reset') {
+      var rw = mem(b.dataset.id);
+      return confirmBox('Reset PIN?', 'Give ' + rw.name + ' a temporary PIN? They choose a new one when they sign in. Phones already signed in stay signed in.', 'Reset').then(function (y) {
+        if (!y) return; api('member', {id: rw.id, reset: true}).then(function (j) { modal('<h3>🔑 Temporary PIN</h3><p>Tell <b>' + esc(rw.name) + '</b>:</p><p class="bigpin">' + j.tempPin + '</p><p class="tiny muted">Name to type: <b>' + esc(rw.name) + '</b>. They will choose a new PIN right after signing in. This PIN is shown only once.</p><div class="row end"><button class="btn primary" data-act="close-modal">Done</button></div>'); }, function (e) { toast(errText(e), 'bad'); });
+      });
+    }
     if (a === 'mem') {
       var who = mem(b.dataset.id), d = b.dataset.do;
       var txt = d === 'remove' ? 'Remove ' + who.name + '? They are signed out on every phone. Their events stay.' : d === 'back' ? 'Let ' + who.name + ' sign in again?' : 'Make ' + who.name + ' ' + (d === 'leader' ? 'a leader? Leaders see ANP and ratios of everyone.' : 'an agent?');
@@ -1228,6 +1423,16 @@
   document.addEventListener('submit', function (ev) {
     var f = ev.target;
     if (f.id === 'signin') { ev.preventDefault(); return doSignIn(f); }
+    if (f.id === 'todoadd') {
+      ev.preventDefault(); var txt = f.t.value.trim(); if (!txt) return;
+      var due = f.today.checked ? dayKey(Date.now()) : (f.due.value || '');
+      f.t.value = ''; return send('todo', {item: {text: txt, q: S.todoQ || '1', due: due}});
+    }
+    if (f.id === 'personadd') {
+      ev.preventDefault(); var nm = f.n.value.trim(), dd = f.d.value; if (!nm || !dd) return toast('Name and date please.', 'bad');
+      var bd = f.k.value === 'b', ttl = (bd ? '🎂 ' : '💍 ') + nm + (bd ? '’s birthday' : '’s anniversary');
+      return send('save', {event: {title: ttl, type: f.w.value, allDay: true, start: dd, end: dd, rep: 'y', vis: f.v.value, remind: '', source: 'manual'}}, (bd ? '🎂' : '💍') + ' Added: repeats every year');
+    }
     if (f.dataset.act === 'comment') {
       ev.preventDefault();
       var text = f.t.value.trim(); if (!text) return;

@@ -421,3 +421,45 @@ img.av { object-fit: cover; background: var(--soft); padding: 0; }
 @media (min-width: 1200px) { .gd { min-height: 150px; } .gd-evs, .gd.sel .gd-evs { max-height: 126px; } }
 
 .gd-evs > .bar { flex: none; }
+
+/* ---------- Release 2: holidays, birthdays, to-do, goals, report, tour ---------- */
+.gd .dn.ph { color: #E5484D; }
+.gd.school { background: rgba(59, 130, 246, .07); }
+.hol { display: block; font-size: 9px; line-height: 1.2; color: #B45309; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 0 2px; }
+.hol.ph { color: #E5484D; font-weight: 700; }
+.ag-hol { display: block; font-size: 12px; color: #B45309; padding: 2px 0; }
+.ag-hol.ph { color: #E5484D; font-weight: 700; }
+.ag-hol.sch { color: #3B82F6; }
+.day-hols:empty { display: none; } .day-hols { margin: 4px 0 8px; }
+.legend .ph-dot { color: #E5484D; margin-right: 4px; }
+.legend .sch-dot { background: rgba(59, 130, 246, .25); }
+.bday-card { text-align: center; } .bday-card h2 { margin: 10px 0 4px; }
+.av-xl { width: 84px; height: 84px; font-size: 28px; line-height: 84px; }
+main.todo .todo-add input[name=t] { width: 100%; font-size: 16px; }
+.qpick { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+.qb { border: 1px solid var(--line); background: var(--card); border-radius: 999px; padding: 6px 10px; font-size: 12px; color: inherit; }
+.qb.on { border-color: var(--ink, #111); font-weight: 700; box-shadow: 0 0 0 1px currentColor inset; }
+.todo-add .row { align-items: center; gap: 8px; flex-wrap: wrap; } .due-in { flex: 1; min-width: 130px; }
+.quads { display: grid; grid-template-columns: 1fr; gap: 10px; margin-top: 12px; }
+@media (min-width: 640px) { .quads { grid-template-columns: 1fr 1fr; } }
+.quad { border-radius: 14px; padding: 10px 12px; background: var(--card); border: 1px solid var(--line); border-top-width: 4px; }
+.quad.q1 { border-top-color: #E5484D; } .quad.q2 { border-top-color: #F08A24; } .quad.q3 { border-top-color: #3B82F6; } .quad.q4 { border-top-color: #9CA3AF; }
+.quad h4 { margin: 0 0 6px; font-size: 14px; } .quad h4 small { display: block; font-weight: 400; color: var(--muted); font-size: 11px; }
+.td { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-top: 1px solid var(--line); }
+.td .tt { flex: 1; min-width: 0; word-break: break-word; } .td .tt small { display: block; font-size: 11px; color: var(--muted); } .td .tt small.late { color: #E5484D; font-weight: 700; }
+.td.done .tt { text-decoration: line-through; color: var(--muted); }
+.tick-btn { background: none; border: 0; font-size: 20px; padding: 0 2px; cursor: pointer; }
+.empty.small { font-size: 12px; padding: 4px 0; margin: 0; }
+.person-add { margin-top: 8px; display: grid; gap: 6px; }
+.goals .seg.small button { font-size: 12px; padding: 6px 4px; }
+.goals .row label.grow { flex: 1; } .goals .row { align-items: flex-end; gap: 8px; }
+.gbar { height: 10px; border-radius: 6px; background: var(--soft); overflow: hidden; margin: 10px 0 4px; } .gbar i { display: block; height: 100%; background: #22A049; border-radius: 6px; }
+.goals h4.sub { margin: 12px 0 0; font-size: 13px; }
+.ok-t { color: #22A049; font-weight: 700; }
+.coach p { margin: 6px 0; line-height: 1.45; }
+.bigpin { font-size: 36px; font-weight: 800; letter-spacing: 6px; text-align: center; margin: 8px 0; }
+#tour { position: fixed; inset: 0; z-index: 9999; }
+.tour-hole { position: fixed; border-radius: 12px; box-shadow: 0 0 0 9999px rgba(0, 0, 0, .55); pointer-events: none; transition: all .2s; }
+.tour-tip { position: fixed; left: 12px; right: 12px; max-width: 420px; margin: 0 auto; background: var(--card, #fff); color: inherit; border-radius: 14px; padding: 12px 14px; box-shadow: 0 8px 30px rgba(0, 0, 0, .3); }
+.tour-tip small { color: var(--muted); } .tour-tip b { display: block; font-size: 16px; margin: 2px 0 4px; } .tour-tip p { margin: 0 0 10px; font-size: 14px; line-height: 1.4; }
+@media (min-width: 760px) { main.stats > .goals { grid-column: 1 / -1; } }
