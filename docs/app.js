@@ -7,7 +7,7 @@
   var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   var MONTH = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   var DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  var APP_VERSION = '31';
+  var APP_VERSION = '32';
   var H8 = 8 * 3600e3, DAY = 864e5, SELLING = {approach: 1, open: 1, present: 1, followup: 1, close: 1, recruit: 1};
 
   /* ---------- storage (each phone) ---------- */
@@ -890,7 +890,7 @@
   }
   function scrollToToday() {
     var r = document.getElementById('ag-' + dayKey(Date.now())), h = document.querySelector('.calhead');
-    if (r) window.scrollTo(0, r.getBoundingClientRect().top + window.scrollY - (h ? h.offsetHeight : 0) - 4);
+    if (r) document.body.scrollTop = r.getBoundingClientRect().top + document.body.scrollTop - (h ? h.offsetHeight : 0) - 4;
   }
   function viewSwitch() {
     return '<div class="seg">' + [['month', 'Month'], ['agenda', 'Agenda'], ['day', 'Team day'], ['list', 'List']].map(function (v) { return '<button class="' + (S.view === v[0] ? 'on' : '') + '" data-act="view" data-v="' + v[0] + '">' + v[1] + '</button>'; }).join('') + '</div>';
@@ -1699,9 +1699,9 @@
     else if (parts[0] === 'themes') html = themesScreen();
     else if (parts[0] === 'report') html = reportScreen(parts[1]);
     else html = calendarScreen();
-    var y = r === lastRoute ? window.scrollY : 0;
+    var y = r === lastRoute ? document.body.scrollTop : 0;   // the page itself never scrolls; the body does (keeps the bottom bar still)
     $app.innerHTML = html; lastRoute = r;
-    window.scrollTo(0, y);
+    document.body.scrollTop = y;
     if (!parts[0] && S.view === 'agenda' && y === 0) setTimeout(scrollToToday, 30);
     if (parts[0] === 'e' && parts[2] === 'c' && y === 0) { var cm = $app.querySelector('.comments'); if (cm) setTimeout(function () { cm.scrollIntoView({block: 'start'}); }, 30); }
   }
