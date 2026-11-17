@@ -521,3 +521,11 @@ html[data-celebrate] .calhead { background: color-mix(in srgb, var(--bg) 92%, tr
 .cteam { background: #14213D; } .cteam img { width: 13px; height: 15px; }
 .cplus { background: #9CA3AF; font-size: 15px; font-weight: 700; }
 .chip.on .av-chip { border-color: var(--navy); }
+
+/* ---------- whose calendar, beside the month title ---------- */
+.monthnav b.mtitle { display: flex; align-items: center; justify-content: center; gap: 8px; min-width: 0; }
+.mtitle > span:last-child { white-space: nowrap; }
+.whose { display: inline-flex; flex: none; }
+.av-nav { width: 30px; height: 30px; font-size: 11px; border: 2px solid var(--card); box-sizing: border-box; }
+.whose .cpair .av-nav + .av-nav { margin-left: -11px; }
+.av-nav.cteam img { width: 15px; height: 17px; }

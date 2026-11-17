@@ -7,7 +7,7 @@
   var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   var MONTH = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   var DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  var APP_VERSION = '36';
+  var APP_VERSION = '37';
   var H8 = 8 * 3600e3, DAY = 864e5, SELLING = {approach: 1, open: 1, present: 1, followup: 1, close: 1, joinfield: 1, recruit: 1};
 
   /* ---------- storage (each phone) ---------- */
@@ -945,11 +945,20 @@
   }
   function keptMerges() { var m = S.data && S.data.me && S.data.me.merges; if (typeof m === 'string' && (m || LS.get('mergesSynced', false))) return m ? m.split(',') : []; return LS.get('merges', []); }
   function setKept(list) { list = list.slice(-6); LS.set('merges', list); LS.set('mergesSynced', true); if (S.data && S.data.me) S.data.me.merges = list.join(','); api('profile', {merges: list.join(',')}).catch(function () {}); }
+  /* whose calendar is showing (beside the month title): team logo, my face, both faces, or that person's face */
+  function whoseFaces() {
+    var f = S.filter || 'all', face = function (m) { return avatar(m, 'nav'); }, who, html;
+    if (f === 'all') { who = 'Everyone'; html = '<span class="av av-nav cteam"><img src="icons/team-mark.png" alt=""></span>'; }
+    else if (f === 'me') { who = 'Me'; html = face(me()); }
+    else if (f.indexOf('me+') === 0) { who = 'Me + ' + shortName(mem(f.slice(3))); html = '<span class="cpair">' + face(me()) + face(mem(f.slice(3))) + '</span>'; }
+    else { who = shortName(mem(f)); html = face(mem(f)); }
+    return '<span class="whose" title="Showing: ' + esc(who) + '" aria-label="Showing ' + esc(who) + '’s calendar">' + html + '</span>';
+  }
   function calendarScreen() {
     var c = S.cursor, today = dayKey(Date.now()), confirm = toConfirm();
     var head = S.view === 'day'
       ? '<div class="monthnav"><button class="nav" data-act="day" data-d="-1" aria-label="Previous day">‹</button><b>' + esc(dayLabel(S.dayView)) + '</b><button class="nav" data-act="day" data-d="1" aria-label="Next day">›</button><button class="btn tiny ghost" data-act="today">Today</button></div>'
-      : '<div class="monthnav"><button class="nav" data-act="month" data-d="-1" aria-label="Previous month">‹</button><b>' + MONTH[c.m] + ' ' + c.y + '</b><button class="nav" data-act="month" data-d="1" aria-label="Next month">›</button><button class="btn tiny ghost" data-act="today">Today</button></div>';
+      : '<div class="monthnav"><button class="nav" data-act="month" data-d="-1" aria-label="Previous month">‹</button><b class="mtitle">' + whoseFaces() + '<span>' + MONTH[c.m] + ' ' + c.y + '</span></b><button class="nav" data-act="month" data-d="1" aria-label="Next month">›</button><button class="btn tiny ghost" data-act="today">Today</button></div>';
     var body = S.view === 'day' ? teamDay() : S.view === 'list' ? listView() : S.view === 'agenda' ? agendaView() : monthGrid() + '<p class="tiny muted hint">Tap a day to choose it (scroll inside to see all). Tap it again to open that day’s events.</p>';
     var nowP = P(Date.now()), yLeft = Math.round((Date.UTC(nowP.y, 11, 31) - Date.UTC(nowP.y, nowP.m, nowP.d)) / DAY), mLeft = new Date(Date.UTC(nowP.y, nowP.m + 1, 0)).getUTCDate() - nowP.d;
     var countdown = '<div class="countdown">⏳ <b>' + yLeft + '</b> days left in ' + nowP.y + ' · <b>' + mLeft + '</b> days left in ' + MONTH[nowP.m] + '</div>';
