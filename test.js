@@ -448,6 +448,78 @@ function fresh() {
   ok(h({op: 'sync', token: mj.token, force: true}).me.name === 'LIM MAY JING', 'her other phone stays signed in after the reset');
 }
 
+
+/* ---------- Release 3: calendar subscription, voice booking, celebration themes, other devices ---------- */
+{
+  const {s, h, join} = fresh(); s.props.APP_URL = 'https://app.example/';
+  const kj = join('WONG KAH JIAN', true), al = join('ALICIA TAN', true), mj = join('LIM MAY JING'), wx = join('WONG XIN');
+  // subscription feed
+  const own = h({op: 'save', token: mj.token, event: {title: 'Present to Mr Lim; family, kids', type: 'present', start: '2027-03-03T07:00:00.000Z', end: '2027-03-03T08:00:00.000Z', vis: 'private', notes: 'Bring BI\nand forms', remind: '30', with: [wx.me.id]}}).event;
+  h({op: 'save', token: mj.token, event: {title: '🎂 Mum birthday', type: 'personal', allDay: true, start: '2026-03-08', end: '2026-03-08', rep: 'y', vis: 'private'}});
+  h({op: 'save', token: kj.token, event: {title: 'Monday meeting', type: 'meeting', start: '2027-03-02T11:00:00.000Z', end: '2027-03-02T13:00:00.000Z', all: true}});
+  h({op: 'save', token: wx.token, event: {title: 'WX own thing', type: 'open', start: '2027-03-04T07:00:00.000Z', end: '2027-03-04T08:00:00.000Z'}});
+  const fd = h({op: 'feed', token: mj.token}).feed;
+  ok(/^[a-z0-9]{36}$/.test(fd), 'each member gets a long secret subscription link');
+  ok(h({op: 'feed', token: mj.token}).feed === fd, 'the same link every time (works on all devices)');
+  const icsRaw = CORE.feedIcs(fd, s), ics = icsRaw.replace(/\r\n /g, '');
+  ok(/^BEGIN:VCALENDAR\r\n/.test(ics) && /END:VCALENDAR\r\n$/.test(ics), 'feed is a valid calendar file');
+  ok(ics.includes('SUMMARY:📊 Present to Mr Lim\\; family\\, kids') && ics.includes('Bring BI\\nand forms'), 'private appointment in full, special characters escaped');
+  ok(ics.includes('Open in our Calendar: https://app.example/#/e/' + own.id) && ics.includes('URL:https://app.example/#/e/' + own.id), 'each event links back to the app');
+  ok(ics.includes('RRULE:FREQ=YEARLY') && ics.includes('DTSTART;VALUE=DATE:20260308') && ics.includes('DTEND;VALUE=DATE:20260309'), 'yearly all-day birthday repeats in the subscribed calendar');
+  ok(/Monday meeting/.test(ics) && ics.includes('Team event'), 'whole-team events are included');
+  ok(!/WX own thing/.test(ics), 'other people’s appointments are not in my feed');
+  ok(ics.includes('TRIGGER:-PT30M'), 'my reminder comes along');
+  ok(icsRaw.split('\r\n').every(l => Buffer.byteLength(l) <= 75), 'long lines folded at 75 bytes');
+  const wxf = h({op: 'feed', token: wx.token}).feed;
+  ok(CORE.feedIcs(wxf, s).includes('❔ 📊 Present to Mr Lim'), 'an invitation not yet answered shows with ❔');
+  h({op: 'rsvp', token: wx.token, id: own.id, answer: 'no'});
+  ok(!CORE.feedIcs(wxf, s).includes('Present to Mr Lim'), 'a rejected invitation leaves the feed');
+  const fd2 = h({op: 'feed', token: mj.token, reset: true}).feed;
+  ok(fd2 !== fd && CORE.feedIcs(fd, s) === '' && CORE.feedIcs(fd2, s).length > 100, 'new link: the old one stops working');
+  h({op: 'feed', token: mj.token, off: true}); ok(CORE.feedIcs(fd2, s) === '', 'subscription can be switched off');
+  ok(CORE.feedIcs('', s) === '' && CORE.feedIcs('short', s) === '', 'no or short secret gives nothing');
+  // voice booking
+  const audio = 'A'.repeat(4000);
+  s.setNow('2027-03-02T02:00:00.000Z');
+  const v = h({op: 'voice', token: mj.token, audio, mime: 'audio/webm;codecs=opus'}).voice;
+  ok(v.complete && v.event.date === '2027-03-03' && v.event.start === '15:00' && v.event.type === 'present' && v.event.place === 'Gurney Plaza', 'voice: tomorrow 3pm presentation understood');
+  ok(s.heard[0].mime === 'audio/webm' && /VOICE BOOKING/.test(s.prompts[s.prompts.length - 1].prompt) && /Tuesday/.test(s.prompts[s.prompts.length - 1].prompt), 'speech sent to text, then read with today’s weekday');
+  const part = CORE.parseVoice(JSON.stringify({title: 'Jumpa Ali', type: 'open', date: '', start: '', people: ['Wong', 'nobody']}), 'jumpa ali', s.load('members'));
+  ok(!part.complete && part.missing.join() === 'date,time' && part.event.with.join() === wx.me.id, 'voice: missing date/time reported, teammate found by short name');
+  throws(() => h({op: 'voice', token: mj.token, audio, mime: 'video/mp4'}), 'bad_audio', 'odd recording refused');
+  throws(() => h({op: 'voice', token: mj.token, audio: 'A'.repeat(4 * 1024 * 1024), mime: 'audio/webm'}), 'bad_audio', 'recording too long refused');
+  s.setNow(null);
+  // celebration themes: owner only
+  ok(h({op: 'sync', token: kj.token, force: true}).me.owner && !h({op: 'sync', token: al.token, force: true}).me.owner, 'owner = first leader (other leaders are not)');
+  s.props.OWNER_NAME = 'alicia tan'; ok(CORE.isOwner(al.me.id ? s.load('members').find(m => m.id === al.me.id) : null, s), 'OWNER_NAME picks the owner'); s.props.OWNER_NAME = '';
+  throws(() => h({op: 'themeson', token: al.token, on: true}), 'owner_only', 'other leaders cannot change themes');
+  throws(() => h({op: 'themeai', token: mj.token, poster: 'B'.repeat(5000)}), 'owner_only', 'agents cannot use the poster reader');
+  const look = h({op: 'themeai', token: kj.token, poster: 'B'.repeat(5000)}).theme;
+  ok(look.occasion === 'christmas' && look.colors.primary === '#B91C1C' && look.anim === 'snow' && look.motifs.length === 3, 'AI reads the poster into colours, animation and pictures');
+  const th = h({op: 'theme', token: kj.token, theme: Object.assign({}, look, {from: '2026-12-20', to: '2026-12-26'}), poster: 'C'.repeat(120000), music: 'D'.repeat(200000), musicMime: 'audio/mpeg', musicName: 'jingle.mp3'}).theme;
+  ok(th.poster && th.music && s.getFile(th.poster).data.length === 120000, 'poster and music saved');
+  ok(!h({op: 'sync', token: mj.token, force: true}).themes.length, 'nothing shows while themes are switched off');
+  h({op: 'themeson', token: kj.token, on: true});
+  s.setNow('2026-12-01T00:00:00.000Z');
+  const sy = h({op: 'sync', token: mj.token, force: true});
+  ok(sy.themesOn && sy.themes.length === 1 && sy.themes[0].colors.bg === '#FFF5F5' && !('data' in sy.themes[0]), 'everyone gets the coming theme (without the big files)');
+  ok(h({op: 'file', token: mj.token, id: th.music}).file.data.length === 200000, 'phones fetch the music once');
+  throws(() => h({op: 'file', token: mj.token, id: 'x123'}), 'not_found', 'only theme files can be fetched');
+  throws(() => h({op: 'theme', token: kj.token, theme: {occasion: 'cny', from: '2027-02-10', to: '2027-02-01', colors: {bg: '#ffffff', primary: '#cc0000'}}}), 'bad_date', 'end before start refused');
+  throws(() => h({op: 'theme', token: kj.token, theme: {occasion: 'cny', from: '2027-02-01', to: '2027-02-10', colors: {bg: 'red', primary: '#cc0000'}}}), 'bad_theme', 'bad colour refused');
+  h({op: 'themedel', token: kj.token, id: th.id});
+  ok(!s.getFile(th.poster) && !s.getFile(th.music) && !h({op: 'sync', token: mj.token, force: true}).themes.length, 'deleting a theme removes its files');
+  s.setNow(null);
+  // other devices: everything is on the server; kept chips follow the person
+  h({op: 'profile', token: mj.token, merges: wx.me.id + ',' + kj.me.id});
+  s.resetFails(); const ipad = h({op: 'signin', code: 'test-team', name: 'LIM MAY JING', pin: '1234', device: 'iPad'});
+  const onIpad = h({op: 'sync', token: ipad.token, force: true});
+  ok(onIpad.me.merges === wx.me.id + ',' + kj.me.id, 'kept Me + chips appear on a new device');
+  h({op: 'todo', token: ipad.token, item: {text: 'From the iPad', q: 2}});
+  ok(h({op: 'sync', token: mj.token, force: true}).todos.some(x => x.text === 'From the iPad'), 'to-do added on the iPad shows on the phone');
+  throws(() => h({op: 'profile', token: mj.token, merges: '<x>'}), 'bad_request', 'odd kept-chip list refused');
+}
+
 /* ---------- sample team sanity ---------- */
 {
   const s = memStore(); seed(s, NOW);

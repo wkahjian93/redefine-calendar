@@ -3,7 +3,7 @@
 // Pop-ups are not sent; they are recorded in store.pushes so tests (and the preview's "phone" banner) can see them.
 const crypto = require('crypto'), fs = require('fs'), path = require('path');
 module.exports = function memStore(opts = {}) {
-  const tables = {}, props = Object.assign({TEAM_CODE: 'test-team', LEADER_CODE: 'test-leader-code'}, opts.props || {});
+  const tables = {}, files = {}, props = Object.assign({TEAM_CODE: 'test-team', LEADER_CODE: 'test-leader-code'}, opts.props || {});
   let ver = 1, fails = 0, clock = null;
   const store = {
     tables, props, prompts: [], pushes: [],
@@ -21,9 +21,21 @@ module.exports = function memStore(opts = {}) {
     hash: t => crypto.createHash('sha256').update(t, 'utf8').digest('hex'),
     version: bump => (bump ? ++ver : ver),
     push: (ids, note) => { if (ids && ids.length) store.pushes.push({ids: ids.slice(), note, at: Date.now()}); },
+    files,
+    putFile: (id, mime, data) => { files[id] = {mime, data}; },
+    getFile: id => files[id] ? Object.assign({}, files[id]) : null,
+    delFile: id => { delete files[id]; },
+    heard: [],
+    transcribe: (b64, mime, hint) => { store.heard.push({bytes: b64.length, mime}); return opts.transcribe ? opts.transcribe(b64, mime) : 'Esok pukul 3 petang present medical plan to Mr Lim (sample) at Gurney Plaza'; },
     ai: (prompt, b64) => {
+      b64 = b64 || '';
       store.prompts.push({prompt, bytes: b64.length});
       if (opts.ai) return opts.ai(prompt, b64);
+      if (/^VOICE BOOKING/.test(prompt)) {   // stand-in: tomorrow 15:00 presentation
+        const today = /Today is (\d{4}-\d{2}-\d{2})/.exec(prompt)[1], tm = new Date(Date.parse(today + 'T00:00:00Z') + 864e5).toISOString().slice(0, 10);
+        return JSON.stringify({title: 'Present medical plan to Mr Lim (sample)', type: 'present', date: tm, start: '15:00', end: '', allDay: false, place: 'Gurney Plaza', notes: '', people: [], repeat: '', clean: 'Tomorrow 3pm present medical plan to Mr Lim at Gurney Plaza', unclear: ''});
+      }
+      if (/^THEME FROM POSTER/.test(prompt)) return JSON.stringify({occasion: 'christmas', title: 'Christmas (sample)', colors: {bg: '#FFF5F5', surface: '#FFFFFF', primary: '#B91C1C', accent: '#15803D', text: '#1F2937'}, anim: 'snow', motifs: ['🎅', '🦌', '⛄'], notes: 'Stand-in: red and white poster with Santa.'});
       const f = path.join(__dirname, '..', 'test', 'fixtures', 'sample-read.json');
       if (fs.existsSync(f)) return fs.readFileSync(f, 'utf8');
       return JSON.stringify({source: 'other', events: [], notes: 'Test server: no AI here (stand-in reply).'});

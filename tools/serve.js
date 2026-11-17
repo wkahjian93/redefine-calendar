@@ -80,7 +80,7 @@ function seed(store, nowMs) {
   store.save('members', members); store.save('events', events); store.save('msgs', msgs);
 }
 
-const store = memStore();
+const store = memStore({props: {APP_URL: 'http://localhost:' + PORT + '/'}});
 seed(store, Date.now());
 store.version(true);
 module.exports = {seed};
@@ -91,6 +91,10 @@ if (require.main === module) {
   const SAVE_OK = {'icon-192.png': path.join(DOCS, 'icons'), 'icon-512.png': path.join(DOCS, 'icons'), 'apple-touch-icon.png': path.join(DOCS, 'icons'), 'badge-72.png': path.join(DOCS, 'icons'), 'team-mark.png': path.join(DOCS, 'icons')};
   http.createServer((req, res) => {
     const url = decodeURIComponent(req.url.split('?')[0]);
+    if (url === '/gas' && req.method === 'GET') {   // calendar subscription feed, like the Google server's doGet
+      const feed = new URL(req.url, 'http://x').searchParams.get('feed') || '', ics = CORE.feedIcs(feed, store);
+      res.writeHead(ics ? 200 : 404, {'Content-Type': ics ? 'text/calendar; charset=utf-8' : 'text/plain'}); return res.end(ics || 'This calendar link is no longer valid.');
+    }
     if (url === '/gas' && req.method === 'POST') {
       let b = ''; req.on('data', c => b += c);
       req.on('end', () => {
@@ -98,7 +102,7 @@ if (require.main === module) {
         try { q = JSON.parse(b); out = CORE.handle(q, store); } catch (e) { out = e.appCode ? {error: e.appCode} : (console.error(e), {error: 'server_error'}); }
         if (q.op !== 'sync') console.log(q.op, out.error || 'ok');
         store.pushes.slice(n).forEach(p => console.log('POP-UP to', p.ids.join(','), '|', p.note.title, '|', p.note.body));
-        setTimeout(() => { res.writeHead(200, {'Content-Type': 'application/json'}); res.end(JSON.stringify(out)); }, q.op === 'read' ? 1500 : 120);
+        setTimeout(() => { res.writeHead(200, {'Content-Type': 'application/json'}); res.end(JSON.stringify(out)); }, q.op === 'read' || q.op === 'voice' || q.op === 'themeai' ? 1500 : 120);
       });
       return;
     }

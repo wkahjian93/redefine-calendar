@@ -6,10 +6,11 @@
    (activity detection, stats, .ics import), so everyone counts the same way.
    handle(q, store) checks who is asking, validates every input, hides private details, and reads/writes through `store`.
    A store provides: load(table), save(table, rows), withLock(fn), prop(key), fails(add), now(), random(),
-   hash(text) -> hex, version(bump) -> number, ai(prompt, imageBase64) -> text, push(memberIds, note). */
+   hash(text) -> hex, version(bump) -> number, ai(prompt, imageBase64) -> text, push(memberIds, note),
+   transcribe(audioBase64, mime, hint) -> text, putFile(id, mime, base64) / getFile(id) -> {mime, data} / delFile(id). */
 var CORE = (function () {
   var TABLES = {
-    members: ['id', 'name', 'pin', 'role', 'color', 'created', 'active', 'partner', 'partnerReq', 'short', 'photoV', 'bday', 'pinTemp'],
+    members: ['id', 'name', 'pin', 'role', 'color', 'created', 'active', 'partner', 'partnerReq', 'short', 'photoV', 'bday', 'pinTemp', 'feed', 'merges'],
     photos: ['memberId', 'data', 'updated'],
     sessions: ['token', 'memberId', 'created', 'lastSeen', 'device'],
     events: ['id', 'ownerId', 'title', 'type', 'start', 'end', 'allDay', 'place', 'notes', 'vis', 'with', 'remind', 'count', 'out', 'anp', 'source', 'remSent', 'created', 'updated', 'noc', 'all', 'cases', 'rep', 'repEnd'],
@@ -18,6 +19,8 @@ var CORE = (function () {
     msgs: ['id', 'to', 'from', 'kind', 'text', 'created'],
     devices: ['token', 'memberId', 'created'],
     settings: ['key', 'value'],
+    themes: ['id', 'occasion', 'title', 'from', 'to', 'colors', 'anim', 'motifs', 'poster', 'music', 'musicName', 'on', 'updated'],
+    files: ['id', 'mime', 'size', 'data', 'updated'],
     log: ['at', 'by', 'action', 'detail']
   };
 
@@ -41,7 +44,7 @@ var CORE = (function () {
   var ID_CHARS = 'abcdefghijkmnpqrstuvwxyz23456789';
   var MODES = {M: 'Monthly', Q: 'Quarterly', HY: 'Half-yearly', Y: 'Yearly'};
   var TEAM_REMIND = 60;   // minutes before a whole-team event that everyone gets a pop-up
-  var MAX_NOC = 50, MAX_IMPORT = 300, MAX_READ_B64 = 4 * 1024 * 1024, MAX_RANGE_DAYS = 400, DAILY_READS = 40;
+  var MAX_NOC = 50, MAX_IMPORT = 300, MAX_READ_B64 = 4 * 1024 * 1024, MAX_AUDIO_B64 = 3 * 1024 * 1024, MAX_POSTER_B64 = 900 * 1024, MAX_MUSIC_B64 = 7 * 1024 * 1024, MAX_RANGE_DAYS = 400, DAILY_READS = 40;
   var REMIND = ['', '0', '10', '30', '60', '120', '1440'];
 
   function fail(code) { var e = new Error(code); e.appCode = code; throw e; }
@@ -295,7 +298,8 @@ var CORE = (function () {
       ver: ver, now: nowIso(store),
       todos: store.load('todos').filter(function (t) { return t.ownerId === me.id; }).slice(-1000),
       goals: store.load('goals').filter(function (g) { return g.memberId === me.id; }),
-      me: {id: me.id, name: me.name, short: shortOf(me), bday: me.bday || '', mustChange: me.pinTemp === 'true', shortSet: !!me.short, photoV: me.photoV || '', role: me.role, color: me.color, leader: leader, devices: myDevices, partner: me.partner || '', partnerReq: me.partnerReq || '',
+      themesOn: themesOn(store), themes: liveThemes(store),
+      me: {id: me.id, name: me.name, owner: isOwner(me, store), merges: str(me.merges, 400), short: shortOf(me), bday: me.bday || '', mustChange: me.pinTemp === 'true', shortSet: !!me.short, photoV: me.photoV || '', role: me.role, color: me.color, leader: leader, devices: myDevices, partner: me.partner || '', partnerReq: me.partnerReq || '',
         partnerAsks: members.filter(function (m) { return m.partnerReq === me.id && String(m.active) !== 'false'; }).map(function (m) { return m.id; })},
       members: members.filter(function (m) { return String(m.active) !== 'false' || leader; }).map(function (m) {
         var o = {id: m.id, name: m.name, short: shortOf(m), role: m.role, color: m.color, active: String(m.active) !== 'false', partner: m.partner || '', photoV: m.photoV || '', bday: m.bday || ''}; if (leader) o.seen = seen[m.id] || ''; return o;
@@ -329,7 +333,7 @@ var CORE = (function () {
       .filter(function (x, i, a) { return ids[x] && x !== me.id && a.indexOf(x) === i; }).slice(0, 20).join(',');
     e.remind = src.remind == null ? (allDay ? '' : '30') : REMIND.indexOf(String(src.remind)) >= 0 ? String(src.remind) : '30';   // default: 30 min before
     e.count = e.type === 'approach' ? String(Math.max(1, Math.min(999, Math.floor(+src.count) || 1))) : '';
-    e.source = ['manual', 'photo', 'ics'].indexOf(src.source) >= 0 ? src.source : 'manual';
+    e.source = ['manual', 'photo', 'ics', 'voice'].indexOf(src.source) >= 0 ? src.source : 'manual';
     e.rep = ['w', 'm', 'y'].indexOf(src.rep) >= 0 ? src.rep : '';
     e.repEnd = e.rep && isDate(str(src.repEnd, 10)) ? str(src.repEnd, 10) : '';
     return e;
@@ -623,6 +627,7 @@ var CORE = (function () {
   function profile(q, store, me) {
     var rows = store.load('members'), my = rows.filter(function (m) { return m.id === me.id; })[0], out = {};
     if (q.bday != null) { var bd = str(q.bday, 5); if (bd && !(/^\d{2}-\d{2}$/.test(bd) && isDate('2024-' + bd))) fail('bad_date'); my.bday = bd; out.bday = bd; }
+    if (q.merges != null) { var mg = str(q.merges, 400); if (mg && !/^[a-z0-9]+(,[a-z0-9]+)*$/.test(mg)) fail('bad_request'); my.merges = mg; out.merges = mg; }
     if (q.color != null) { var c = str(q.color, 7); if (!/^#[0-9A-Fa-f]{6}$/.test(c)) fail('bad_request'); my.color = c; out.color = c; }
     if (q.short != null) {
       var sh = str(q.short, 12).replace(/\s+/g, ' ');
@@ -638,6 +643,197 @@ var CORE = (function () {
     store.save('sessions', store.load('sessions').filter(function (x) { return x.token !== h; }));
     if (q.pushToken) store.save('devices', store.load('devices').filter(function (d) { return d.token !== q.pushToken; }));
     return {signedOut: true};
+  }
+
+  /* ---------- Calendar subscription (Apple / Google Calendar): a private link per member ----------
+     The link holds a long secret. Anyone who has it can read that member's appointments (private ones in full),
+     so the app shows it only to the member and can replace it (old link stops working). Read-only: nothing can be changed through it. */
+  function feedOp(q, store, me) {
+    var rows = store.load('members'), my = rows.filter(function (m) { return m.id === me.id; })[0];
+    if (q.off) { my.feed = ''; store.save('members', rows); log(store, me.id, 'feed', 'off'); return {feed: ''}; }
+    if (!my.feed || q.reset) { my.feed = newId(store, 36); store.save('members', rows); log(store, me.id, 'feed', q.reset ? 'new link' : 'on'); }
+    return {feed: my.feed};
+  }
+  function icsText(v) { return String(v == null ? '' : v).replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\r?\n/g, '\\n'); }
+  function icsFold(line) {   // lines longer than 75 bytes continue on the next line (never splitting a character)
+    var out = [], cur = '', n = 0;
+    for (var i = 0; i < line.length; i++) {
+      var ch = line[i], code = line.charCodeAt(i);
+      if (code >= 0xD800 && code <= 0xDBFF && i + 1 < line.length) { ch += line[++i]; }
+      var b = ch.length > 1 ? 4 : code < 0x80 ? 1 : code < 0x800 ? 2 : 3;
+      if (n + b > (out.length ? 74 : 75)) { out.push(cur); cur = ''; n = 0; }
+      cur += ch; n += b;
+    }
+    out.push(cur);
+    return out.join('\r\n ');
+  }
+  function icsStamp(ms) { return new Date(ms).toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, ''); }
+  function icsDay(k) { return k.replace(/-/g, ''); }
+  function addDay(k, n) { return new Date(Date.parse(k + 'T00:00:00Z') + n * 864e5).toISOString().slice(0, 10); }
+  function feedIcs(token, store) {
+    token = str(token, 60);
+    if (token.length < 30) return '';
+    var members = store.load('members'), me = members.filter(function (m) { return m.feed === token && String(m.active) !== 'false'; })[0];
+    if (!me) return '';
+    var now = store.now().getTime(), from = now - 60 * 864e5, to = now + 400 * 864e5, msgs = store.load('msgs'), base = store.prop('APP_URL') || '';
+    var byId = {}; members.forEach(function (m) { byId[m.id] = m; });
+    var L = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//REDEFINE//Calendar//EN', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH',
+      'X-WR-CALNAME:REDEFINE · ' + icsText(shortOf(me)), 'X-WR-TIMEZONE:Asia/Kuala_Lumpur', 'REFRESH-INTERVAL;VALUE=DURATION:PT1H', 'X-PUBLISHED-TTL:PT1H'];
+    store.load('events').forEach(function (e) {
+      var a = answers(e.id, msgs), mine = e.ownerId === me.id, invited = withList(e).indexOf(me.id) >= 0, team = isAll(e);
+      if (!mine && !((team || invited) && a[me.id] !== 'no')) return;
+      if (!e.rep) { if (endMs(e) < from || startMs(e) > to) return; }
+      else if (!occurrences(e, from, to).length) return;
+      var allDay = e.allDay === 'true' || e.allDay === true, t = TYPES[e.type] || {emoji: '📌'}, pending = !mine && a[me.id] !== 'yes';
+      var who = withList(e).map(function (id) { return byId[id] ? shortOf(byId[id]) : ''; }).filter(Boolean);
+      var desc = [];
+      if (!mine) desc.push((team ? 'Team event' : 'Invited by ' + (byId[e.ownerId] ? shortOf(byId[e.ownerId]) : 'a teammate')) + (pending ? ' · not answered yet' : ''));
+      if (who.length && !team) desc.push('With: ' + who.join(', '));
+      if (e.notes) desc.push(e.notes);
+      if (base) desc.push('Open in our Calendar: ' + base + '#/e/' + e.id);
+      L.push('BEGIN:VEVENT', 'UID:' + e.id + '@redefine-calendar', 'DTSTAMP:' + icsStamp(Date.parse(e.updated || e.created) || now));
+      if (allDay) { var sk = String(e.start).slice(0, 10), ek = String(e.end || e.start).slice(0, 10); L.push('DTSTART;VALUE=DATE:' + icsDay(sk), 'DTEND;VALUE=DATE:' + icsDay(addDay(ek < sk ? sk : ek, 1))); }
+      else L.push('DTSTART:' + icsStamp(startMs(e)), 'DTEND:' + icsStamp(endMs(e)));
+      if (e.rep) L.push('RRULE:FREQ=' + ({w: 'WEEKLY', m: 'MONTHLY', y: 'YEARLY'})[e.rep] + (e.repEnd ? ';UNTIL=' + icsDay(e.repEnd) + 'T155959Z' : ''));
+      L.push('SUMMARY:' + icsText((pending ? '❔ ' : '') + t.emoji + ' ' + e.title));
+      if (e.place) L.push('LOCATION:' + icsText(e.place));
+      if (desc.length) L.push('DESCRIPTION:' + icsText(desc.join('\n\n')));
+      if (base) L.push('URL:' + base + '#/e/' + e.id);
+      if (e.out === 'cancel') L.push('STATUS:CANCELLED');
+      if (mine && e.remind !== '' && e.remind != null && !allDay) L.push('BEGIN:VALARM', 'ACTION:DISPLAY', 'DESCRIPTION:' + icsText(e.title), 'TRIGGER:-PT' + (+e.remind || 0) + 'M', 'END:VALARM');
+      L.push('END:VEVENT');
+    });
+    L.push('END:VCALENDAR');
+    return L.map(icsFold).join('\r\n') + '\r\n';
+  }
+
+  /* ---------- Voice booking: speech (Malaysian English / 华语 / Cantonese / Hokkien / Malay / rojak) -> one appointment ---------- */
+  function voicePrompt(today, dow, names, heard) {
+    return [
+      'VOICE BOOKING. An insurance agent in Malaysia spoke ONE instruction to put an appointment in their calendar.',
+      'They may mix English, Mandarin, Cantonese, Hokkien and Malay ("rojak"). The text below is a speech-to-text transcript and may',
+      'contain mistakes; read it the way a Malaysian colleague would. Today is ' + today + ' (' + dow + '), Malaysia time.',
+      'Team members (short names): ' + (names.join(', ') || 'none') + '.',
+      '',
+      'Transcript: """' + heard + '"""',
+      '',
+      'Return ONLY a JSON object:',
+      '{"title":"short title in the language they used, e.g. Present medical plan to Mr Lim","type":"approach|open|present|followup|close|recruit|meeting|service|crm|paperwork|personal|",',
+      ' "date":"YYYY-MM-DD or empty","start":"HH:MM 24h or empty","end":"HH:MM or empty","allDay":false,"place":"or empty","notes":"or empty",',
+      ' "people":["team members to invite, only names from the list"],"repeat":"w|m|y|","clean":"the instruction rewritten clearly in English","unclear":"what was not said or not clear"}',
+      '',
+      'Rules: never invent a date, time or place that was not said. "esok"/"明天"/"听日"/"明仔载" = tomorrow; "lusa"/"后天" = day after;',
+      '"this Sat"/"星期六"/"礼拜六"/"Sabtu" = the coming Saturday (today if today is Saturday); "next Tue"/"下个星期二" = Tuesday of next week.',
+      '"3点"/"pukul 3"/"three" without am/pm: use the likely working time (8-11 = morning, 1-7 = afternoon/evening). "petang" = pm, "pagi" = am.',
+      'If only a start time is said, leave end empty. type: approach = meeting/calling new friends; open = first meeting / fact-find;',
+      'present = presenting a plan; followup = follow-up; close = signing; recruit = recruitment / interview / career talk; meeting = team meeting / training;',
+      'service = claims / servicing; crm = client birthday / gift / visit; paperwork = forms / admin; personal = family / gym / private.',
+      'If the transcript is not about an appointment, return empty title and explain in "unclear".'
+    ].join('\n');
+  }
+  var DOW_EN = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  function parseVoice(text, heard, members) {
+    var j; try { j = JSON.parse(String(text).replace(/^```(json)?|```$/g, '')); } catch (e) { fail('ai_unreadable'); }
+    var date = isDate(str(j.date, 10)) ? str(j.date, 10) : '', start = hhmm(j.start), end = hhmm(j.end), title = str(j.title, 120);
+    var type = TYPES[j.type] ? j.type : (title ? detectType(title) : ''), allDay = j.allDay === true && !start;
+    var want = (Array.isArray(j.people) ? j.people : []).map(function (n) { return normName(n); }), ids = [];
+    members.forEach(function (m) { if (String(m.active) !== 'false' && (want.indexOf(normName(shortOf(m))) >= 0 || want.indexOf(normName(m.name)) >= 0)) ids.push(m.id); });
+    var missing = [];
+    if (!title) missing.push('what'); if (!date) missing.push('date'); if (!start && !allDay) missing.push('time');
+    return {heard: str(heard, 600), clean: str(j.clean, 300), unclear: str(j.unclear, 200), missing: missing, complete: !missing.length,
+      event: {title: title, type: type || 'meeting', date: date, start: start, end: end, allDay: allDay, place: str(j.place, 120), notes: str(j.notes, 500), with: ids, rep: /^[wmy]$/.test(j.repeat) ? j.repeat : ''}};
+  }
+  var AUDIO_OK = {'audio/webm': 1, 'audio/mp4': 1, 'audio/mpeg': 1, 'audio/ogg': 1, 'audio/wav': 1, 'audio/x-m4a': 1, 'audio/aac': 1};
+
+  /* ---------- Celebration themes: the OWNER uploads a poster (+ optional music); AI reads its colours and pictures ----------
+     Owner = the member named in Script property OWNER_NAME, or else the first leader who joined. */
+  function isOwner(me, store) {
+    var on = normName(store.prop('OWNER_NAME'));
+    if (on) return normName(me.name) === on;
+    var first = store.load('members').filter(function (m) { return m.role === 'leader' && String(m.active) !== 'false'; }).sort(function (a, b) { return String(a.created).localeCompare(String(b.created)); })[0];
+    return !!first && first.id === me.id;
+  }
+  function ownerOnly(me, store) { if (!isOwner(me, store)) fail('owner_only'); }
+  function themesOn(store) { var r = store.load('settings').filter(function (x) { return x.key === 'themesOn'; })[0]; return !!r && r.value === 'true'; }
+  var OCCASIONS = ['cny', 'raya', 'deepavali', 'christmas', 'newyear', 'thaipusam', 'wesak', 'qingming', 'valentine', 'womens', 'mothers', 'fathers', 'merdeka', 'malaysiaday', 'birthday', 'school', 'holiday', 'other'];
+  var ANIMS = ['', 'snow', 'balloons', 'lion', 'fireworks', 'hearts', 'petals', 'lanterns', 'confetti', 'stars', 'motifs'];
+  function hex6(v) { v = str(v, 7); return /^#[0-9A-Fa-f]{6}$/.test(v) ? v.toUpperCase() : ''; }
+  function cleanColors(c) {
+    c = c && typeof c === 'object' ? c : {};
+    var o = {bg: hex6(c.bg), surface: hex6(c.surface), primary: hex6(c.primary), accent: hex6(c.accent), text: hex6(c.text)};
+    if (!o.bg || !o.primary) fail('bad_theme');
+    return o;
+  }
+  function cleanMotifs(m) { return (Array.isArray(m) ? m : String(m || '').split(/\s+/)).map(function (x) { return str(x, 8); }).filter(function (x) { return x && !/[A-Za-z0-9<>"']/.test(x); }).slice(0, 6); }
+  function themeView(t) {
+    var c = {}; try { c = JSON.parse(t.colors || '{}'); } catch (e) {}
+    return {id: t.id, occasion: t.occasion, title: t.title, from: t.from, to: t.to, colors: c, anim: t.anim, motifs: String(t.motifs || '').split(' ').filter(Boolean), poster: t.poster || '', music: t.music || '', musicName: t.musicName || '', on: t.on === 'true', updated: t.updated};
+  }
+  function liveThemes(store) {   // what every phone needs: switched-on themes for the next 40 days, plus birthday themes
+    if (!themesOn(store)) return [];
+    var today = mytDay(store.now().getTime()), until = mytDay(store.now().getTime() + 40 * 864e5);
+    return store.load('themes').filter(function (t) { return t.on === 'true' && (t.occasion === 'birthday' || (t.to >= today && t.from <= until)); }).map(themeView);
+  }
+  function themesList(q, store, me) { ownerOnly(me, store); return {themes: store.load('themes').map(themeView), themesOn: themesOn(store)}; }
+  function themeSave(q, store, me) {
+    ownerOnly(me, store);
+    var t = q.theme || {}, rows = store.load('themes'), now = nowIso(store), cur = t.id ? rows.filter(function (x) { return x.id === t.id; })[0] : null;
+    if (t.id && !cur) fail('not_found');
+    var occ = OCCASIONS.indexOf(t.occasion) >= 0 ? t.occasion : 'other', from = str(t.from, 10), to = str(t.to, 10);
+    if (occ !== 'birthday' && !(isDate(from) && isDate(to) && from <= to)) fail('bad_date');
+    if (q.poster && !b64ok(q.poster, MAX_POSTER_B64)) fail('bad_photo');
+    if (q.music && (!b64ok(q.music, MAX_MUSIC_B64) || !AUDIO_OK[str(q.musicMime, 30)])) fail('bad_music');
+    if (!cur) { cur = {id: newId(store, 10)}; rows.push(cur); }
+    cur.occasion = occ; cur.title = str(t.title, 60) || occ; cur.from = occ === 'birthday' ? '' : from; cur.to = occ === 'birthday' ? '' : to;
+    cur.colors = JSON.stringify(cleanColors(t.colors)); cur.anim = ANIMS.indexOf(t.anim) >= 0 ? t.anim : ''; cur.motifs = cleanMotifs(t.motifs).join(' ');
+    cur.on = t.on === false ? 'false' : 'true'; cur.updated = now;
+    if (q.poster) { var pid = 'p' + cur.id + newId(store, 4); if (cur.poster) store.delFile(cur.poster); store.putFile(pid, 'image/jpeg', q.poster); cur.poster = pid; }
+    else if (q.removePoster && cur.poster) { store.delFile(cur.poster); cur.poster = ''; }
+    if (q.music) { var mid = 'm' + cur.id + newId(store, 4); if (cur.music) store.delFile(cur.music); store.putFile(mid, str(q.musicMime, 30), q.music); cur.music = mid; cur.musicName = str(q.musicName, 60); }
+    else if (q.removeMusic && cur.music) { store.delFile(cur.music); cur.music = ''; cur.musicName = ''; }
+    store.save('themes', rows); store.version(true); log(store, me.id, 'theme', cur.title + ' ' + cur.from + '..' + cur.to);
+    return {theme: themeView(cur)};
+  }
+  function themeDel(q, store, me) {
+    ownerOnly(me, store);
+    var rows = store.load('themes'), t = rows.filter(function (x) { return x.id === q.id; })[0]; if (!t) fail('not_found');
+    if (t.poster) store.delFile(t.poster); if (t.music) store.delFile(t.music);
+    store.save('themes', rows.filter(function (x) { return x !== t; })); store.version(true);
+    return {deleted: true};
+  }
+  function themesSwitch(q, store, me) {
+    ownerOnly(me, store);
+    var rows = store.load('settings').filter(function (x) { return x.key !== 'themesOn'; }); rows.push({key: 'themesOn', value: q.on ? 'true' : 'false'});
+    store.save('settings', rows); store.version(true); log(store, me.id, 'themes', q.on ? 'on' : 'off');
+    return {themesOn: !!q.on};
+  }
+  function getFile(q, store) {
+    var id = str(q.id, 30), ok = store.load('themes').some(function (t) { return t.poster === id || t.music === id; });
+    if (!ok) fail('not_found');
+    var f = store.getFile(id); if (!f) fail('not_found');
+    return {file: {id: id, mime: f.mime, data: f.data}};
+  }
+  function themePrompt() {
+    return [
+      'THEME FROM POSTER. This is a celebration poster (e.g. Chinese New Year, Hari Raya, Deepavali, Christmas, birthday) uploaded by the',
+      'owner of a team calendar app. Design an app colour theme that looks like this poster while keeping all text easy to read.',
+      'Return ONLY a JSON object:',
+      '{"occasion":"cny|raya|deepavali|christmas|newyear|thaipusam|wesak|qingming|valentine|womens|mothers|fathers|merdeka|malaysiaday|birthday|school|holiday|other",',
+      ' "title":"short name, e.g. Christmas 2026",',
+      ' "colors":{"bg":"#RRGGBB page background","surface":"#RRGGBB cards","primary":"#RRGGBB header/buttons","accent":"#RRGGBB highlights","text":"#RRGGBB main text"},',
+      ' "anim":"snow|balloons|lion|fireworks|hearts|petals|lanterns|confetti|stars|motifs",',
+      ' "motifs":["up to 5 emoji for the main pictures on the poster, e.g. 🎅 🦌 ⛄"],',
+      ' "notes":"one line on what you saw"}',
+      'Text on bg and surface must have strong contrast (at least 4.5:1). Pick anim to suit: christmas = snow, birthday = balloons,',
+      'cny = lion, newyear = fireworks, valentine = hearts, raya / deepavali = lanterns or stars.'
+    ].join('\n');
+  }
+  function parseThemeAI(text) {
+    var j; try { j = JSON.parse(String(text).replace(/^```(json)?|```$/g, '')); } catch (e) { fail('ai_unreadable'); }
+    var c = j.colors || {};
+    return {occasion: OCCASIONS.indexOf(j.occasion) >= 0 ? j.occasion : 'other', title: str(j.title, 60), anim: ANIMS.indexOf(j.anim) >= 0 ? j.anim : 'motifs',
+      colors: {bg: hex6(c.bg) || '#FFFFFF', surface: hex6(c.surface) || '#FFFFFF', primary: hex6(c.primary) || '#111827', accent: hex6(c.accent) || hex6(c.primary) || '#E5484D', text: hex6(c.text) || '#111111'},
+      motifs: cleanMotifs(j.motifs), notes: str(j.notes, 200)};
   }
 
   /* ---------- AI: read calendar photos / screenshots ---------- */
@@ -792,9 +988,9 @@ var CORE = (function () {
     return {sent: n};
   }
 
-  var READ_ONLY = {sync: 1, teamtotals: 1, photos: 1, progress: 1};
+  var READ_ONLY = {sync: 1, teamtotals: 1, photos: 1, progress: 1, file: 1, themes: 1};
   var OPS = {sync: sync, save: saveEvent, del: delEvent, outcome: outcome, import: importEvents, send: send, delmsg: delMsg,
-    pushreg: pushReg, pushoff: pushOff, pushtest: pushTest, teamtotals: teamTotals, rsvp: rsvp, member: member, partner: partner, profile: profile, todo: todo, tododel: todoDel, goal: goal, changepin: changePin, progress: progress, photo: setPhoto, photos: getPhotos, signout: signOut};
+    pushreg: pushReg, pushoff: pushOff, pushtest: pushTest, teamtotals: teamTotals, rsvp: rsvp, member: member, partner: partner, profile: profile, todo: todo, tododel: todoDel, goal: goal, changepin: changePin, progress: progress, feed: feedOp, themes: themesList, theme: themeSave, themedel: themeDel, themeson: themesSwitch, file: getFile, photo: setPhoto, photos: getPhotos, signout: signOut};
   function handle(q, store) {
     if (!q || typeof q !== 'object') fail('bad_request');
     if (q.op === 'signin') {
@@ -814,6 +1010,20 @@ var CORE = (function () {
       store.withLock(function () { countRead(store, who(q, store).me); });
       return {ok: true, read: parseRead(store.ai(readPrompt(mytDay(store.now().getTime())), q.image))};
     }
+    if (q.op === 'voice') {   // counted with the photo readings; speech-to-text + AI run outside the lock. The recording is not kept.
+      if (!b64ok(q.audio, MAX_AUDIO_B64) || !AUDIO_OK[str(q.mime, 30).split(';')[0]]) fail('bad_audio');
+      var vm = store.withLock(function () { var w0 = who(q, store); countRead(store, w0.me); return w0.me; });
+      var heard = str(store.transcribe(q.audio, str(q.mime, 30).split(';')[0], 'Malaysian insurance agent booking an appointment. Mixed English, 华语, 广东话, Hokkien, Bahasa Melayu.'), 1000);
+      if (!heard) fail('nothing_heard');
+      var nowMs = store.now().getTime(), team = store.load('members');
+      var today = mytDay(nowMs), dow = DOW_EN[new Date(nowMs + 8 * 3600e3).getUTCDay()];
+      return {ok: true, voice: parseVoice(store.ai(voicePrompt(today, dow, team.filter(function (m) { return String(m.active) !== 'false' && m.id !== vm.id; }).map(shortOf), heard), ''), heard, team)};
+    }
+    if (q.op === 'themeai') {   // owner only; poster read outside the lock, not kept
+      if (!b64ok(q.poster, MAX_POSTER_B64)) fail('bad_photo');
+      store.withLock(function () { var w1 = who(q, store); ownerOnly(w1.me, store); countRead(store, w1.me); });
+      return {ok: true, theme: parseThemeAI(store.ai(themePrompt(), q.poster))};
+    }
     var fn = OPS[q.op]; if (!fn) fail('bad_request');
     if (READ_ONLY[q.op]) {
       var wr = who(q, store, true);
@@ -824,7 +1034,7 @@ var CORE = (function () {
   }
 
   return {TABLES: TABLES, TYPES: TYPES, TYPE_ORDER: TYPE_ORDER, PROSPECT: PROSPECT, COLORS: COLORS, REMIND: REMIND,
-    handle: handle, tick: tick, occurrences: occurrences, holidaysOn: holidaysOn, schoolHoliday: schoolHoliday, HOLIDAYS: HOLIDAYS, defaultShort: defaultShort, answers: answers, attendance: attendance, TEAM_REMIND: TEAM_REMIND, cents: cents, MODES: MODES, casesOf: casesOf, commentTargets: commentTargets, isAll: isAll, MAX_NOC: MAX_NOC, morning: morning, evening: evening, detectType: detectType, stats: stats, addStats: addStats,
+    handle: handle, feedIcs: feedIcs, parseVoice: parseVoice, voicePrompt: voicePrompt, parseThemeAI: parseThemeAI, isOwner: isOwner, OCCASIONS: OCCASIONS, ANIMS: ANIMS, tick: tick, occurrences: occurrences, holidaysOn: holidaysOn, schoolHoliday: schoolHoliday, HOLIDAYS: HOLIDAYS, defaultShort: defaultShort, answers: answers, attendance: attendance, TEAM_REMIND: TEAM_REMIND, cents: cents, MODES: MODES, casesOf: casesOf, commentTargets: commentTargets, isAll: isAll, MAX_NOC: MAX_NOC, morning: morning, evening: evening, detectType: detectType, stats: stats, addStats: addStats,
     ratios: ratios, parseRead: parseRead, parseICS: parseICS, readPrompt: readPrompt, startMs: startMs, endMs: endMs, myt: myt, whenText: whenText};
 })();
 
@@ -837,11 +1047,22 @@ var CORE = (function () {
      FCM_SERVICE_ACCOUNT    for phone pop-ups when the app is closed: the whole Firebase service-account JSON
      MODEL                  optional (default gpt-6.1-terra)
      DAILY_READS            optional, photo readings per member per day (default 40)
-     APP_URL                optional, the app's public link (used to open the right screen from a pop-up)
+     APP_URL                optional, the app's public link (used to open the right screen from a pop-up and calendar links)
+     STT_MODEL              optional speech-to-text model for voice booking (default gpt-4o-transcribe, falls back to whisper-1)
+     OWNER_NAME             optional: the sign-up name of the owner who manages celebration themes (default: first leader)
    Data: private Google Sheet "REDEFINE Calendar Data", created by setup(), which also installs the timed jobs. */
 
 function reply(o) { return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON); }
-function doGet() { return reply({ok: true, app: 'REDEFINE Calendar'}); }
+/* GET ?feed=<secret> = that member's calendar subscription (.ics) for Apple / Google Calendar. Read-only. */
+function doGet(e) {
+  var feed = e && e.parameter && e.parameter.feed;
+  if (!feed) return reply({ok: true, app: 'REDEFINE Calendar'});
+  try {
+    var ics = CORE.feedIcs(feed, GAS);
+    if (!ics) return ContentService.createTextOutput('This calendar link is no longer valid. Open REDEFINE Calendar → Me → Calendar subscription for a new link.');
+    return ContentService.createTextOutput(ics).setMimeType(ContentService.MimeType.ICAL);
+  } catch (err) { console.error('feed error: ' + (err && err.stack)); return ContentService.createTextOutput('Calendar is busy, try again later.'); }
+}
 
 function doPost(e) {
   try {
@@ -910,6 +1131,45 @@ var GAS = (function () {
     }
     cache[name] = JSON.parse(JSON.stringify(rows));
   }
+  function aiFail(res) {
+    var status = res.getResponseCode(), code = '';
+    if (status === 401) code = 'bad_api_key'; else if (status === 429) code = /insufficient_quota/.test(res.getContentText()) ? 'no_credit' : 'rate_limited';
+    else if (status !== 200) { console.error('openai status ' + status + ' ' + res.getContentText().slice(0, 300)); code = 'ai_unavailable'; }
+    if (code) { var er = new Error(code); er.appCode = code; throw er; }
+  }
+  function apiKey() { var key = P.getProperty('OPENAI_API_KEY'); if (!key) { var e = new Error('no_api_key'); e.appCode = 'no_api_key'; throw e; } return key; }
+  /* speech to text for voice booking; the recording is sent once and not kept */
+  function transcribe(b64, mime, hint) {
+    var key = apiKey(), ext = {'audio/webm': 'webm', 'audio/mp4': 'mp4', 'audio/mpeg': 'mp3', 'audio/ogg': 'ogg', 'audio/wav': 'wav', 'audio/x-m4a': 'm4a', 'audio/aac': 'aac'}[mime] || 'webm';
+    var blob = Utilities.newBlob(Utilities.base64Decode(b64), mime, 'voice.' + ext);
+    var call = function (model) { return UrlFetchApp.fetch('https://api.openai.com/v1/audio/transcriptions', {method: 'post', muteHttpExceptions: true, headers: {Authorization: 'Bearer ' + key}, payload: {file: blob, model: model, prompt: hint || '', response_format: 'json'}}); };
+    var model = P.getProperty('STT_MODEL') || 'gpt-4o-transcribe', res = call(model);
+    if ((res.getResponseCode() === 400 || res.getResponseCode() === 404) && model !== 'whisper-1') { console.warn('stt ' + model + ' refused, using whisper-1: ' + res.getContentText().slice(0, 200)); res = call('whisper-1'); }
+    aiFail(res);
+    return String(JSON.parse(res.getContentText()).text || '');
+  }
+  /* posters and music: one row per file in the "files" tab, split over cells of 45,000 characters (a cell holds 50,000) */
+  var CHUNK = 45000;
+  function fileRow(s, id) {
+    var n = s.getLastRow() - 1; if (n < 1) return 0;
+    var ids = s.getRange(2, 1, n, 1).getValues();
+    for (var i = 0; i < ids.length; i++) if (String(ids[i][0]) === id) return i + 2;
+    return 0;
+  }
+  function putFile(id, mime, data) {
+    var s = tab('files'), parts = [];
+    for (var i = 0; i < data.length; i += CHUNK) parts.push(data.slice(i, i + CHUNK));
+    var row = [id, mime, String(data.length), String(parts.length), new Date().toISOString()].concat(parts), need = row.length;
+    if (s.getMaxColumns() < need) s.insertColumnsAfter(s.getMaxColumns(), need - s.getMaxColumns());
+    var r = fileRow(s, id) || s.getLastRow() + 1;
+    s.getRange(r, 1, 1, need).setNumberFormat('@').setValues([row]);
+  }
+  function getFile(id) {
+    var s = tab('files'), r = fileRow(s, id); if (!r) return null;
+    var head = s.getRange(r, 1, 1, 5).getValues()[0], n = +head[3] || 0;
+    return {mime: String(head[1]), data: n ? s.getRange(r, 6, 1, n).getValues()[0].join('') : ''};
+  }
+  function delFile(id) { var s = tab('files'), r = fileRow(s, id); if (r) s.deleteRow(r); }
   function ai(prompt, b64) {
     var key = P.getProperty('OPENAI_API_KEY'); if (!key) { var e = new Error('no_api_key'); e.appCode = 'no_api_key'; throw e; }
     var res = UrlFetchApp.fetch('https://api.openai.com/v1/responses', {
@@ -918,7 +1178,7 @@ var GAS = (function () {
       payload: JSON.stringify({
         model: P.getProperty('MODEL') || 'gpt-6.1-terra', store: false, max_output_tokens: 16000,
         reasoning: {effort: 'medium'}, text: {format: {type: 'json_object'}},
-        input: [{role: 'user', content: [{type: 'input_text', text: prompt}, {type: 'input_image', image_url: 'data:image/jpeg;base64,' + b64, detail: 'high'}]}]
+        input: [{role: 'user', content: [{type: 'input_text', text: prompt}].concat(b64 ? [{type: 'input_image', image_url: 'data:image/jpeg;base64,' + b64, detail: 'high'}] : [])}]
       })
     });
     var status = res.getResponseCode(), code = '';
@@ -988,7 +1248,7 @@ var GAS = (function () {
   }
 
   return {
-    load: load, save: save, append: append, withLock: withLock, ai: ai, flushPush: flushPush,
+    load: load, save: save, append: append, withLock: withLock, ai: ai, transcribe: transcribe, putFile: putFile, getFile: getFile, delFile: delFile, flushPush: flushPush,
     push: function (ids, note) { if (ids && ids.length) outbox.push({ids: ids, note: note}); },
     prop: function (k) { return P.getProperty(k) || ''; },
     fails: function (add) { var c = CacheService.getScriptCache(), n = +(c.get('fails') || 0); if (add) { c.put('fails', String(n + add), 900); Utilities.sleep(800); } return n; },

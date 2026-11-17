@@ -7,7 +7,7 @@
   var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   var MONTH = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   var DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  var APP_VERSION = '28';
+  var APP_VERSION = '29';
   var H8 = 8 * 3600e3, DAY = 864e5, SELLING = {approach: 1, open: 1, present: 1, followup: 1, close: 1, recruit: 1};
 
   /* ---------- storage (each phone) ---------- */
@@ -140,6 +140,7 @@
     document.getElementById('toasts').appendChild(t); setTimeout(function () { t.classList.add('out'); }, 2800); setTimeout(function () { t.remove(); }, 3300);
   }
   var ERR = {
+    bad_audio: 'That recording couldn’t be used. Try again (up to 60 seconds).', nothing_heard: 'Nothing was heard. Hold the phone closer and try again.', owner_only: 'Only the owner can change celebration themes.', bad_theme: 'Please pick the colours again.', bad_music: 'Use an MP3 or M4A file up to 5 MB.',
     wrong_code: 'That team code is not right.', wrong_pin: 'Wrong PIN for that name.', pin_4_digits: 'PIN must be 4–6 digits.', name_needed: 'Please type your name.',
     too_many_tries: 'Too many wrong tries. Wait 15 minutes.', removed: 'Your leader removed this account.', signed_out: 'Please sign in again.',
     server_not_set_up: 'The team server is not set up yet.', title_needed: 'Please add a title.', date_needed: 'Please pick a date and time.',
@@ -424,6 +425,15 @@
       toast(errText(e), 'bad');
     });
   }
+  document.addEventListener('change', function (ev) {
+    var el = ev.target, w = el && el.dataset && el.dataset.act; if (!w) return;
+    if (w === 'music') { LS.set('music', el.checked); if (el.checked) musicStart(); else musicStop(); }
+    if (w === 'fx') { LS.set('fx', el.checked); themeKey = ''; celebrate(); }
+  });
+  document.addEventListener('input', function (ev) {
+    var el = ev.target; if (!el || !el.dataset || el.dataset.act !== 'musicvol') return;
+    var v = +el.value; LS.set('musicVol', v); if (MUS.audio) MUS.audio.volume = v; if (MUS.master && MUS.ctx) MUS.master.gain.setTargetAtTime(v * 0.5, MUS.ctx.currentTime, 0.2);
+  });
   function askNewPin(force) {
     if (!force && !(S.data && S.data.me && S.data.me.mustChange)) return;
     if (S.pinAsked && !force) return; S.pinAsked = !force;
@@ -465,6 +475,321 @@
       }, 250);
     }, 250);
   }
+  /* ================= Calendar subscription (Apple / Google Calendar widget) ================= */
+  function feedUrl(tok) { return CFG.api + (CFG.api.indexOf('?') >= 0 ? '&' : '?') + 'feed=' + tok; }
+  function subCard() {
+    var tok = S.feedTok, h = '<div class="card sub"><h4>📅 Calendar subscription</h4><p class="tiny muted">See your appointments in Apple Calendar or Google Calendar (and their Home Screen widgets). Keep adding and changing them here; the other calendar copies them when it refreshes.</p>';
+    if (!tok) return h + '<button class="btn primary" data-act="feedget">' + (tok === '' ? 'Turn on' : 'Show my calendar link') + '</button></div>';
+    var url = feedUrl(tok), web = url.replace(/^https?:/, 'webcal:');
+    return h + '<p class="warn-t tiny">🔒 This link shows ALL your appointments, private ones too. Don’t share it.</p>' +
+      '<div class="row wrap"><a class="btn primary" href="' + esc(web) + '">🍎 Add to iPhone / iPad / Mac Calendar</a><button class="btn" data-act="feedcopy">📋 Copy link (Google Calendar)</button></div>' +
+      '<input class="feed-in" readonly value="' + esc(url) + '" onclick="this.select()">' +
+      '<details class="howto"><summary>How to set it up</summary>' +
+      '<p><b>iPhone / iPad:</b> tap <b>🍎 Add to … Calendar</b> → <b>Subscribe</b> → Add. (Or Settings → Calendar → Accounts → Add Account → Other → Add Subscribed Calendar → paste the link.) To refresh more often: Settings → Calendar → Accounts → Fetch New Data.</p>' +
+      '<p><b>Android / Google Calendar:</b> on a computer open calendar.google.com → <b>Other calendars +</b> → <b>From URL</b> → paste the link → Add calendar. Then in the Google Calendar app → Settings → tap the new calendar → turn on <b>Sync</b>. Google refreshes on its own schedule, usually every few hours, sometimes up to a day.</p>' +
+      '<p><b>TimeTree:</b> as far as we know TimeTree can’t subscribe to a calendar link, so use Apple or Google Calendar for the widget.</p>' +
+      '<p><b>Widget + app icon:</b> long-press your Home Screen → <b>+</b> (iPhone) or <b>Widgets</b> (Android) → choose the Calendar / Google Calendar widget. Then add this app to your Home Screen (Safari: Share → Add to Home Screen; Chrome: ⋮ → Add to Home screen) and drag its icon next to the widget. A website can’t place icons or widgets for you.</p>' +
+      '<p><b>Changes:</b> make them here. Changing an appointment inside Apple / Google Calendar does not change this app. Each appointment’s notes has an <b>Open in our Calendar</b> link back to it (you may be asked to sign in; it may open in the browser instead of the app).</p></details>' +
+      '<div class="row"><button class="link" data-act="feedreset">🔄 New link (old one stops working)</button><button class="link danger" data-act="feedoff">Turn off</button></div></div>';
+  }
+
+  /* ================= Music (off by default) and celebration animations — per device ================= */
+  function soundCard() {
+    var on = LS.get('music', false), vol = LS.get('musicVol', 0.4), fx = LS.get('fx', true), t = activeTheme();
+    return '<div class="card"><h4>🎵 Music & animations <small class="muted">(this device)</small></h4>' +
+      '<label class="switch"><input type="checkbox" data-act="music"' + (on ? ' checked' : '') + '> Calm background music' + (t && t.music ? ' (now: ' + esc(t.musicName || 'celebration song') + ')' : '') + '</label>' +
+      '<label>Volume<input type="range" min="0" max="1" step="0.05" value="' + vol + '" data-act="musicvol"></label>' +
+      '<label class="switch"><input type="checkbox" data-act="fx"' + (fx ? ' checked' : '') + '> Celebration animations</label></div>';
+  }
+  var MUS = {on: false, ctx: null, master: null, timers: [], audio: null, src: ''};
+  function musicVol() { return Math.max(0, Math.min(1, +LS.get('musicVol', 0.4))); }
+  function musicStart() {
+    if (MUS.on || !LS.get('music', false) || document.hidden) return;
+    MUS.on = true;
+    var t = activeTheme();
+    if (t && t.music) { MUS.src = t.music; mediaUrl(t.music).then(function (u) { if (!MUS.on || MUS.src !== t.music || !u) return u ? 0 : genStart(); MUS.audio = new Audio(u); MUS.audio.loop = true; MUS.audio.volume = musicVol(); MUS.audio.play().catch(function () { MUS.on = false; }); }); return; }
+    MUS.src = 'gen'; genStart();
+  }
+  function musicStop() {
+    MUS.on = false; MUS.src = '';
+    MUS.timers.forEach(clearTimeout); MUS.timers = [];
+    if (MUS.audio) { MUS.audio.pause(); MUS.audio = null; }
+    if (MUS.ctx) { var c = MUS.ctx; try { MUS.master.gain.setTargetAtTime(0, c.currentTime, 0.3); } catch (e) {} setTimeout(function () { c.close().catch(function () {}); }, 1500); MUS.ctx = null; }
+  }
+  /* Generated calm music: a soft pad (C – Am – F – G) with slow pentatonic notes and an echo. Nothing is downloaded. */
+  function genStart() {
+    var AC = window.AudioContext || window.webkitAudioContext; if (!AC) return;
+    var c = new AC(), master = c.createGain(), lp = c.createBiquadFilter(), dl = c.createDelay(), fb = c.createGain(), wet = c.createGain();
+    master.gain.value = 0; master.gain.setTargetAtTime(musicVol() * 0.5, c.currentTime, 1.5);
+    lp.type = 'lowpass'; lp.frequency.value = 1800; dl.delayTime.value = 0.42; fb.gain.value = 0.35; wet.gain.value = 0.35;
+    lp.connect(master); lp.connect(dl); dl.connect(fb); fb.connect(dl); dl.connect(wet); wet.connect(master); master.connect(c.destination);
+    MUS.ctx = c; MUS.master = master;
+    var CH = [[48, 52, 55], [45, 48, 52], [41, 45, 48], [43, 47, 50]], PENTA = [0, 2, 4, 7, 9], ci = 0;
+    var hz = function (n) { return 440 * Math.pow(2, (n - 69) / 12); };
+    var tone = function (n, at, len, peak, type) {
+      var o = c.createOscillator(), g = c.createGain(); o.type = type || 'sine'; o.frequency.value = hz(n);
+      g.gain.setValueAtTime(0, at); g.gain.linearRampToValueAtTime(peak, at + Math.min(1.5, len / 3)); g.gain.setTargetAtTime(0, at + len * 0.6, len / 4);
+      o.connect(g); g.connect(lp); o.start(at); o.stop(at + len * 1.6);
+    };
+    var chord = function () {
+      if (!MUS.on || MUS.ctx !== c) return;
+      var now = c.currentTime + 0.05; CH[ci % 4].forEach(function (n) { tone(n, now, 9, 0.05, 'sine'); tone(n + 12, now, 9, 0.012, 'triangle'); }); ci++;
+      MUS.timers.push(setTimeout(chord, 8000));
+    };
+    var note = function () {
+      if (!MUS.on || MUS.ctx !== c) return;
+      var root = CH[(ci + 3) % 4][0] + 24, n = root + PENTA[Math.floor(Math.random() * 5)] - (Math.random() < 0.3 ? 12 : 0);
+      tone(n, c.currentTime + 0.05, 3.5, 0.07, 'sine');
+      MUS.timers.push(setTimeout(note, 1800 + Math.random() * 2600));
+    };
+    chord(); MUS.timers.push(setTimeout(note, 1200));
+  }
+  // browsers only allow sound after a tap: start on the first tap when music is switched on
+  document.addEventListener('pointerdown', function () { if (LS.get('music', false) && !MUS.on) musicStart(); }, {passive: true});
+  document.addEventListener('visibilitychange', function () { if (document.hidden) musicStop(); });
+
+  /* files (posters, music) are fetched once and kept on the device */
+  var mediaMem = {};
+  function mediaUrl(id) {
+    if (!id) return Promise.resolve('');
+    if (mediaMem[id]) return Promise.resolve(mediaMem[id]);
+    var key = location.origin + '/__media/' + id, cacheP = window.caches ? caches.open('rcal-media').catch(function () { return null; }) : Promise.resolve(null);
+    return cacheP.then(function (cache) {
+      return (cache ? cache.match(key) : Promise.resolve(null)).then(function (hit) {
+        if (hit) return hit.blob();
+        return api('file', {id: id}).then(function (j) {
+          var bin = atob(j.file.data), arr = new Uint8Array(bin.length); for (var i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+          var blob = new Blob([arr], {type: j.file.mime});
+          if (cache) cache.put(key, new Response(blob)).catch(function () {});
+          return blob;
+        });
+      });
+    }).then(function (blob) { return (mediaMem[id] = URL.createObjectURL(blob)); }, function () { return ''; });
+  }
+
+  /* ================= Celebration themes ================= */
+  var OCC = {cny: ['🧧', 'Chinese New Year'], raya: ['🌙', 'Hari Raya'], deepavali: ['🪔', 'Deepavali'], christmas: ['🎄', 'Christmas'], newyear: ['🎆', 'New Year'], thaipusam: ['🙏', 'Thaipusam'], wesak: ['🪷', 'Wesak Day'], qingming: ['🕯️', '清明节 Qingming'], valentine: ['💝', 'Valentine’s Day'], womens: ['🌷', '三八妇女节 Women’s Day'], mothers: ['💐', 'Mother’s Day'], fathers: ['👔', 'Father’s Day'], merdeka: ['🇲🇾', 'Merdeka'], malaysiaday: ['🇲🇾', 'Malaysia Day'], birthday: ['🎂', 'Team birthdays (every birthday)'], school: ['🏫', 'School holiday'], holiday: ['🎉', 'Public holiday'], other: ['🎉', 'Other celebration']};
+  var ANIM = [['snow', '❄️ Snow'], ['balloons', '🎈 Balloons'], ['lion', '🦁 Lion dance + firecrackers'], ['fireworks', '🎆 Fireworks'], ['hearts', '💕 Hearts'], ['petals', '🌸 Flowers'], ['lanterns', '🏮 Lanterns / lamps'], ['confetti', '🎊 Confetti'], ['stars', '✨ Sparkles'], ['motifs', '🖼️ Poster pictures'], ['', 'No animation']];
+  function activeTheme() {
+    if (S.previewTheme) return S.previewTheme;
+    var th = (S.data && S.data.themes) || []; if (!th.length) return null;
+    var t = dayKey(Date.now()), md = t.slice(5), bd = members().filter(function (m) { return m.active !== false && m.bday === md; });
+    var b = th.filter(function (x) { return x.occasion === 'birthday' && x.on; })[0];
+    if (bd.length && b) return Object.assign({}, b, {who: bd});
+    return th.filter(function (x) { return x.occasion !== 'birthday' && x.on && x.from <= t && t <= x.to; })[0] || null;
+  }
+  function rgb(h) { h = String(h || '#000000').replace('#', ''); return [0, 2, 4].map(function (i) { return parseInt(h.substr(i, 2), 16) || 0; }); }
+  function hexOf(c) { return '#' + c.map(function (v) { return ('0' + Math.max(0, Math.min(255, Math.round(v))).toString(16)).slice(-2); }).join(''); }
+  function lum(h) { return rgb(h).map(function (v) { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }).reduce(function (s, v, i) { return s + v * [0.2126, 0.7152, 0.0722][i]; }, 0); }
+  function contrast(a, b) { var x = lum(a), y = lum(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); }
+  function mix(a, b, w) { var x = rgb(a), y = rgb(b); return hexOf(x.map(function (v, i) { return v * (1 - w) + y[i] * w; })); }
+  function readable(text, bg) { if (contrast(text, bg) >= 4.5) return text; return contrast('#111827', bg) >= contrast('#FFFFFF', bg) ? '#111827' : '#FFFFFF'; }
+  function darkEnough(c) { var n = 0; while (contrast('#FFFFFF', c) < 3.2 && n++ < 12) c = mix(c, '#000000', 0.12); return c; }
+  var themeKey = '', THEME_VARS = ['--bg', '--card', '--text', '--muted', '--line', '--soft', '--coral', '--navy', '--poster'];
+  function celebrate() {
+    var t = activeTheme(), fxOn = LS.get('fx', true) && !(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);
+    var key = t ? t.id + '|' + t.updated + '|' + (t.preview ? 'p' : '') + '|' + fxOn : 'none|' + fxOn;
+    if (key === themeKey) return; var hadMusic = MUS.on, wasSrc = MUS.src; themeKey = key;
+    var root = document.documentElement;
+    THEME_VARS.forEach(function (v) { root.style.removeProperty(v); }); root.removeAttribute('data-celebrate'); fxStop();
+    if (t) {
+      var c = t.colors || {}, bg = c.bg || '#FFFFFF', card = c.surface || '#FFFFFF', text = readable(readable(c.text || '#111827', bg), card), prim = darkEnough(c.primary || '#E5484D');
+      root.style.setProperty('--bg', bg); root.style.setProperty('--card', card); root.style.setProperty('--text', text);
+      root.style.setProperty('--muted', readable(mix(text, card, 0.35), card)); root.style.setProperty('--line', mix(card, text, 0.14)); root.style.setProperty('--soft', mix(card, text, 0.07));
+      root.style.setProperty('--coral', prim); root.style.setProperty('--navy', darkEnough(mix(prim, '#000000', 0.15)));
+      root.setAttribute('data-celebrate', t.occasion || 'other');
+      if (t.poster) mediaUrl(t.poster).then(function (u) { if (u && themeKey === key) root.style.setProperty('--poster', 'url("' + u + '")'); });
+      if (fxOn && t.anim) fxStart(t.anim, t.motifs || [], c);
+    }
+    if (hadMusic && wasSrc !== ((t && t.music) || 'gen')) { musicStop(); musicStart(); }
+  }
+  function celebrateBar() {
+    var t = activeTheme(); if (!t) return '';
+    var o = OCC[t.occasion] || OCC.other, txt = t.who ? '🎂 Happy birthday, ' + t.who.map(shortName).join(' & ') + '!' : o[0] + ' ' + esc(t.title || o[1]);
+    return '<button class="celebrate-bar" data-act="poster">' + txt + (t.preview ? ' <small>(preview)</small>' : '') + '</button>';
+  }
+
+  /* ---------- animations: a light layer on top, sparse, paused when the app is hidden ---------- */
+  var FX = {cv: null, raf: 0, parts: [], kind: '', motifs: [], colors: {}, last: 0, t0: 0};
+  var FX_SET = {snow: ['❄️'], balloons: ['🎈', '🎈', '🎉', '🎁'], hearts: ['💕', '💖', '❤️'], petals: ['🌸', '🌼', '🌺'], lanterns: ['🏮', '🪔', '✨'], stars: ['✨', '⭐'], lion: ['🧨', '🧧', '🏮']};
+  function fxStart(kind, motifs, colors) {
+    FX.kind = kind; FX.motifs = motifs || []; FX.colors = colors || {}; FX.parts = []; FX.t0 = Date.now();
+    var cv = FX.cv || document.createElement('canvas'); cv.id = 'fx'; FX.cv = cv; if (!cv.parentNode) document.body.appendChild(cv);
+    fxSize(); if (!FX.raf) FX.raf = requestAnimationFrame(fxLoop);
+  }
+  function fxStop() { if (FX.raf) cancelAnimationFrame(FX.raf); FX.raf = 0; FX.kind = ''; if (FX.cv && FX.cv.parentNode) FX.cv.parentNode.removeChild(FX.cv); }
+  function fxSize() { if (!FX.cv) return; var r = Math.min(2, window.devicePixelRatio || 1); FX.cv.width = innerWidth * r; FX.cv.height = innerHeight * r; FX.cv.style.width = innerWidth + 'px'; FX.cv.style.height = innerHeight + 'px'; FX.r = r; }
+  window.addEventListener('resize', fxSize);
+  function fxEmoji() { var set = FX_SET[FX.kind] || []; if (FX.motifs.length && (FX.kind === 'motifs' || Math.random() < 0.3 || !set.length)) return FX.motifs[Math.floor(Math.random() * FX.motifs.length)]; return set[Math.floor(Math.random() * set.length)] || '✨'; }
+  function fxSpawn(W, H) {
+    var k = FX.kind, up = k === 'balloons' || k === 'hearts' || k === 'lanterns';
+    if (k === 'fireworks') { var col = [FX.colors.primary, FX.colors.accent, '#FFD54A', '#FF5C8A', '#5CC8FF'].filter(Boolean), cx = W * (0.15 + Math.random() * 0.7), cy = H * (0.12 + Math.random() * 0.35), c0 = col[Math.floor(Math.random() * col.length)];
+      for (var i = 0; i < 26; i++) { var an = i / 26 * Math.PI * 2, sp = 1.2 + Math.random() * 1.6; FX.parts.push({dot: 1, x: cx, y: cy, vx: Math.cos(an) * sp, vy: Math.sin(an) * sp, g: 0.025, life: 70 + Math.random() * 30, age: 0, c: c0, s: 2.4}); } return; }
+    if (k === 'confetti') { var cc = [FX.colors.primary, FX.colors.accent, '#FFD54A', '#4ADE80', '#60A5FA'].filter(Boolean); FX.parts.push({rect: 1, x: Math.random() * W, y: -10, vx: (Math.random() - 0.5) * 0.6, vy: 0.8 + Math.random() * 0.9, rot: Math.random() * 6, vr: (Math.random() - 0.5) * 0.15, c: cc[Math.floor(Math.random() * cc.length)], life: 1e9, age: 0}); return; }
+    if (k === 'stars') { FX.parts.push({e: fxEmoji(), x: Math.random() * W, y: Math.random() * H * 0.85, vx: 0, vy: 0, life: 90, age: 0, s: 14 + Math.random() * 10, tw: 1}); return; }
+    if (k === 'lion' && Math.random() < 0.5 && !FX.parts.some(function (p) { return p.lion; })) { FX.parts.push({e: '🦁', lion: 1, x: -60, y: H - 150, vx: 1.1, vy: 0, life: 1e9, age: 0, s: 46}); return; }
+    if (k === 'lion' && Math.random() < 0.3) { var bx = W * Math.random(), by = H * (0.2 + Math.random() * 0.4); for (var j = 0; j < 14; j++) { var a2 = Math.random() * Math.PI * 2, s2 = 0.6 + Math.random() * 1.6; FX.parts.push({dot: 1, x: bx, y: by, vx: Math.cos(a2) * s2, vy: Math.sin(a2) * s2, g: 0.03, life: 45, age: 0, c: Math.random() < 0.5 ? '#E5484D' : '#F2C200', s: 2}); } return; }
+    FX.parts.push({e: fxEmoji(), x: Math.random() * W, y: up ? H + 30 : -30, vx: 0, vy: up ? -(0.45 + Math.random() * 0.5) : 0.4 + Math.random() * 0.6, sway: Math.random() * 6, life: 1e9, age: 0, s: 16 + Math.random() * 12});
+  }
+  function fxLoop(ts) {
+    FX.raf = requestAnimationFrame(fxLoop);
+    if (document.hidden || !FX.cv || ts - FX.last < 33) return; FX.last = ts;
+    var cx = FX.cv.getContext('2d'), r = FX.r || 1, W = innerWidth, H = innerHeight, max = W < 600 ? 12 : 22;
+    var bursts = FX.kind === 'fireworks', live = FX.parts.filter(function (p) { return !p.dot; }).length;
+    if (bursts ? Math.random() < 0.025 : (live < max && Math.random() < 0.08)) fxSpawn(W, H);
+    if (FX.kind === 'lion' && Math.random() < 0.02) fxSpawn(W, H);
+    cx.setTransform(r, 0, 0, r, 0, 0); cx.clearRect(0, 0, W, H); cx.textAlign = 'center'; cx.textBaseline = 'middle';
+    FX.parts = FX.parts.filter(function (p) {
+      p.age++; p.x += p.vx + (p.sway ? Math.sin((p.age + p.sway * 20) / 40) * 0.4 : 0); p.y += p.vy; if (p.g) p.vy += p.g;
+      if (p.age > p.life || p.y > H + 40 || p.y < -60 || p.x > W + 80) return false;
+      var fade = p.dot ? 1 - p.age / p.life : p.tw ? Math.sin(p.age / p.life * Math.PI) : 1;
+      cx.globalAlpha = 0.85 * Math.max(0, fade);
+      if (p.dot) { cx.fillStyle = p.c; cx.beginPath(); cx.arc(p.x, p.y, p.s, 0, 6.3); cx.fill(); }
+      else if (p.rect) { p.rot += p.vr; cx.save(); cx.translate(p.x, p.y); cx.rotate(p.rot); cx.fillStyle = p.c; cx.fillRect(-4, -2.5, 8, 5); cx.restore(); }
+      else { cx.font = p.s + 'px serif'; cx.fillText(p.e, p.x, p.lion ? p.y + Math.sin(p.age / 6) * 6 : p.y); }
+      return true;
+    });
+    cx.globalAlpha = 1;
+  }
+
+  /* ---------- owner: manage themes ---------- */
+  function loadThemes() { if (S.themeBusy) return; S.themeBusy = 1; api('themes').then(function (j) { S.themeBusy = 0; S.themeList = j; render(); }, function (e) { S.themeBusy = 0; S.themeList = {themes: [], themesOn: false, err: errText(e)}; render(); }); }
+  function themesScreen() {
+    var head = topbar('Celebration themes', {back: '#/me'}) + '<main>';
+    if (!me().owner) return head + '<p class="empty">Only the owner can manage celebration themes.</p></main>' + tabs('me');
+    var L = S.themeList; if (!L) { loadThemes(); return head + '<p class="empty">Loading…</p></main>' + tabs('me'); }
+    var today = dayKey(Date.now());
+    return head + '<div class="card"><div class="row between"><div><h4>' + (L.themesOn ? '🎉 Themes are ON' : '⏸️ Themes are OFF') + '</h4><p class="tiny muted">' + (L.themesOn ? 'Everyone’s app changes on the dates below.' : 'Everyone sees the normal look. Switch on to use the themes below.') + '</p></div><button class="btn ' + (L.themesOn ? '' : 'primary') + '" data-act="themes-on" data-v="' + (L.themesOn ? '0' : '1') + '">' + (L.themesOn ? 'Switch off' : 'Switch on') + '</button></div></div>' +
+      '<button class="btn primary big" data-act="theme-new">＋ New theme from a poster</button>' +
+      (L.themes.length ? L.themes.slice().sort(function (x, y) { return String(x.from).localeCompare(String(y.from)); }).map(function (t) {
+        var o = OCC[t.occasion] || OCC.other, c = t.colors || {}, now = t.occasion !== 'birthday' && t.from <= today && today <= t.to;
+        return '<div class="card theme-row"><div class="swatch">' + ['bg', 'surface', 'primary', 'accent', 'text'].map(function (k) { return '<i style="background:' + esc(c[k] || '#fff') + '"></i>'; }).join('') + '</div><div class="grow"><b>' + o[0] + ' ' + esc(t.title) + '</b>' + (now ? ' <span class="pill on">now</span>' : '') + (t.on ? '' : ' <span class="pill">off</span>') +
+          '<p class="tiny muted">' + (t.occasion === 'birthday' ? 'On every team member’s birthday' : esc(dayLabel(t.from)) + ' – ' + esc(dayLabel(t.to))) + ' · ' + (t.anim ? (ANIM.filter(function (x) { return x[0] === t.anim; })[0] || ['', ''])[1] : 'no animation') + (t.poster ? ' · 🖼️ poster' : '') + (t.music ? ' · 🎵 ' + esc(t.musicName || 'music') : '') + '</p>' +
+          '<div class="row"><button class="btn tiny" data-act="theme-edit" data-id="' + t.id + '">Edit</button><button class="btn tiny ghost" data-act="theme-preview" data-id="' + t.id + '">👀 Preview</button><button class="link danger" data-act="theme-del" data-id="' + t.id + '">Delete</button></div></div></div>';
+      }).join('') : '<p class="empty">No themes yet. Start with a poster: the AI picks the colours, pictures and animation.</p>') +
+      '<p class="tiny muted center">Posters are shown faintly behind the calendar; words stay on solid cards so they can be read. Music plays only on phones where the person switched music on (Me → Music).</p></main>' + tabs('me');
+  }
+  function suggestDates(occ) {
+    var today = dayKey(Date.now()), y = +today.slice(0, 4);
+    var fixed = {christmas: ['12-18', '12-26'], newyear: ['12-30', '01-01'], valentine: ['02-12', '02-14'], womens: ['03-07', '03-08'], merdeka: ['08-28', '08-31'], malaysiaday: ['09-14', '09-16']};
+    if (fixed[occ]) { for (var yy = y; yy <= y + 1; yy++) { var f0 = yy + '-' + fixed[occ][0], t0 = (occ === 'newyear' ? yy + 1 : yy) + '-' + fixed[occ][1]; if (t0 >= today) return [f0, t0]; } }
+    var RX = {cny: [/^Chinese New Year$/, -3, 14], raya: [/^Hari Raya Aidilfitri/, -2, 7], deepavali: [/^Deepavali/, -2, 1], thaipusam: [/^Thaipusam$/, -1, 0], wesak: [/^Wesak/, -1, 0], qingming: [/Qingming/, -2, 0], mothers: [/Mother/, -2, 0], fathers: [/Father/, -2, 0]}[occ];
+    if (!RX) return ['', ''];
+    var k = Object.keys(C.HOLIDAYS).sort().filter(function (d2) { return d2 >= addDays(today, -RX[2]) && C.HOLIDAYS[d2].some(function (h) { return RX[0].test(h[0]); }); })[0];
+    return k ? [addDays(k, RX[1]), addDays(k, RX[2])] : ['', ''];
+  }
+  function imgToJpeg(file, max, q) {
+    return new Promise(function (ok, bad) {
+      var url = URL.createObjectURL(file), im = new Image();
+      im.onload = function () { var s = Math.min(1, max / Math.max(im.width, im.height)), c = document.createElement('canvas'); c.width = Math.round(im.width * s); c.height = Math.round(im.height * s); c.getContext('2d').drawImage(im, 0, 0, c.width, c.height); URL.revokeObjectURL(url); var qq = q, d2 = c.toDataURL('image/jpeg', qq).split(',')[1]; while (d2.length > 850000 && qq > 0.4) { qq -= 0.1; d2 = c.toDataURL('image/jpeg', qq).split(',')[1]; } ok(d2); };
+      im.onerror = function () { URL.revokeObjectURL(url); bad(); }; im.src = url;
+    });
+  }
+  function fileB64(file) { return new Promise(function (ok, bad) { var r = new FileReader(); r.onload = function () { ok(String(r.result).split(',')[1]); }; r.onerror = bad; r.readAsDataURL(file); }); }
+  function themeEditor(t) {
+    t = t || {occasion: 'christmas', title: '', colors: {bg: '#FFF7F5', surface: '#FFFFFF', primary: '#B91C1C', accent: '#15803D', text: '#1F2937'}, anim: 'snow', motifs: [], on: true};
+    var sd = t.from ? [t.from, t.to] : suggestDates(t.occasion), TF = S.tf = {poster: '', music: '', musicMime: '', musicName: '', removeMusic: false};
+    var c = t.colors || {}, colorIn = function (k, l) { return '<label class="ci">' + l + '<input type="color" name="c_' + k + '" value="' + esc(c[k] || '#ffffff') + '"></label>'; };
+    modal('<form id="themeform"><div class="row between"><h3>' + (t.id ? 'Edit theme' : 'New theme') + '</h3><button type="button" class="icon-btn" data-act="close-modal" aria-label="Close">✕</button></div>' +
+      '<label>1. Poster (from your designer / WhatsApp)<input type="file" name="poster" accept="image/*"></label><div class="poster-prev" id="pprev">' + (t.poster ? '<p class="tiny muted">Current poster kept unless you choose a new one.</p>' : '') + '</div>' +
+      '<button type="button" class="btn" id="aibtn" disabled>✨ Read the poster with AI</button><p class="tiny muted" id="ainote"></p>' +
+      '<div class="two"><label>Occasion<select name="occasion">' + Object.keys(OCC).map(function (k) { return '<option value="' + k + '"' + (t.occasion === k ? ' selected' : '') + '>' + OCC[k][0] + ' ' + OCC[k][1] + '</option>'; }).join('') + '</select></label><label>Name<input name="title" maxlength="60" value="' + esc(t.title || '') + '" placeholder="e.g. Christmas 2026"></label></div>' +
+      '<div class="two dates"><label>From<input type="date" name="from" value="' + esc(sd[0] || '') + '"></label><label>To<input type="date" name="to" value="' + esc(sd[1] || '') + '"></label></div>' +
+      '<p class="tiny muted">Colours (the app keeps words readable even if a colour is too light or dark)</p><div class="colors">' + colorIn('bg', 'Background') + colorIn('surface', 'Cards') + colorIn('primary', 'Header & buttons') + colorIn('accent', 'Highlights') + colorIn('text', 'Words') + '</div>' +
+      '<div class="two"><label>Animation<select name="anim">' + ANIM.map(function (x) { return '<option value="' + x[0] + '"' + ((t.anim || '') === x[0] ? ' selected' : '') + '>' + x[1] + '</option>'; }).join('') + '</select></label><label>Poster pictures (emoji)<input name="motifs" maxlength="40" value="' + esc((t.motifs || []).join(' ')) + '" placeholder="🎅 🦌 ⛄"></label></div>' +
+      '<label>Background music (optional, MP3 / M4A up to 5 MB)<input type="file" name="music" accept="audio/mpeg,audio/mp4,audio/x-m4a,audio/aac,.mp3,.m4a"></label>' + (t.music ? '<label class="switch"><input type="checkbox" name="rmmusic"> Remove “' + esc(t.musicName || 'music') + '”</label>' : '') +
+      '<label class="switch"><input type="checkbox" name="on"' + (t.on !== false ? ' checked' : '') + '> Use this theme</label>' +
+      '<div class="row end"><button type="button" class="btn ghost" id="tprev">👀 Preview</button><button class="btn primary">Save</button></div></form>', function (sh) {
+      var f = sh.querySelector('#themeform'), ai = sh.querySelector('#aibtn');
+      var paintDates = function () { sh.querySelector('.dates').hidden = f.occasion.value === 'birthday'; };
+      paintDates();
+      f.occasion.onchange = function () { paintDates(); var s2 = suggestDates(f.occasion.value); if (s2[0]) { f.from.value = s2[0]; f.to.value = s2[1]; } };
+      f.poster.onchange = function () {
+        var file = f.poster.files[0]; if (!file) return;
+        imgToJpeg(file, 1080, 0.78).then(function (b) { TF.poster = b; sh.querySelector('#pprev').innerHTML = '<img src="data:image/jpeg;base64,' + b + '" alt="Poster">'; ai.disabled = false; }, function () { toast('That picture could not be opened.', 'bad'); });
+      };
+      ai.onclick = function () {
+        ai.disabled = true; ai.textContent = '✨ Reading the poster… (10–30 s)';
+        api('themeai', {poster: TF.poster}).then(function (j) {
+          var x = j.theme; f.occasion.value = x.occasion; paintDates(); var s3 = suggestDates(x.occasion); if (s3[0] && !f.from.value) { f.from.value = s3[0]; f.to.value = s3[1]; }
+          if (x.title) f.title.value = x.title; ['bg', 'surface', 'primary', 'accent', 'text'].forEach(function (k) { if (x.colors[k]) f['c_' + k].value = x.colors[k].toLowerCase(); });
+          f.anim.value = x.anim; f.motifs.value = (x.motifs || []).join(' '); sh.querySelector('#ainote').textContent = x.notes ? '🤖 ' + x.notes : 'Done. Check the colours, then Preview.';
+          ai.textContent = '✨ Read again'; ai.disabled = false;
+        }, function (e) { ai.textContent = '✨ Read the poster with AI'; ai.disabled = false; toast(errText(e), 'bad'); });
+      };
+      f.music.onchange = function () {
+        var file = f.music.files[0]; if (!file) return;
+        var mime = file.type || (/\.m4a$/i.test(file.name) ? 'audio/x-m4a' : /\.mp3$/i.test(file.name) ? 'audio/mpeg' : '');
+        if (!/^audio\/(mpeg|mp4|x-m4a|aac)$/.test(mime)) { f.music.value = ''; return toast('Use an MP3 or M4A file.', 'bad'); }
+        if (file.size > 5 * 1024 * 1024) { f.music.value = ''; return toast('Music must be 5 MB or smaller.', 'bad'); }
+        fileB64(file).then(function (b) { TF.music = b; TF.musicMime = mime; TF.musicName = file.name.slice(0, 60); });
+      };
+      var collect = function () {
+        return {id: t.id, occasion: f.occasion.value, title: f.title.value.trim() || OCC[f.occasion.value][1], from: f.from.value, to: f.to.value, anim: f.anim.value, motifs: f.motifs.value.trim().split(/\s+/).filter(Boolean),
+          colors: {bg: f.c_bg.value, surface: f.c_surface.value, primary: f.c_primary.value, accent: f.c_accent.value, text: f.c_text.value}, on: f.on.checked};
+      };
+      sh.querySelector('#tprev').onclick = function () {
+        var x = collect(); S.previewTheme = Object.assign({}, x, {id: 'preview', updated: String(Date.now()), preview: true, poster: '', music: ''});
+        if (TF.poster) { mediaMem.preview = 'data:image/jpeg;base64,' + TF.poster; S.previewTheme.poster = 'preview'; } else if (t.poster) S.previewTheme.poster = t.poster;
+        celebrate(); toast('Preview on this device only. Close the form to keep looking; Save to apply for everyone.', 'good');
+      };
+      f.onsubmit = function (ev) {
+        ev.preventDefault(); var x = collect();
+        if (x.occasion !== 'birthday' && !(x.from && x.to && x.from <= x.to)) return toast('Pick the From and To dates.', 'bad');
+        var body = {theme: x}; if (TF.poster) body.poster = TF.poster; if (TF.music) { body.music = TF.music; body.musicMime = TF.musicMime; body.musicName = TF.musicName; } if (f.rmmusic && f.rmmusic.checked) body.removeMusic = true;
+        var btn = f.querySelector('button.primary'); btn.disabled = true; btn.textContent = TF.music ? 'Saving… (music takes a while)' : 'Saving…';
+        api('theme', body).then(function () { closeModal(); S.previewTheme = null; S.themeList = null; toast('🎉 Theme saved', 'good'); quietSync(true); render(); }, function (e) { btn.disabled = false; btn.textContent = 'Save'; toast(errText(e), 'bad'); });
+      };
+    });
+  }
+
+  /* ================= Voice booking ================= */
+  var REC = null;
+  function voiceStart() {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.MediaRecorder) return toast('Voice recording isn’t supported here. Update your phone or use Chrome / Safari.', 'bad');
+    navigator.mediaDevices.getUserMedia({audio: true}).then(function (stream) {
+      var mime = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg'].filter(function (m) { return MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(m); })[0] || '';
+      var rec = new MediaRecorder(stream, mime ? {mimeType: mime, audioBitsPerSecond: 32000} : undefined), chunks = [], t0 = Date.now();
+      REC = {rec: rec, stream: stream, cancel: false};
+      rec.ondataavailable = function (e) { if (e.data && e.data.size) chunks.push(e.data); };
+      rec.onstop = function () {
+        stream.getTracks().forEach(function (t) { t.stop(); }); var r = REC; REC = null; if (r) clearInterval(r.tm);
+        if (!r || r.cancel) return;
+        var type = String(rec.mimeType || mime || 'audio/webm').split(';')[0];
+        if (Date.now() - t0 < 1200) { closeModal(); return toast('Too short. Hold on and say the whole appointment.', 'bad'); }
+        voiceSend(new Blob(chunks, {type: type}), type);
+      };
+      rec.start(1000);
+      modal('<div class="voice"><h3>🎤 Listening…</h3><p class="muted">Say it like you’d tell a friend, in any language:<br><i>“Esok 3 点 present medical card to Mr Lim at Gurney”</i></p><div class="vu"><span></span><span></span><span></span></div><p class="vt" id="vt">0:00 / 1:00</p>' +
+        '<div class="row end"><button class="btn ghost" data-act="voice-cancel">Cancel</button><button class="btn primary" data-act="voice-stop">✓ Done</button></div></div>');
+      REC.tm = setInterval(function () { var s = Math.floor((Date.now() - t0) / 1000), el = document.getElementById('vt'); if (el) el.textContent = '0:' + ('0' + Math.min(59, s)).slice(-2) + ' / 1:00'; if (s >= 60 || !el) { if (!el && REC) REC.cancel = true; if (rec.state !== 'inactive') rec.stop(); } }, 500);
+    }, function () { toast('Microphone not allowed. Allow the microphone for this app in your phone settings to use voice.', 'bad'); });
+  }
+  function voiceEvent(x) {
+    var ev = {title: x.title, type: x.type, place: x.place, notes: x.notes, with: x.with || [], rep: x.rep || '', allDay: !!x.allDay, vis: 'team', source: 'voice', remind: x.allDay ? '' : '30'};
+    if (x.date && x.allDay) { ev.start = x.date; ev.end = x.date; }
+    else if (x.date && x.start) { var s = Date.parse(x.date + 'T' + x.start + ':00+08:00'), e2 = x.end ? Date.parse(x.date + 'T' + x.end + ':00+08:00') : s + 3600e3; if (!(e2 > s)) e2 = s + 3600e3; ev.start = new Date(s).toISOString(); ev.end = new Date(e2).toISOString(); }
+    return ev;
+  }
+  function voiceSend(blob, type) {
+    modal('<div class="voice"><h3>🎤 Understanding…</h3><p class="muted">This takes a few seconds.</p><div class="spin"></div></div>');
+    fileB64(blob).then(function (b64) { return api('voice', {audio: b64, mime: type}); }).then(function (j) {
+      var v = j.voice, x = v.event, ev = voiceEvent(x), said = '<p class="tiny muted">You said: “' + esc(v.heard) + '”</p>';
+      if (!v.complete) {
+        closeModal();
+        var miss = v.missing.map(function (m) { return {what: 'what it is', date: 'the date', time: 'the time'}[m]; }).join(' and ');
+        editor(null, {date: x.date, time: x.start, ev: Object.assign({title: x.title, type: x.type, place: x.place, notes: x.notes, with: x.with || [], rep: x.rep || '', source: 'voice'}, x.allDay ? {allDay: true} : {})});
+        return toast('🎤 Got it. Please fill in ' + miss + ', then Save.', 'good');
+      }
+      return api('save', {event: ev}).then(function (r) {
+        quietSync(true);
+        var id = r.event && r.event.id;
+        modal('<div class="voice"><h3>✅ Saved from your voice</h3><div class="card"><b>' + esc(T(ev.type).emoji + ' ' + ev.title) + '</b><p>' + esc(dayLabel(x.date, true)) + (x.allDay ? ' · All day' : ' · ' + x.start + (x.end ? '–' + x.end : '')) + (ev.place ? '<br>📍 ' + esc(ev.place) : '') + (ev.rep ? '<br>🔁 Repeats' : '') + '</p></div>' + said +
+          '<div class="row end"><button class="btn ghost danger" data-act="voice-undo" data-id="' + esc(id || '') + '">Undo</button>' + (id ? '<a class="btn" href="#/e/' + id + '" data-act="close-modal">Open</a>' : '') + '<button class="btn primary" data-act="close-modal">OK</button></div></div>');
+      });
+    }).catch(function (e) { closeModal(); toast(errText(e), 'bad'); });
+  }
+
   function signOutLocal(reason) {
     S.token = ''; S.data = null; LS.del('token'); LS.del('cache'); LS.del('pushToken');
     if (reason) toast(errText({code: reason}), 'bad');
@@ -491,7 +816,7 @@
     var my = me().id, list = members().filter(function (m) { return m.active !== false; });
     var p = me().partner, merged = S.filter.indexOf('me+') === 0 ? S.filter.slice(3) : '';
     // merged chips: partner (always), kept ones (📌, remove with ×), and the one just picked (📌 keep or × close)
-    var kept = LS.get('merges', []).filter(function (id) { return id !== p && members().some(function (m) { return m.id === id && m.active !== false; }); });
+    var kept = keptMerges().filter(function (id) { return id !== p && members().some(function (m) { return m.id === id && m.active !== false; }); });
     var extra = []; if (p && mem(p).active !== false) extra.push(['me+' + p, '💑 Me + ' + shortName(mem(p)), mem(p).color]);
     kept.forEach(function (id) { extra.push(['me+' + id, 'Me + ' + shortName(mem(id)), mem(id).color, 'kept', id]); });
     if (merged && merged !== p && kept.indexOf(merged) < 0) extra.push([S.filter, 'Me + ' + shortName(mem(merged)), mem(merged).color, 'temp', merged]);
@@ -548,6 +873,8 @@
   function viewSwitch() {
     return '<div class="seg">' + [['month', 'Month'], ['agenda', 'Agenda'], ['day', 'Team day'], ['list', 'List']].map(function (v) { return '<button class="' + (S.view === v[0] ? 'on' : '') + '" data-act="view" data-v="' + v[0] + '">' + v[1] + '</button>'; }).join('') + '</div>';
   }
+  function keptMerges() { var m = S.data && S.data.me && S.data.me.merges; if (typeof m === 'string' && (m || LS.get('mergesSynced', false))) return m ? m.split(',') : []; return LS.get('merges', []); }
+  function setKept(list) { list = list.slice(-6); LS.set('merges', list); LS.set('mergesSynced', true); if (S.data && S.data.me) S.data.me.merges = list.join(','); api('profile', {merges: list.join(',')}).catch(function () {}); }
   function calendarScreen() {
     var c = S.cursor, today = dayKey(Date.now()), confirm = toConfirm();
     var head = S.view === 'day'
@@ -558,11 +885,11 @@
     var countdown = '<div class="countdown">⏳ <b>' + yLeft + '</b> days left in ' + nowP.y + ' · <b>' + mLeft + '</b> days left in ' + MONTH[nowP.m] + '</div>';
     return '<div class="calhead">' + topbar('REDEFINE Calendar', {right: '<a class="icon-btn" href="#/import" aria-label="Import calendar">⤓</a>'}) +
       '<div class="calhead-in">' + viewSwitch() + (S.view === 'day' ? '' : filterChips()) + head + countdown + '</div></div>' +
-      '<main class="cal" id="calmain">' + (!me().photoV ? '<a class="confirm-bar photo-bar" href="#/me">📷 Add your photo so the team knows it’s you <span>›</span></a>' : '') +
+      '<main class="cal" id="calmain">' + celebrateBar() + (!me().photoV ? '<a class="confirm-bar photo-bar" href="#/me">📷 Add your photo so the team knows it’s you <span>›</span></a>' : '') +
       (upcomingTeam().length ? '<a class="confirm-bar team-bar" href="#/teamevents"><img class="tlogo" src="icons/team-mark.png" alt=""> Upcoming team events <b>(' + upcomingTeam().length + ')</b>' + (teamToAnswer() ? ' · <b class="ans">' + teamToAnswer() + ' to answer</b>' : '') + ' <span>›</span></a>' : '') +
       (myInvites().length ? '<a class="confirm-bar invite" href="#/invites">📩 <b>' + myInvites().length + '</b> invitation' + (myInvites().length > 1 ? 's' : '') + ' waiting for your answer <span>›</span></a>' : '') +
       (confirm.length ? '<a class="confirm-bar" href="#/confirm">✅ <b>' + confirm.length + '</b> activit' + (confirm.length > 1 ? 'ies' : 'y') + ' to confirm so your numbers count <span>›</span></a>' : '') +
-      body + (S.view !== 'day' ? legend() : '') + '</main><button class="fab" data-act="new" aria-label="Add event">+</button>' + tabs('cal');
+      body + (S.view !== 'day' ? legend() : '') + '</main><button class="fab mic" data-act="voice" aria-label="Add by voice">🎤</button><button class="fab" data-act="new" aria-label="Add event">+</button>' + tabs('cal');
   }
   /* CNY day (first day of the lunar year) and the length of the 12th lunar month before it (2025-2029 have no 年三十) */
   var CNY = {2026: ['2026-02-17', 29], 2027: ['2027-02-06', 29], 2028: ['2028-01-26', 29], 2029: ['2029-02-13', 29], 2030: ['2030-02-03', 30]};
@@ -802,6 +1129,7 @@
       var st0 = keyMs(k) + (startH * 60 + startM) * 60e3;
       e = {all: false, title: String(pre.title || '').slice(0, 120), type: '', start: new Date(st0).toISOString(), end: new Date(st0 + 3600e3).toISOString(), allDay: false, place: '', notes: String(pre.notes || '').slice(0, 1500), vis: 'team', with: [], remind: '30', count: 1};
     }
+    if (isNew && pre && pre.ev) Object.assign(e, pre.ev);
     var picked = !isNew;
     var html = '<form id="ed" class="editor"><div class="row between"><h3>' + (isNew ? 'New event' : 'Edit event') + '</h3><button type="button" class="icon-btn" data-act="close-modal" aria-label="Close">✕</button></div>' +
       '<input name="title" class="title-in" maxlength="120" placeholder="What? e.g. Present Mr Lim medical card" value="' + esc(e.title) + '" required>' +
@@ -1139,6 +1467,7 @@
       (!standalone() ? '<div class="card"><h4>Install</h4><p class="muted">Add REDEFINE Calendar to your home screen so it opens like an app.</p><button class="btn ghost" data-act="install">How?</button></div>' : '') +
       (m.leader ? '<div class="card"><h4>Leader</h4><a class="btn ghost" href="#/members">👥 Manage members</a></div>' : '') +
       '<div class="card"><h4>How counting works</h4><p class="tiny muted">Each event has a type (👋 Approach, ☕ Open, 📊 Present, 🔁 Follow-up, ✍️ Closing, 🌱 Recruit, 👥 Meeting, 🛠️ Service, 🎁 CRM, 📝 Paperwork, 🏠 Personal). The app guesses it from the title. After the event, tap ✓ Done, 💰 Closed (with ANP) or ✕ Didn\'t happen. Only confirmed events count. O/A = prospecting, P/O = presentation, F/P = follow-up, NOC/P = closing ratio. Personal events never count.</p></div>' +
+      subCard() + soundCard() + (m.owner ? '<div class="card"><h4>🎉 Celebration themes</h4><p class="tiny muted">Only you (the owner) see this. Upload a festival poster: the app takes its colours and pictures for the whole team.</p><a class="btn primary" href="#/themes">Manage themes</a></div>' : '') +
       '<div class="card"><h4>Help & security</h4><div class="row"><button class="btn primary" data-act="tour">📖 Take the tour</button><button class="btn ghost" data-act="pinchange">🔑 Change my PIN</button></div></div>' +
       '<p class="center tiny muted">App version ' + APP_VERSION + ' · ' + (isIOS() ? 'iPhone' : 'Android / other') + (standalone() ? ' · home-screen app' : ' · browser') + ' · notifications: ' + ('Notification' in window ? Notification.permission : 'not supported') + ' · server has ' + (me().devices || 0) + ' phone(s) for you</p>' +
       '<p class="center"><button class="link danger" data-act="signout">Sign out of this phone</button></p></main>' + tabs('me');
@@ -1285,6 +1614,7 @@
   function render() {
     if (!S.token) { $app.innerHTML = signInScreen(); return; }
     if (!S.data) { $app.innerHTML = topbar('REDEFINE Calendar') + '<main><p class="empty">Loading your team…</p></main>'; return; }
+    celebrate();
     var r = route(), parts = r.split('/').filter(Boolean), html;
     var active = document.activeElement, typing = active && /INPUT|TEXTAREA|SELECT/.test(active.tagName) && $app.contains(active);
     if (typing && active.closest('#todoadd')) {   // quick to-do entry: refresh the boxes, keep the cursor and what is typed
@@ -1313,6 +1643,7 @@
     else if (parts[0] === 'invites') html = invitesScreen();
     else if (parts[0] === 'teamevents') html = teamEventsScreen();
     else if (parts[0] === 'todo') html = todoScreen();
+    else if (parts[0] === 'themes') html = themesScreen();
     else if (parts[0] === 'report') html = reportScreen(parts[1]);
     else html = calendarScreen();
     var y = r === lastRoute ? window.scrollY : 0;
@@ -1327,6 +1658,22 @@
     var b = ev.target.closest('[data-act]'); if (!b || b.tagName === 'FORM' || b.tagName === 'INPUT') return;
     var a = b.dataset.act, today = dayKey(Date.now());
     if (a === 'close-modal') return closeModal();
+    if (a === 'voice') return voiceStart();
+    if (a === 'voice-stop') { if (REC && REC.rec.state !== 'inactive') REC.rec.stop(); return; }
+    if (a === 'voice-cancel') { if (REC) { REC.cancel = true; if (REC.rec.state !== 'inactive') REC.rec.stop(); } return closeModal(); }
+    if (a === 'voice-undo') { closeModal(); if (b.dataset.id) send('del', {id: b.dataset.id}, 'Removed'); return; }
+    if (a === 'feedget' || a === 'feedreset' || a === 'feedoff') {
+      var go = function () { api('feed', a === 'feedreset' ? {reset: true} : a === 'feedoff' ? {off: true} : {}).then(function (j) { S.feedTok = j.feed; render(); if (a === 'feedreset') toast('New link made. Subscribe again with it on your other calendars.', 'good'); }, function (e) { toast(errText(e), 'bad'); }); };
+      if (a === 'feedget') return go();
+      return confirmBox(a === 'feedreset' ? 'Make a new link?' : 'Turn off the subscription?', a === 'feedreset' ? 'The old link stops working. Calendars that use it will stop updating until you subscribe with the new one.' : 'Apple / Google Calendar will stop getting your appointments.', a === 'feedreset' ? 'New link' : 'Turn off', a === 'feedoff').then(function (y) { if (y) go(); });
+    }
+    if (a === 'feedcopy') { var fu = feedUrl(S.feedTok); return (navigator.clipboard ? navigator.clipboard.writeText(fu) : Promise.reject()).then(function () { toast('Link copied 📋', 'good'); }, function () { toast('Press and hold the link box to copy it.', 'bad'); }); }
+    if (a === 'poster') { var pt = activeTheme(); if (!pt || !pt.poster) return; return mediaUrl(pt.poster).then(function (u) { if (u) modal('<img class="poster-full" src="' + u + '" alt="Poster"><div class="row end"><button class="btn primary" data-act="close-modal">Close</button></div>'); }); }
+    if (a === 'themes-on') return api('themeson', {on: b.dataset.v === '1'}).then(function (j) { S.themeList.themesOn = j.themesOn; quietSync(true); render(); toast(j.themesOn ? '🎉 Themes on for everyone' : 'Back to the normal look', 'good'); }, function (e) { toast(errText(e), 'bad'); });
+    if (a === 'theme-new') return themeEditor(null);
+    if (a === 'theme-edit') return themeEditor(S.themeList.themes.filter(function (t) { return t.id === b.dataset.id; })[0]);
+    if (a === 'theme-preview') { if (S.previewTheme && S.previewTheme.id === b.dataset.id) { S.previewTheme = null; celebrate(); return render(); } var tp = S.themeList.themes.filter(function (t) { return t.id === b.dataset.id; })[0]; S.previewTheme = Object.assign({}, tp, {preview: true, who: tp.occasion === 'birthday' ? [me()] : null}); celebrate(); render(); return toast('Preview on this device. Tap 👀 Preview again to stop.', 'good'); }
+    if (a === 'theme-del') return confirmBox('Delete this theme?', 'Its poster and music are deleted too.', 'Delete', true).then(function (y) { if (y) api('themedel', {id: b.dataset.id}).then(function () { S.themeList = null; quietSync(true); render(); }, function (e) { toast(errText(e), 'bad'); }); });
     if (a === 'tour') { location.hash = '#/'; return setTimeout(function () { tour(0); }, 200); }
     if (a === 'pinchange') return askNewPin(true);
     if (a === 'todotab') { S.todoTab = b.dataset.v; return render(); }
@@ -1341,8 +1688,8 @@
     if (a === 'person-del') return confirmBox('Remove this?', 'It will no longer repeat every year.', 'Remove', true).then(function (y) { if (y) send('del', {id: b.dataset.id}, 'Removed'); });
     if (a === 'filter' && b.dataset.id === 'pick') return pickMerge();
     if (a === 'filter') { S.filter = b.dataset.id; LS.set('filter', S.filter); return render(); }
-    if (a === 'merge-keep') { var mk = LS.get('merges', []); if (mk.indexOf(b.dataset.id) < 0) mk.push(b.dataset.id); LS.set('merges', mk.slice(-6)); toast('Kept. It stays on your chips.', 'good'); return render(); }
-    if (a === 'merge-x') { LS.set('merges', LS.get('merges', []).filter(function (x) { return x !== b.dataset.id; })); if (S.filter === 'me+' + b.dataset.id) { S.filter = 'me'; LS.set('filter', 'me'); } return render(); }
+    if (a === 'merge-keep') { var mk = keptMerges(); if (mk.indexOf(b.dataset.id) < 0) mk.push(b.dataset.id); setKept(mk); toast('Kept. It stays on your chips.', 'good'); return render(); }
+    if (a === 'merge-x') { setKept(keptMerges().filter(function (x) { return x !== b.dataset.id; })); if (S.filter === 'me+' + b.dataset.id) { S.filter = 'me'; LS.set('filter', 'me'); } return render(); }
     if (a === 'merge') { closeModal(); S.filter = 'me+' + b.dataset.id; LS.set('filter', S.filter); return render(); }
     if (a === 'partner') {
       var pa = b.dataset.do, pid = b.dataset.id || (document.getElementById('ptn') || {}).value;
@@ -1453,7 +1800,7 @@
   document.addEventListener('touchend', function (ev) {
     if (!sw0) return; var t = ev.changedTouches[0], dx = t.clientX - sw0.x, dy = t.clientY - sw0.y, dt = Date.now() - sw0.t; sw0 = null;
     if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 1.5 || dt > 800 || route().replace(/^[/]+/, '')) return;
-    var step = dx < 0 ? -1 : 1;   // finger moves left = previous, right = next
+    var step = dx < 0 ? 1 : -1;   // swipe left = next month (or day), swipe right = previous
     if (S.view === 'day') { S.dayView = addDays(S.dayView, step); S.sel = S.dayView; var q2 = P(keyMs(S.dayView)); if (q2.m !== S.cursor.m) { S.cursor = {y: q2.y, m: q2.m}; quietSync(); } return render(); }
     if (S.view === 'list') return;
     var c2 = S.cursor, m2 = c2.m + step; S.cursor = {y: c2.y + Math.floor(m2 / 12), m: (m2 + 12) % 12}; S.sel = dayKey(Date.UTC(S.cursor.y, S.cursor.m, 1) - H8 + 3600e3); render(); window.scrollTo(0, 0); quietSync();
@@ -1489,5 +1836,5 @@
     if (now - lastPoll >= (fast ? 6e3 : 20e3)) { lastPoll = now; quietSync(); }
     checkReminders();
   }, 3000);
-  window.RCAL = {S: S, sync: sync, render: render};   // for testing in the browser console
+  window.RCAL = {S: S, sync: sync, render: render, MUS: MUS};   // for testing in the browser console
 })();

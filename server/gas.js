@@ -6,11 +6,22 @@
      FCM_SERVICE_ACCOUNT    for phone pop-ups when the app is closed: the whole Firebase service-account JSON
      MODEL                  optional (default gpt-6.1-terra)
      DAILY_READS            optional, photo readings per member per day (default 40)
-     APP_URL                optional, the app's public link (used to open the right screen from a pop-up)
+     APP_URL                optional, the app's public link (used to open the right screen from a pop-up and calendar links)
+     STT_MODEL              optional speech-to-text model for voice booking (default gpt-4o-transcribe, falls back to whisper-1)
+     OWNER_NAME             optional: the sign-up name of the owner who manages celebration themes (default: first leader)
    Data: private Google Sheet "REDEFINE Calendar Data", created by setup(), which also installs the timed jobs. */
 
 function reply(o) { return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON); }
-function doGet() { return reply({ok: true, app: 'REDEFINE Calendar'}); }
+/* GET ?feed=<secret> = that member's calendar subscription (.ics) for Apple / Google Calendar. Read-only. */
+function doGet(e) {
+  var feed = e && e.parameter && e.parameter.feed;
+  if (!feed) return reply({ok: true, app: 'REDEFINE Calendar'});
+  try {
+    var ics = CORE.feedIcs(feed, GAS);
+    if (!ics) return ContentService.createTextOutput('This calendar link is no longer valid. Open REDEFINE Calendar → Me → Calendar subscription for a new link.');
+    return ContentService.createTextOutput(ics).setMimeType(ContentService.MimeType.ICAL);
+  } catch (err) { console.error('feed error: ' + (err && err.stack)); return ContentService.createTextOutput('Calendar is busy, try again later.'); }
+}
 
 function doPost(e) {
   try {
@@ -79,6 +90,45 @@ var GAS = (function () {
     }
     cache[name] = JSON.parse(JSON.stringify(rows));
   }
+  function aiFail(res) {
+    var status = res.getResponseCode(), code = '';
+    if (status === 401) code = 'bad_api_key'; else if (status === 429) code = /insufficient_quota/.test(res.getContentText()) ? 'no_credit' : 'rate_limited';
+    else if (status !== 200) { console.error('openai status ' + status + ' ' + res.getContentText().slice(0, 300)); code = 'ai_unavailable'; }
+    if (code) { var er = new Error(code); er.appCode = code; throw er; }
+  }
+  function apiKey() { var key = P.getProperty('OPENAI_API_KEY'); if (!key) { var e = new Error('no_api_key'); e.appCode = 'no_api_key'; throw e; } return key; }
+  /* speech to text for voice booking; the recording is sent once and not kept */
+  function transcribe(b64, mime, hint) {
+    var key = apiKey(), ext = {'audio/webm': 'webm', 'audio/mp4': 'mp4', 'audio/mpeg': 'mp3', 'audio/ogg': 'ogg', 'audio/wav': 'wav', 'audio/x-m4a': 'm4a', 'audio/aac': 'aac'}[mime] || 'webm';
+    var blob = Utilities.newBlob(Utilities.base64Decode(b64), mime, 'voice.' + ext);
+    var call = function (model) { return UrlFetchApp.fetch('https://api.openai.com/v1/audio/transcriptions', {method: 'post', muteHttpExceptions: true, headers: {Authorization: 'Bearer ' + key}, payload: {file: blob, model: model, prompt: hint || '', response_format: 'json'}}); };
+    var model = P.getProperty('STT_MODEL') || 'gpt-4o-transcribe', res = call(model);
+    if ((res.getResponseCode() === 400 || res.getResponseCode() === 404) && model !== 'whisper-1') { console.warn('stt ' + model + ' refused, using whisper-1: ' + res.getContentText().slice(0, 200)); res = call('whisper-1'); }
+    aiFail(res);
+    return String(JSON.parse(res.getContentText()).text || '');
+  }
+  /* posters and music: one row per file in the "files" tab, split over cells of 45,000 characters (a cell holds 50,000) */
+  var CHUNK = 45000;
+  function fileRow(s, id) {
+    var n = s.getLastRow() - 1; if (n < 1) return 0;
+    var ids = s.getRange(2, 1, n, 1).getValues();
+    for (var i = 0; i < ids.length; i++) if (String(ids[i][0]) === id) return i + 2;
+    return 0;
+  }
+  function putFile(id, mime, data) {
+    var s = tab('files'), parts = [];
+    for (var i = 0; i < data.length; i += CHUNK) parts.push(data.slice(i, i + CHUNK));
+    var row = [id, mime, String(data.length), String(parts.length), new Date().toISOString()].concat(parts), need = row.length;
+    if (s.getMaxColumns() < need) s.insertColumnsAfter(s.getMaxColumns(), need - s.getMaxColumns());
+    var r = fileRow(s, id) || s.getLastRow() + 1;
+    s.getRange(r, 1, 1, need).setNumberFormat('@').setValues([row]);
+  }
+  function getFile(id) {
+    var s = tab('files'), r = fileRow(s, id); if (!r) return null;
+    var head = s.getRange(r, 1, 1, 5).getValues()[0], n = +head[3] || 0;
+    return {mime: String(head[1]), data: n ? s.getRange(r, 6, 1, n).getValues()[0].join('') : ''};
+  }
+  function delFile(id) { var s = tab('files'), r = fileRow(s, id); if (r) s.deleteRow(r); }
   function ai(prompt, b64) {
     var key = P.getProperty('OPENAI_API_KEY'); if (!key) { var e = new Error('no_api_key'); e.appCode = 'no_api_key'; throw e; }
     var res = UrlFetchApp.fetch('https://api.openai.com/v1/responses', {
@@ -87,7 +137,7 @@ var GAS = (function () {
       payload: JSON.stringify({
         model: P.getProperty('MODEL') || 'gpt-6.1-terra', store: false, max_output_tokens: 16000,
         reasoning: {effort: 'medium'}, text: {format: {type: 'json_object'}},
-        input: [{role: 'user', content: [{type: 'input_text', text: prompt}, {type: 'input_image', image_url: 'data:image/jpeg;base64,' + b64, detail: 'high'}]}]
+        input: [{role: 'user', content: [{type: 'input_text', text: prompt}].concat(b64 ? [{type: 'input_image', image_url: 'data:image/jpeg;base64,' + b64, detail: 'high'}] : [])}]
       })
     });
     var status = res.getResponseCode(), code = '';
@@ -157,7 +207,7 @@ var GAS = (function () {
   }
 
   return {
-    load: load, save: save, append: append, withLock: withLock, ai: ai, flushPush: flushPush,
+    load: load, save: save, append: append, withLock: withLock, ai: ai, transcribe: transcribe, putFile: putFile, getFile: getFile, delFile: delFile, flushPush: flushPush,
     push: function (ids, note) { if (ids && ids.length) outbox.push({ids: ids, note: note}); },
     prop: function (k) { return P.getProperty(k) || ''; },
     fails: function (add) { var c = CacheService.getScriptCache(), n = +(c.get('fails') || 0); if (add) { c.put('fails', String(n + add), 900); Utilities.sleep(800); } return n; },
