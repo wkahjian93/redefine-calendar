@@ -40,6 +40,22 @@ You stay signed in on that phone for good, like WhatsApp. Only two things sign y
 - **✅ To-do tab:** 4 boxes: 🔴 urgent & important, 🟠 urgent, 🔵 important, ⚪ neither. Pick a box, type, Add. *Today* shows today's and overdue items; *All time* shows everything. To-dos are private.
 - **🎯 Goals (Activity tab):** set an ANP goal for the month, quarter, half-year or year. The app works out how many approaches, opens, presentations and closes you need **each week**, from your own last 90 days (or the team's if you're new). **📄 Monthly report** compares you with the team average and adds a coach's note.
 - **📖 Tour:** Me → Take the tour, any time.
+- **Swipe:** on the calendar, swipe left for the next month (or day), swipe right for the previous one.
+
+## More (app version 29)
+- **🎤 Voice booking:** tap the 🎤 button above **+** and say the appointment in any mix of English, 华语, Cantonese, Hokkien or Malay, e.g. "Esok 3 点 present medical card to Mr Lim at Gurney". Up to 1 minute. If the app heard what, the date and the time, it saves straight away (with **Undo**). If something is missing it opens the form with what it heard, and you fill in the rest. Hokkien is understood less well than the other languages. Each recording counts towards the daily photo-reading limit, and recordings are not kept.
+- **📅 Calendar subscription (Me):** shows your appointments in Apple Calendar or Google Calendar, so their Home Screen widgets show what's next. The setup steps are in the card. Keep adding and changing appointments in this app; the other calendar picks up changes when it refreshes (Apple: as often as you set it; Google: usually every few hours, up to a day). TimeTree can't subscribe to a link. **The link shows all your appointments, private ones too:** don't share it, and tap **New link** if you did.
+- **🎵 Music & animations (Me, per device):** calm background music is **off** until you switch it on. Celebration animations can be switched off too.
+- **All your devices:** phone, iPad and laptop show the same data, which is kept on the server. Deleting the app or changing phone loses nothing: sign in again with your name and PIN. Kept "Me + …" chips also follow you. Only the music and animation switches are per device.
+
+## Celebration themes (owner only)
+- **Me → Celebration themes → Manage themes.** Only the owner sees this. The owner is the first leader who joined, unless the Script property `OWNER_NAME` names someone else.
+- **New theme from a poster:**
+  1. Choose the poster, then tap **✨ Read the poster with AI**.
+  2. The AI fills in the occasion, colours, the pictures on the poster (as emoji) and an animation (snow, balloons, lion dance + firecrackers, fireworks…).
+  3. Check the dates (suggested for each festival), add music if you like (MP3/M4A, up to 5 MB), tap **👀 Preview**, then **Save**.
+- **Switch on** at the top turns themes on for everyone. **Switch off** brings everyone back to the normal look.
+- On the dates you set, everyone's app takes the theme's colours, shows the poster faintly behind the calendar with a ribbon on top, and plays the animation. The app keeps words readable even when a colour is too light or dark. A **Team birthdays** theme appears on any member's birthday.
 
 ## Inviting teammates to your event
 - On the event form, pick people under **Invite**. They get a pop-up: "Alicia invited you 📩 … Accept or reject?"
