@@ -180,7 +180,10 @@ main { padding: 12px 14px; }
 .col.on { border-color: var(--text); }
 .steps { padding-left: 18px; } .steps li { margin: 8px 0; }
 .kbd { border: 1px solid var(--line); border-radius: 5px; padding: 0 5px; }
-.mrow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; } .mrow small { display: block; } .mrow.off { opacity: .55; }
+.mrow { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; } .mrow small { display: block; margin-top: 2px; } .mrow.off { opacity: .55; }
+.mrow .grow { flex: 1; min-width: 0; } .mrow .grow b { display: block; overflow-wrap: anywhere; }
+.mbtns { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 8px; padding-top: 8px; border-top: 1px solid var(--line); }
+.mbtns .btn { flex: 1 1 auto; min-height: 38px; }
 
 /* import */
 .import .imp { display: flex; gap: 8px; background: var(--card); border-radius: 12px; padding: 10px; margin-bottom: 8px; border: 2px solid transparent; opacity: .7; }
