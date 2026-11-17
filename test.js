@@ -372,6 +372,22 @@ function fresh() {
   ok(h({op: 'profile', token: kj.token, short: '嘉健'}).short === '嘉健', 'Chinese short names allowed');
 }
 
+
+/* ---------- portraits ---------- */
+{
+  const {s, h, join} = fresh();
+  const kj = join('WONG KAH JIAN', true), mj = join('LIM MAY JING');
+  const img = 'A'.repeat(4000);
+  const r = h({op: 'photo', token: mj.token, data: img});
+  ok(r.photoV && h({op: 'sync', token: kj.token, force: true}).members.find(m => m.id === mj.me.id).photoV === r.photoV, 'photo saved; everyone sees its version');
+  ok(!JSON.stringify(h({op: 'sync', token: kj.token, force: true})).includes('AAAAAAAAAA'), 'the picture itself is not in the calendar refresh (kept light)');
+  ok(h({op: 'photos', token: kj.token, ids: [mj.me.id]}).photos[mj.me.id].d === img, 'phones download the picture separately');
+  throws(() => h({op: 'photo', token: mj.token, data: 'A'.repeat(70000)}), 'photo_too_big', 'oversized photo refused');
+  throws(() => h({op: 'photo', token: mj.token, data: '<script>' + 'A'.repeat(300)}), 'bad_photo', 'not a picture refused');
+  h({op: 'photo', token: mj.token, data: ''});
+  ok(!h({op: 'sync', token: kj.token, force: true}).members.find(m => m.id === mj.me.id).photoV, 'photo can be removed');
+}
+
 /* ---------- sample team sanity ---------- */
 {
   const s = memStore(); seed(s, NOW);

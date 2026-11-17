@@ -6,7 +6,8 @@
    hash(text) -> hex, version(bump) -> number, ai(prompt, imageBase64) -> text, push(memberIds, note). */
 var CORE = (function () {
   var TABLES = {
-    members: ['id', 'name', 'pin', 'role', 'color', 'created', 'active', 'partner', 'partnerReq', 'short'],
+    members: ['id', 'name', 'pin', 'role', 'color', 'created', 'active', 'partner', 'partnerReq', 'short', 'photoV'],
+    photos: ['memberId', 'data', 'updated'],
     sessions: ['token', 'memberId', 'created', 'lastSeen', 'device'],
     events: ['id', 'ownerId', 'title', 'type', 'start', 'end', 'allDay', 'place', 'notes', 'vis', 'with', 'remind', 'count', 'out', 'anp', 'source', 'remSent', 'created', 'updated', 'noc', 'all', 'cases'],
     msgs: ['id', 'to', 'from', 'kind', 'text', 'created'],
@@ -236,10 +237,10 @@ var CORE = (function () {
     var myDevices = store.load('devices').filter(function (d) { return d.memberId === me.id; }).length;
     return {
       ver: ver, now: nowIso(store),
-      me: {id: me.id, name: me.name, short: shortOf(me), shortSet: !!me.short, role: me.role, color: me.color, leader: leader, devices: myDevices, partner: me.partner || '', partnerReq: me.partnerReq || '',
+      me: {id: me.id, name: me.name, short: shortOf(me), shortSet: !!me.short, photoV: me.photoV || '', role: me.role, color: me.color, leader: leader, devices: myDevices, partner: me.partner || '', partnerReq: me.partnerReq || '',
         partnerAsks: members.filter(function (m) { return m.partnerReq === me.id && String(m.active) !== 'false'; }).map(function (m) { return m.id; })},
       members: members.filter(function (m) { return String(m.active) !== 'false' || leader; }).map(function (m) {
-        var o = {id: m.id, name: m.name, short: shortOf(m), role: m.role, color: m.color, active: String(m.active) !== 'false', partner: m.partner || ''}; if (leader) o.seen = seen[m.id] || ''; return o;
+        var o = {id: m.id, name: m.name, short: shortOf(m), role: m.role, color: m.color, active: String(m.active) !== 'false', partner: m.partner || '', photoV: m.photoV || ''}; if (leader) o.seen = seen[m.id] || ''; return o;
       }),
       events: events, msgs: evc.map(function (m) { return {id: m.id, to: m.to, from: m.from, kind: m.kind, text: m.text, created: m.created}; })
     };
@@ -478,6 +479,25 @@ var CORE = (function () {
     return w[0] || '?';
   }
   function shortOf(m) { return m.short || defaultShort(m.name); }
+  /* Portraits: a small square JPEG per member (about 10 KB), kept in its own table so the calendar refresh stays light.
+     Phones only download a photo when its version (photoV) changes. */
+  var MAX_PHOTO = 60000;
+  function setPhoto(q, store, me) {
+    var data = str(q.data, MAX_PHOTO + 10);
+    if (data && !/^[A-Za-z0-9+/=]{200,}$/.test(data)) fail('bad_photo');
+    if (data.length > MAX_PHOTO) fail('photo_too_big');
+    var rows = store.load('photos').filter(function (p) { return p.memberId !== me.id; }), now = nowIso(store);
+    if (data) rows.push({memberId: me.id, data: data, updated: now});
+    store.save('photos', rows);
+    var ms = store.load('members'); ms.forEach(function (m) { if (m.id === me.id) m.photoV = data ? now : ''; }); store.save('members', ms);
+    store.version(true);
+    return {photoV: data ? now : ''};
+  }
+  function getPhotos(q, store) {
+    var want = (Array.isArray(q.ids) ? q.ids : []).slice(0, 200), out = {};
+    store.load('photos').forEach(function (p) { if (want.indexOf(p.memberId) >= 0) out[p.memberId] = {v: p.updated, d: p.data}; });
+    return {photos: out};
+  }
   function profile(q, store, me) {
     var rows = store.load('members'), my = rows.filter(function (m) { return m.id === me.id; })[0], out = {};
     if (q.color != null) { var c = str(q.color, 7); if (!/^#[0-9A-Fa-f]{6}$/.test(c)) fail('bad_request'); my.color = c; out.color = c; }
@@ -639,9 +659,9 @@ var CORE = (function () {
     return {sent: n};
   }
 
-  var READ_ONLY = {sync: 1, teamtotals: 1};
+  var READ_ONLY = {sync: 1, teamtotals: 1, photos: 1};
   var OPS = {sync: sync, save: saveEvent, del: delEvent, outcome: outcome, import: importEvents, send: send, delmsg: delMsg,
-    pushreg: pushReg, pushoff: pushOff, pushtest: pushTest, teamtotals: teamTotals, rsvp: rsvp, member: member, partner: partner, profile: profile, signout: signOut};
+    pushreg: pushReg, pushoff: pushOff, pushtest: pushTest, teamtotals: teamTotals, rsvp: rsvp, member: member, partner: partner, profile: profile, photo: setPhoto, photos: getPhotos, signout: signOut};
   function handle(q, store) {
     if (!q || typeof q !== 'object') fail('bad_request');
     if (q.op === 'signin') {
