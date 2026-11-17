@@ -656,7 +656,9 @@ var CORE = (function () {
     var dur = [60, 90, 120, 180].indexOf(+q.dur) >= 0 ? +q.dur : 120, days = Math.max(7, Math.min(62, Math.floor(+q.days) || 28));
     var when = ['any', 'evening', 'weekend', 'day'].indexOf(q.when) >= 0 ? q.when : 'any';
     var dayStart = function (k) { return Date.parse(k + 'T00:00:00+08:00'); };
-    var today = mytDay(now), A = dayStart(today), B = A + (days + 1) * DAYMS, P0 = A - 56 * DAYMS;
+    var today = mytDay(now), qf = str(q.from, 10), qt = str(q.to, 10), from = isDate(qf) && qf > today ? qf : today;   // a chosen date range (From - To), or the next N days
+    if (isDate(qt)) { if (qt < from) fail('bad_date'); days = Math.round((dayStart(qt) - dayStart(from)) / DAYMS); if (days > 92) fail('bad_range'); }
+    var A = dayStart(from), B = A + (days + 1) * DAYMS, P0 = dayStart(today) - 56 * DAYMS;
     var members = store.load('members').filter(function (m) { return String(m.active) !== 'false'; }), msgs = store.load('msgs'), info = {};
     members.forEach(function (m) { info[m.id] = {m: m, fut: [], days: {}, seen: {}, hist: 0}; });
     store.load('events').forEach(function (e) {
@@ -701,6 +703,8 @@ var CORE = (function () {
         slots.push({s: st, e: en, k: k, free: N - busy.length, exp: exp, busy: busy, usual: usual});
       }
     }
+    var dayBest = {};   // the best slot of every day, so a leader can compare dates
+    slots.forEach(function (c) { var b = dayBest[c.k]; if (!b || c.exp > b.exp + 1e-9 || (Math.abs(c.exp - b.exp) < 1e-9 && c.free > b.free)) dayBest[c.k] = c; });
     slots.sort(function (x, y) { return y.exp - x.exp || y.free - x.free || x.s - y.s; });
     var pick = [], perDay = {};
     for (var j = 0; j < slots.length && pick.length < 6; j++) {
@@ -715,7 +719,8 @@ var CORE = (function () {
         return Math.round(tot / N * 100);
       })};
     });
-    return {of: N, dur: dur, days: days, when: when, blocks: BT_BLOCKS.map(function (b) { return b[2] + ' ' + b[0] + '–' + b[1]; }),
+    var view = function (c) { return {start: new Date(c.s).toISOString(), end: new Date(c.e).toISOString(), day: c.k, free: c.free, expected: Math.round(c.exp * 10) / 10, busy: names(c.busy), usual: names(c.usual), hol: holidaysOn(c.k).map(function (h) { return h.icon + ' ' + h.name; })}; };
+    return {of: N, dur: dur, days: days, when: when, from: from, to: mytDay(A + days * DAYMS + 12 * 3600e3), byDay: Object.keys(dayBest).sort().map(function (k) { return view(dayBest[k]); }), blocks: BT_BLOCKS.map(function (b) { return b[2] + ' ' + b[0] + '–' + b[1]; }),
       notCounted: names(members.filter(function (m) { return info[m.id].hist < 5; })), heat: heat,
       slots: pick.map(function (c) { return {start: new Date(c.s).toISOString(), end: new Date(c.e).toISOString(), day: c.k, free: c.free, expected: Math.round(c.exp * 10) / 10, busy: names(c.busy), usual: names(c.usual), hol: holidaysOn(c.k).map(function (h) { return h.icon + ' ' + h.name; })}; })};
   }

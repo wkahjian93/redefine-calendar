@@ -7,7 +7,7 @@
   var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   var MONTH = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   var DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  var APP_VERSION = '37';
+  var APP_VERSION = '38';
   var H8 = 8 * 3600e3, DAY = 864e5, SELLING = {approach: 1, open: 1, present: 1, followup: 1, close: 1, joinfield: 1, recruit: 1};
 
   /* ---------- storage (each phone) ---------- */
@@ -430,6 +430,7 @@
   document.addEventListener('change', function (ev) {
     var el = ev.target, w = el && el.dataset && el.dataset.act; if (!w) return;
     if (w === 'music') { LS.set('music', el.checked); if (el.checked) musicStart(); else musicStop(); }
+    if (w === 'btdate' && S.btOpt) { if (!el.value) return; S.btOpt[el.dataset.k] = el.value; if (S.btOpt.to < S.btOpt.from) S.btOpt.to = S.btOpt.from; return render(); }
     if (w === 'fx') { LS.set('fx', el.checked); themeKey = ''; celebrate(); }
   });
   document.addEventListener('input', function (ev) {
@@ -959,7 +960,7 @@
     var head = S.view === 'day'
       ? '<div class="monthnav"><button class="nav" data-act="day" data-d="-1" aria-label="Previous day">‹</button><b>' + esc(dayLabel(S.dayView)) + '</b><button class="nav" data-act="day" data-d="1" aria-label="Next day">›</button><button class="btn tiny ghost" data-act="today">Today</button></div>'
       : '<div class="monthnav"><button class="nav" data-act="month" data-d="-1" aria-label="Previous month">‹</button><b class="mtitle">' + whoseFaces() + '<span>' + MONTH[c.m] + ' ' + c.y + '</span></b><button class="nav" data-act="month" data-d="1" aria-label="Next month">›</button><button class="btn tiny ghost" data-act="today">Today</button></div>';
-    var body = S.view === 'day' ? teamDay() : S.view === 'list' ? listView() : S.view === 'agenda' ? agendaView() : monthGrid() + '<p class="tiny muted hint">Tap a day to choose it (scroll inside to see all). Tap it again to open that day’s events.</p>';
+    var body = S.view === 'day' ? (isLeader() ? '<a class="btn primary big bt-link" href="#/besttime">🔎 Best date for a team activity</a>' : '') + teamDay() : S.view === 'list' ? listView() : S.view === 'agenda' ? agendaView() : monthGrid() + '<p class="tiny muted hint">Tap a day to choose it (scroll inside to see all). Tap it again to open that day’s events.</p>';
     var nowP = P(Date.now()), yLeft = Math.round((Date.UTC(nowP.y, 11, 31) - Date.UTC(nowP.y, nowP.m, nowP.d)) / DAY), mLeft = new Date(Date.UTC(nowP.y, nowP.m + 1, 0)).getUTCDate() - nowP.d;
     var countdown = '<div class="countdown">⏳ <b>' + yLeft + '</b> days left in ' + nowP.y + ' · <b>' + mLeft + '</b> days left in ' + MONTH[nowP.m] + '</div>';
     return '<div class="calhead">' + topbar('REDEFINE Calendar', {right: '<a class="icon-btn" href="#/import" aria-label="Import calendar">⤓</a>'}) +
@@ -1118,18 +1119,25 @@
   function bestTimeScreen() {
     var head = topbar('Best time for the team', {back: '#/teamevents'}) + '<main class="besttime">';
     if (!isLeader()) return head + '<p class="empty">For leaders.</p></main>' + tabs('cal');
-    var o = S.btOpt || (S.btOpt = {dur: 120, when: 'evening', days: 28}), key = o.dur + '|' + o.when + '|' + o.days;
+    var t0 = dayKey(Date.now()), o = S.btOpt || (S.btOpt = {dur: 120, when: 'evening', from: t0, to: addDays(t0, 27)}), key = o.dur + '|' + o.when + '|' + o.from + '|' + o.to;
     var seg = function (name, list) { return '<div class="seg small">' + list.map(function (x) { return '<button class="' + (String(o[name]) === String(x[0]) ? 'on' : '') + '" data-act="btopt" data-k="' + name + '" data-v="' + x[0] + '">' + x[1] + '</button>'; }).join('') + '</div>'; };
     var html = head + '<div class="card"><p class="tiny muted">How long</p>' + seg('dur', [[60, '1 h'], [90, '1.5 h'], [120, '2 h'], [180, '3 h']]) +
       '<p class="tiny muted">When</p>' + seg('when', [['evening', 'Weekday nights'], ['weekend', 'Weekends'], ['day', 'Daytime'], ['any', 'Any time']]) +
-      '<p class="tiny muted">Looking ahead</p>' + seg('days', [[14, '2 weeks'], [28, '4 weeks'], [56, '8 weeks']]) + '</div>';
+      '<p class="tiny muted">Dates</p><div class="two"><label>From<input type="date" data-act="btdate" data-k="from" min="' + t0 + '" value="' + o.from + '"></label><label>To<input type="date" data-act="btdate" data-k="to" min="' + o.from + '" value="' + o.to + '"></label></div>' +
+      '<div class="row wrap quick">' + [[13, '2 weeks'], [27, '4 weeks'], [55, '8 weeks']].map(function (q) { return '<button class="btn tiny ghost" data-act="btquick" data-n="' + q[0] + '">Next ' + q[1] + '</button>'; }).join('') + '</div></div>';
     var r = S.bt && S.bt.key === key && Date.now() - S.bt.at < 120e3 ? S.bt.v : null;
     if (!r) {
-      if (!S.btBusy) { S.btBusy = 1; api('besttime', {dur: o.dur, when: o.when, days: o.days}).then(function (j) { S.btBusy = 0; S.bt = {key: key, at: Date.now(), v: j}; render(); }, function (e) { S.btBusy = 0; toast(errText(e), 'bad'); }); }
+      if (!S.btBusy) { S.btBusy = 1; api('besttime', {dur: o.dur, when: o.when, from: o.from, to: o.to}).then(function (j) { S.btBusy = 0; S.bt = {key: key, at: Date.now(), v: j}; render(); }, function (e) { S.btBusy = 0; toast(errText(e), 'bad'); }); }
       return html + '<p class="empty">Checking everyone’s calendar…</p></main>' + tabs('cal');
     }
     if (!r.of) return html + '<p class="empty">Not enough calendar data yet: people need at least 5 appointments in the last 8 weeks to be counted.</p></main>' + tabs('cal');
-    html += '<h4 class="sub">Best times</h4>' + (r.slots.length ? r.slots.map(function (x, i) {
+    var ranks = r.byDay.slice().sort(function (x, y) { return y.expected - x.expected || y.free - x.free; }).slice(0, 3).map(function (x) { return x.day; });
+    html += '<h4 class="sub">Every day: ' + esc(dayLabel(r.from)) + ' – ' + esc(dayLabel(r.to)) + '</h4><div class="card days">' + (r.byDay.length ? r.byDay.map(function (x) {
+      var pc = Math.round(x.free / r.of * 100), top = ranks.indexOf(x.day) >= 0, st = Date.parse(x.start);
+      return '<button class="bday-row' + (top ? ' top3' : '') + '" data-act="btset" data-s="' + x.start + '" data-e="' + x.end + '"><span class="d">' + (top ? '⭐ ' : '') + esc(dayLabel(x.day)) + (x.hol.length ? '<small class="hol-t">' + esc(x.hol[0]) + '</small>' : '') + '</span><span class="t">' + hm(st) + '</span>' +
+        '<span class="bar"><i style="width:' + pc + '%;background:' + (pc >= 80 ? '#22A049' : pc >= 60 ? '#F2C200' : '#E5484D') + '"></i></span><b>' + x.free + '/' + r.of + '</b></button>';
+    }).join('') : '<p class="empty small">No time fits on these dates. Try another time of day.</p>') + '<p class="tiny muted">Best time of each day and how many are free. ⭐ = top 3 dates. Tap a day to set the team activity.</p></div>';
+    html += '<h4 class="sub">Best times in detail</h4>' + (r.slots.length ? r.slots.map(function (x, i) {
       var st = Date.parse(x.start), pc = Math.round(x.free / r.of * 100);
       return '<div class="card bt' + (i === 0 ? ' best' : '') + '"><div class="row between"><div><b>' + (i === 0 ? '⭐ ' : '') + esc(dayLabel(x.day, true)) + '</b><br><span class="bt-time">' + hm(st) + ' – ' + hm(Date.parse(x.end)) + '</span>' + (x.hol.length ? '<br><small class="hol-t">' + esc(x.hol.join(' · ')) + '</small>' : '') + '</div>' +
         '<div class="bt-count"><b>' + x.free + '</b>/' + r.of + '<small>free</small></div></div>' +
@@ -1771,6 +1779,7 @@
     var b = ev.target.closest('[data-act]'); if (!b || b.tagName === 'FORM' || b.tagName === 'INPUT') return;
     var a = b.dataset.act, today = dayKey(Date.now());
     if (a === 'close-modal') return closeModal();
+    if (a === 'btquick') { var tq = dayKey(Date.now()); S.btOpt.from = tq; S.btOpt.to = addDays(tq, +b.dataset.n); return render(); }
     if (a === 'btopt') { S.btOpt[b.dataset.k] = b.dataset.k === 'when' ? b.dataset.v : +b.dataset.v; return render(); }
     if (a === 'btset') { var bs = b.dataset.s, be = b.dataset.e; return editor(null, {date: dayKey(Date.parse(bs)), time: hm24(Date.parse(bs)), ev: {all: true, type: 'meeting', start: bs, end: be}}); }
     if (a === 'vcheck') return send('checked', {id: b.dataset.id}, '✓ Checked');

@@ -529,3 +529,12 @@ html[data-celebrate] .calhead { background: color-mix(in srgb, var(--bg) 92%, tr
 .av-nav { width: 30px; height: 30px; font-size: 11px; border: 2px solid var(--card); box-sizing: border-box; }
 .whose .cpair .av-nav + .av-nav { margin-left: -11px; }
 .av-nav.cteam img { width: 15px; height: 17px; }
+
+/* ---------- best date: every day list ---------- */
+.besttime .quick { margin-top: 8px; gap: 6px; }
+.card.days { padding: 6px 10px; }
+.bday-row { display: grid; grid-template-columns: minmax(0, 1.4fr) 52px 1fr 44px; align-items: center; gap: 8px; width: 100%; padding: 9px 2px; border: 0; border-bottom: 1px solid var(--line); background: none; color: inherit; text-align: left; font-size: 14px; }
+.bday-row .d small { display: block; font-size: 11px; } .bday-row .t { color: var(--muted); font-size: 13px; }
+.bday-row .bar { height: 8px; border-radius: 4px; background: var(--soft); overflow: hidden; } .bday-row .bar i { display: block; height: 100%; border-radius: 4px; }
+.bday-row b { text-align: right; } .bday-row.top3 { font-weight: 700; } .bday-row.top3 .d { color: #22A049; }
+.bt-link { margin: 4px 0 10px; }

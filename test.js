@@ -550,6 +550,12 @@ function fresh() {
   ok(!fri || fri.busy.includes('BEN'), 'all-day leave blocks the whole day');
   ok(r.heat.length === 7 && r.heat[2].cells[4] <= 50 && r.heat[0].cells[4] === 100, 'pattern table: Wednesday night usually busy, Monday night free');
   ok(all.slots.every(x => Date.parse(x.start) >= Date.parse('2026-11-02T02:00:00.000Z')), 'never suggests a time already past or within the hour');
+  const rg = h({op: 'besttime', token: kj.token, dur: 120, when: 'evening', from: '2026-11-09', to: '2026-11-13'});
+  ok(rg.from === '2026-11-09' && rg.to === '2026-11-13' && rg.byDay.map(x => x.day).join() === '2026-11-09,2026-11-10,2026-11-11,2026-11-12,2026-11-13', 'chosen From–To dates: one best slot for every weekday night');
+  ok(rg.slots.every(x => x.day >= '2026-11-09' && x.day <= '2026-11-13'), 'suggestions stay inside the chosen dates');
+  const wed = rg.byDay.find(x => x.day === '2026-11-11'); ok(wed.start === '2026-11-11T10:00:00.000Z', 'Wednesday: suggests 6-8pm, before the usual 8pm class');
+  throws(() => h({op: 'besttime', token: kj.token, from: '2026-11-20', to: '2026-11-10'}), 'bad_date', 'To before From refused');
+  ok(h({op: 'besttime', token: kj.token, from: '2026-10-01', to: '2026-11-05'}).from === '2026-11-02', 'past From starts from today');
   s.setNow(null);
 }
 
