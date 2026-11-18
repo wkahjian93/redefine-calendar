@@ -8,12 +8,18 @@
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "PingFang SC", "Microsoft YaHei", sans-serif; -webkit-tap-highlight-color: transparent; }
-body.locked { overflow: hidden; }
+body.locked #scroll { overflow: hidden; }
 #app { max-width: 720px; margin: 0 auto; min-height: 100%; padding-bottom: calc(76px + var(--safe-b)); }
-/* The page itself never scrolls (so iPhone bounce and Safari's toolbar can't drag the bottom bar); the body scrolls inside it. */
+/* App frame. iPhone can leave what you SEE (the visual viewport) shifted or shorter than the page's own viewport, after the keyboard,
+   reopening the app or coming back from the background. Anything pinned with position:fixed to the page then floats up with a gap
+   below and its top is cut off. So the body is the frame: app.js (fitFrame) keeps it exactly on the visible area, and its transform
+   makes it the box that every fixed element (bottom bar, + button, sheets, banners) is positioned in. The page never scrolls;
+   only #scroll does. */
 html { height: 100%; overflow: hidden; overscroll-behavior: none; }
-body { position: fixed; top: 0; left: 0; right: 0; bottom: 0; width: 100%; overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; overscroll-behavior-y: contain; }
-.tabs { transform: translateZ(0); }
+body { position: fixed; left: 0; right: 0; top: var(--frame-top, 0px); height: var(--frame-h, 100%); width: 100%; overflow: hidden; transform: translateZ(0); }
+#scroll { position: absolute; inset: 0; overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
+html.kb .tabs, html.kb .fab { display: none; }
+html.kb #app { padding-bottom: 16px; }
 a { color: inherit; text-decoration: none; }
 button { font: inherit; color: inherit; cursor: pointer; }
 input, select, textarea { font: inherit; color: var(--text); background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; width: 100%; font-size: 16px; }
@@ -213,8 +219,10 @@ main { padding: 12px 14px; }
 /* modal sheet */
 #modal-root { display: none; } #modal-root.open { display: block; }
 .scrim { position: fixed; inset: 0; background: rgba(10, 14, 25, .5); z-index: 50; }
-.sheet { position: fixed; left: 0; right: 0; bottom: 0; z-index: 51; background: var(--bg); border-radius: 18px 18px 0 0; padding: 16px 16px calc(16px + var(--safe-b)); max-height: 92vh; overflow-y: auto; max-width: 720px; margin: 0 auto; animation: up .2s ease-out; }
+.sheet { position: fixed; left: 0; right: 0; bottom: 0; z-index: 51; background: var(--bg); border-radius: 18px 18px 0 0; padding: 16px 16px calc(16px + var(--safe-b)); max-height: calc(100% - var(--safe-t) - 10px); overflow-y: auto; overscroll-behavior: contain; max-width: 720px; margin: 0 auto; animation: up .2s ease-out; }
 @keyframes up { from { transform: translateY(40px); opacity: 0; } }
+/* the title row with ✕ always stays at the top of a sheet, even when its content scrolls */
+.sheet > .row.between:first-child, .sheet > form > .row.between:first-child { position: sticky; top: -16px; z-index: 3; background: var(--bg); margin: -16px -16px 8px; padding: 16px 16px 8px; border-radius: 18px 18px 0 0; }
 .sheet h3 { font-size: 18px; } .sheet .icon-btn { color: var(--text); }
 .title-in { font-size: 18px; font-weight: 600; margin-top: 8px; }
 .detect { min-height: 16px; color: var(--green) !important; }

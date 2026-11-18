@@ -3,11 +3,11 @@
 (function () {
   'use strict';
   var C = CORE, CFG = self.RCAL_CONFIG || {};
-  var $app = document.getElementById('app');
+  var $app = document.getElementById('app'), $scroll = document.getElementById('scroll') || document.body;
   var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   var MONTH = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   var DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  var APP_VERSION = '44';
+  var APP_VERSION = '45';
   var H8 = 8 * 3600e3, DAY = 864e5, SELLING = {approach: 1, open: 1, present: 1, followup: 1, close: 1, joinfield: 1, recruit: 1};
 
   /* ---------- storage (each phone) ---------- */
@@ -950,7 +950,7 @@
   }
   function scrollToToday() {
     var r = document.getElementById('ag-' + dayKey(Date.now())), h = document.querySelector('.calhead');
-    if (r) document.body.scrollTop = r.getBoundingClientRect().top + document.body.scrollTop - (h ? h.offsetHeight : 0) - 4;
+    if (r) $scroll.scrollTop = r.getBoundingClientRect().top - $scroll.getBoundingClientRect().top + $scroll.scrollTop - (h ? h.offsetHeight : 0) - 4;
   }
   function viewSwitch() {
     return '<div class="seg">' + [['month', 'Month'], ['agenda', 'Agenda'], ['day', 'Team day'], ['list', 'List']].map(function (v) { return '<button class="' + (S.view === v[0] ? 'on' : '') + '" data-act="view" data-v="' + v[0] + '">' + v[1] + '</button>'; }).join('') + '</div>';
@@ -1801,9 +1801,9 @@
     else if (parts[0] === 'themes') html = themesScreen();
     else if (parts[0] === 'report') html = reportScreen(parts[1]);
     else html = calendarScreen();
-    var y = r === lastRoute ? document.body.scrollTop : 0;   // the page itself never scrolls; the body does (keeps the bottom bar still)
+    var y = r === lastRoute ? $scroll.scrollTop : 0;   // only #scroll scrolls; the frame (body) never moves
     $app.innerHTML = html; lastRoute = r;
-    document.body.scrollTop = y;
+    $scroll.scrollTop = y;
     if (!parts[0] && S.view === 'agenda' && y === 0) setTimeout(scrollToToday, 30);
     if (parts[0] === 'e' && parts[2] === 'c' && y === 0) { var cm = $app.querySelector('.comments'); if (cm) setTimeout(function () { cm.scrollIntoView({block: 'start'}); }, 30); }
   }
@@ -1961,7 +1961,7 @@
     var step = dx < 0 ? 1 : -1;   // swipe left = next month (or day), swipe right = previous
     if (S.view === 'day') { S.dayView = addDays(S.dayView, step); S.sel = S.dayView; var q2 = P(keyMs(S.dayView)); if (q2.m !== S.cursor.m) { S.cursor = {y: q2.y, m: q2.m}; quietSync(); } return render(); }
     if (S.view === 'list') return;
-    var c2 = S.cursor, m2 = c2.m + step; S.cursor = {y: c2.y + Math.floor(m2 / 12), m: (m2 + 12) % 12}; S.sel = dayKey(Date.UTC(S.cursor.y, S.cursor.m, 1) - H8 + 3600e3); render(); document.body.scrollTop = 0; quietSync();
+    var c2 = S.cursor, m2 = c2.m + step; S.cursor = {y: c2.y + Math.floor(m2 / 12), m: (m2 + 12) % 12}; S.sel = dayKey(Date.UTC(S.cursor.y, S.cursor.m, 1) - H8 + 3600e3); render(); $scroll.scrollTop = 0; quietSync();
   }, {passive: true});
   window.addEventListener('hashchange', function () { closeModal(); render(); });
   /* Phones keep home-screen apps paused in memory, so an update would only arrive after swiping the app away.
@@ -1975,13 +1975,30 @@
       LS.set('reloadedFor', v); location.reload();
     }).catch(function () {});
   }
-  // iPhone sometimes leaves the whole page shifted after a swipe, the keyboard or coming back to the app, which lifts the bottom bar. Snap it back.
-  function pinPage() { if (window.scrollY || window.scrollX || document.documentElement.scrollTop) { window.scrollTo(0, 0); document.documentElement.scrollTop = 0; } }
-  function pinSoon() { pinPage(); setTimeout(pinPage, 120); setTimeout(pinPage, 500); }
-  window.addEventListener('scroll', pinPage, {passive: true});
-  ['resize', 'orientationchange', 'pageshow', 'focusout', 'touchend'].forEach(function (ev) { window.addEventListener(ev, pinSoon, {passive: true}); });
-  if (window.visualViewport) { visualViewport.addEventListener('resize', pinSoon); visualViewport.addEventListener('scroll', function () { if (!document.activeElement || !/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) pinPage(); }); }
-  document.addEventListener('visibilitychange', function () { if (!document.hidden) { pinSoon(); quietSync(); checkUpdate(); } });
+  /* ---------- app frame ----------
+     iPhone sometimes leaves the visible area (visualViewport) shifted down or a different height from the page's own viewport:
+     after the keyboard, reopening the app, coming back after hours. Elements pinned to the page then float up with a gap below and
+     their top (the sheet's ✕) is cut off. Fix at the source: keep the frame (body, see style.css) exactly on the visible area.
+     Checked on every viewport event and once a second, because iOS does not always fire an event when it gets it wrong. */
+  var FRAME = {top: -1, h: -1, kb: null};
+  function fitFrame() {
+    var v = window.visualViewport, root = document.documentElement;
+    if (!v || Math.abs((v.scale || 1) - 1) > 0.01) return;          // pinch-zoomed: leave the frame alone
+    var top = Math.max(0, Math.round(v.offsetTop)), h = Math.round(v.height);
+    var f = document.activeElement, typing = !!(f && /^(INPUT|TEXTAREA|SELECT)$/.test(f.tagName) && !/^(checkbox|radio|button|submit|file|color|range)$/.test(f.type || ''));
+    var kb = typing && h < window.innerHeight - 120;                  // keyboard is up: hide the bottom bar, the frame ends at the keyboard
+    if (top !== FRAME.top) { FRAME.top = top; root.style.setProperty('--frame-top', top + 'px'); }
+    if (h !== FRAME.h) { FRAME.h = h; root.style.setProperty('--frame-h', h + 'px'); }
+    if (kb !== FRAME.kb) { FRAME.kb = kb; root.classList.toggle('kb', kb); }
+    if (!typing && (window.scrollY || window.scrollX)) window.scrollTo(0, 0);
+  }
+  function fitSoon() { fitFrame(); setTimeout(fitFrame, 60); setTimeout(fitFrame, 350); setTimeout(fitFrame, 800); }
+  if (window.visualViewport) { visualViewport.addEventListener('resize', fitFrame); visualViewport.addEventListener('scroll', fitFrame); }
+  ['resize', 'orientationchange', 'pageshow', 'focus'].forEach(function (ev) { window.addEventListener(ev, fitSoon); });
+  document.addEventListener('focusin', fitSoon); document.addEventListener('focusout', fitSoon);
+  setInterval(fitFrame, 1000);
+  fitFrame();
+  document.addEventListener('visibilitychange', function () { if (!document.hidden) { fitSoon(); quietSync(); checkUpdate(); } });
   window.addEventListener('pageshow', function (e) { if (e.persisted) { quietSync(); checkUpdate(); } });
   window.addEventListener('online', function () { quietSync(); });
 
