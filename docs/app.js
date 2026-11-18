@@ -7,7 +7,7 @@
   var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   var MONTH = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   var DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  var APP_VERSION = '46';
+  var APP_VERSION = '47';
   var H8 = 8 * 3600e3, DAY = 864e5, SELLING = {approach: 1, open: 1, present: 1, followup: 1, close: 1, joinfield: 1, recruit: 1};
 
   /* ---------- storage (each phone) ---------- */
@@ -1633,7 +1633,7 @@
       '<div class="card"><h4>How counting works</h4><p class="tiny muted">Each event has a type (👋 Approach, 📊 Present, 🔁 Follow-up, ✍️ Closing, 🌱 Recruit, 👥 Meeting, 🛠️ Service, 🎁 CRM, 📝 Paperwork, 🏠 Personal). The app guesses it from the title. After the event, tap ✓ Done, 💰 Closed (with ANP) or ✕ Didn\'t happen. Only confirmed events count, except: setting a 📊 presentation counts O (appointment) straight away; P counts when it’s Done. O/A = prospecting, P/O = presentation, F/P = follow-up, NOC/P = closing ratio. Personal events never count.</p></div>' +
       subCard() + soundCard() + (m.owner ? '<div class="card"><h4>🎉 Celebration themes</h4><p class="tiny muted">Only you (the owner) see this. Upload a festival poster: the app takes its colours and pictures for the whole team.</p><a class="btn primary" href="#/themes">Manage themes</a></div>' : '') +
       '<div class="card"><h4>Help & security</h4><div class="row"><button class="btn primary" data-act="tour">📖 Take the tour</button><button class="btn ghost" data-act="pinchange">🔑 Change my PIN</button></div></div>' +
-      '<p class="center tiny muted">App version ' + APP_VERSION + ' · ' + (isIOS() ? 'iPhone' : 'Android / other') + (standalone() ? ' · home-screen app' : ' · browser') + ' · notifications: ' + ('Notification' in window ? Notification.permission : 'not supported') + ' · server has ' + (me().devices || 0) + ' phone(s) for you</p>' +
+      '<p class="center tiny muted">App version ' + APP_VERSION + ' · ' + frameInfo() + ' · ' + (isIOS() ? 'iPhone' : 'Android / other') + (standalone() ? ' · home-screen app' : ' · browser') + ' · notifications: ' + ('Notification' in window ? Notification.permission : 'not supported') + ' · server has ' + (me().devices || 0) + ' phone(s) for you</p>' +
       '<p class="center"><button class="link danger" data-act="signout">Sign out of this phone</button></p></main>' + tabs('me');
   }
   function membersScreen() {
@@ -1999,12 +1999,26 @@
     if (!v || Math.abs((v.scale || 1) - 1) > 0.01) return;          // pinch-zoomed: leave the frame alone
     var top = Math.max(0, Math.round(v.offsetTop)), h = Math.round(v.height);
     var f = document.activeElement, typing = !!(f && /^(INPUT|TEXTAREA|SELECT)$/.test(f.tagName) && !/^(checkbox|radio|button|submit|file|color|range)$/.test(f.type || ''));
+    // iPhone Home Screen app: iOS sometimes reports (and lays out) a viewport shorter than the screen by about the status bar,
+    // and every height it gives (innerHeight, 100%, vh, visualViewport) agrees with the wrong number, so the bottom bar floats.
+    // The physical screen size is never wrong: when the app fills the screen and no keyboard is up, the frame IS the screen.
+    var full = fullScreenH();
+    if (full && !typing) { top = 0; h = full; }
+    FRAME.full = full; FRAME.vv = Math.round(v.height); FRAME.ih = window.innerHeight;
     var kb = typing && h < window.innerHeight - 120;                  // keyboard is up: hide the bottom bar, the frame ends at the keyboard
     if (top !== FRAME.top) { FRAME.top = top; root.style.setProperty('--frame-top', top + 'px'); }
     if (h !== FRAME.h) { FRAME.h = h; root.style.setProperty('--frame-h', h + 'px'); }
     if (kb !== FRAME.kb) { FRAME.kb = kb; root.classList.toggle('kb', kb); }
     if (!typing && (window.scrollY || window.scrollX)) window.scrollTo(0, 0);
   }
+  function fullScreenH() {
+    if (navigator.standalone !== true || !window.screen) return 0;             // only the iPhone/iPad Home Screen app has this bug
+    var portrait = window.matchMedia ? matchMedia('(orientation: portrait)').matches : innerHeight >= innerWidth;
+    var sw = Math.min(screen.width, screen.height), sh = Math.max(screen.width, screen.height);
+    var W = portrait ? sw : sh, H = portrait ? sh : sw;
+    return Math.abs(window.innerWidth - W) <= 2 ? H : 0;                      // not full width (iPad split view): trust the browser
+  }
+  function frameInfo() { var F = FRAME || {}; return 'Screen ' + (F.full || '–') + ' · view ' + (F.ih || innerHeight) + ' · visible ' + (F.vv || '–') + ' · app ' + (F.h > 0 ? F.h : '–'); }
   function fitSoon() { fitFrame(); setTimeout(fitFrame, 60); setTimeout(fitFrame, 350); setTimeout(fitFrame, 800); }
   if (window.visualViewport) { visualViewport.addEventListener('resize', fitFrame); visualViewport.addEventListener('scroll', fitFrame); }
   ['resize', 'orientationchange', 'pageshow', 'focus'].forEach(function (ev) { window.addEventListener(ev, fitSoon); });
