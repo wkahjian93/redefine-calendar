@@ -7,7 +7,7 @@
   var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   var MONTH = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   var DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  var APP_VERSION = '45';
+  var APP_VERSION = '46';
   var H8 = 8 * 3600e3, DAY = 864e5, SELLING = {approach: 1, open: 1, present: 1, followup: 1, close: 1, joinfield: 1, recruit: 1};
 
   /* ---------- storage (each phone) ---------- */
@@ -452,7 +452,7 @@
   }
   /* Guided tour: highlights each part with a short note. Skip any time. */
   var TOUR = [
-    ['#/', '.seg', '📅 Views', 'Month, Agenda (whole month as a list), Team day (who is free) and List. They stay at the top while you scroll.'],
+    ['#/', '.seg', '📅 Views', 'Month, Agenda (one week, Monday to Sunday), Team day (who is free) and List. They stay at the top while you scroll.'],
     ['#/', '.chips', '👥 Whose calendar', 'Everyone, only Me, or Me + someone (e.g. your partner). 📌 keeps a Me + chip, × closes it.'],
     ['#/', '.grid, .ag', '👆 Days', 'Tap a day to choose it (scroll inside to see all). Tap it again to open that day. Swipe sideways to change month.'],
     ['#/', '.fab', '➕ Add', 'Add an appointment. Type the title: the app picks the type and colour. You can repeat it weekly / monthly / yearly. Or hold 🎤, speak, let go: it’s saved for you.'],
@@ -932,14 +932,24 @@
     }
     return '<div class="card"><h4>Partner calendar</h4>' + body + '</div>';
   }
-  /* Agenda: the whole month as a compact list, one row per day (big date + weekday, then coloured time + title) */
+  /* Agenda: one week (Mon–Sun) as a compact list, one row per day (big date + weekday, then coloured time + title) */
   var WEEKDAY = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
   function hmLong(ms) { var p = P(ms); return ((p.h % 12) || 12) + ':' + pad(p.mi) + (p.h < 12 ? ' AM' : ' PM'); }
+  /* Agenda = one week, Monday at the top, Sunday at the bottom; swipe or ‹ › moves a week */
+  function mondayOf(k) { return addDays(k, -((P(keyMs(k)).w + 6) % 7)); }
+  function agWeek() { return S.agWeek || (S.agWeek = mondayOf(S.sel || dayKey(Date.now()))); }
+  function weekLabel(mon) { var a = P(keyMs(mon)), b = P(keyMs(addDays(mon, 6))), s = function (m) { return MONTH[m].slice(0, 3); }; return a.d + (a.m !== b.m ? ' ' + s(a.m) + (a.y !== b.y ? ' ' + a.y : '') : '') + ' – ' + b.d + ' ' + s(b.m) + ' ' + b.y; }
+  function goWeek(step) {
+    S.agWeek = addDays(agWeek(), 7 * step); var today = dayKey(Date.now()), inWk = today >= S.agWeek && today <= addDays(S.agWeek, 6);
+    S.sel = inWk ? today : S.agWeek; var q = P(keyMs(addDays(S.agWeek, 3)));
+    if (q.m !== S.cursor.m || q.y !== S.cursor.y) { S.cursor = {y: q.y, m: q.m}; render(); return quietSync(); }
+    render();
+  }
   function agendaView() {
-    var c = S.cursor, days = new Date(Date.UTC(c.y, c.m + 1, 0)).getUTCDate(), today = dayKey(Date.now()), list = filtered(), my = me().id, html = '<div class="ag">';
-    for (var n = 1; n <= days; n++) {
-      var k = c.y + '-' + pad(c.m + 1) + '-' + pad(n), p = P(keyMs(k)), evs = onDay(list, k).sort(function (x, y) { return (y.allDay ? 1 : 0) - (x.allDay ? 1 : 0) || sMs(x) - sMs(y); });
-      html += '<div class="ag-day' + (k === today ? ' today' : '') + (p.w === 0 ? ' sun' : '') + '" id="ag-' + k + '"><button class="ag-date" data-act="ag-new" data-k="' + k + '" aria-label="Add on ' + k + '"><b>' + n + '</b><small>' + WEEKDAY[p.w] + '</small>' + (lunarLabel(k) ? '<em class="lun">' + lunarLabel(k) + '</em>' : '') + '</button><div class="ag-evs">' + holHtml(k, 'ag-hol') +
+    var mon = agWeek(), today = dayKey(Date.now()), list = filtered(), my = me().id, html = '<div class="ag">';
+    for (var i = 0; i < 7; i++) {
+      var k = addDays(mon, i), p = P(keyMs(k)), n = p.d, evs = onDay(list, k).sort(function (x, y) { return (y.allDay ? 1 : 0) - (x.allDay ? 1 : 0) || sMs(x) - sMs(y); });
+      html += '<div class="ag-day' + (k === today ? ' today' : '') + (p.w === 0 ? ' sun' : '') + '" id="ag-' + k + '"><button class="ag-date" data-act="ag-new" data-k="' + k + '" aria-label="Add on ' + k + '"><b>' + n + '</b><small>' + WEEKDAY[p.w] + (n === 1 || i === 0 ? ' · ' + MONTH[p.m].slice(0, 3) : '') + '</small>' + (lunarLabel(k) ? '<em class="lun">' + lunarLabel(k) + '</em>' : '') + '</button><div class="ag-evs">' + holHtml(k, 'ag-hol') +
         evs.map(function (e) {
           var o = mem(e.ownerId), startsToday = dayKey(sMs(e)) === k;
           var t = e.allDay || !startsToday ? 'All-day' : hmLong(sMs(e));
@@ -970,6 +980,8 @@
     var c = S.cursor, today = dayKey(Date.now()), confirm = toConfirm();
     var head = S.view === 'day'
       ? '<div class="monthnav"><button class="nav" data-act="day" data-d="-1" aria-label="Previous day">‹</button><b>' + esc(dayLabel(S.dayView)) + '</b><button class="nav" data-act="day" data-d="1" aria-label="Next day">›</button><button class="btn tiny ghost" data-act="today">Today</button></div>'
+      : S.view === 'agenda'
+      ? '<div class="monthnav"><button class="nav" data-act="week" data-d="-1" aria-label="Previous week">‹</button><b class="mtitle">' + whoseFaces() + '<span>' + esc(weekLabel(agWeek())) + '</span></b><button class="nav" data-act="week" data-d="1" aria-label="Next week">›</button><button class="btn tiny ghost" data-act="today">Today</button></div>'
       : '<div class="monthnav"><button class="nav" data-act="month" data-d="-1" aria-label="Previous month">‹</button><b class="mtitle">' + whoseFaces() + '<span>' + MONTH[c.m] + ' ' + c.y + '</span></b><button class="nav" data-act="month" data-d="1" aria-label="Next month">›</button><button class="btn tiny ghost" data-act="today">Today</button></div>';
     var body = S.view === 'day' ? (isLeader() ? '<a class="btn primary big bt-link" href="#/besttime">🔎 Best date for a team activity</a>' : '') + teamDay() : S.view === 'list' ? listView() : S.view === 'agenda' ? agendaView() : monthGrid() + '<p class="tiny muted hint">Tap a day to choose it (scroll inside to see all). Tap it again to open that day’s events.</p>';
     var nowP = P(Date.now()), yLeft = Math.round((Date.UTC(nowP.y, 11, 31) - Date.UTC(nowP.y, nowP.m, nowP.d)) / DAY), mLeft = new Date(Date.UTC(nowP.y, nowP.m + 1, 0)).getUTCDate() - nowP.d;
@@ -1804,7 +1816,6 @@
     var y = r === lastRoute ? $scroll.scrollTop : 0;   // only #scroll scrolls; the frame (body) never moves
     $app.innerHTML = html; lastRoute = r;
     $scroll.scrollTop = y;
-    if (!parts[0] && S.view === 'agenda' && y === 0) setTimeout(scrollToToday, 30);
     if (parts[0] === 'e' && parts[2] === 'c' && y === 0) { var cm = $app.querySelector('.comments'); if (cm) setTimeout(function () { cm.scrollIntoView({block: 'start'}); }, 30); }
   }
 
@@ -1854,12 +1865,13 @@
       var go = function () { return send('partner', {action: pa, id: pid}, {request: 'Request sent 💌', accept: 'Linked 💑', decline: 'Declined', cancel: 'Request cancelled', unlink: 'Unlinked'}[pa]); };
       return pmsg ? confirmBox('Partner calendar', pmsg, pa === 'unlink' ? 'Unlink' : 'Yes', pa === 'unlink').then(function (y) { if (y) go(); }) : go();
     }
-    if (a === 'view') { S.view = b.dataset.v; LS.set('view', S.view); if (S.view === 'agenda') setTimeout(scrollToToday, 30); if (S.view === 'day' && !S.dayView) S.dayView = S.sel || today; return render(); }
+    if (a === 'view') { S.view = b.dataset.v; LS.set('view', S.view); if (S.view === 'agenda') S.agWeek = mondayOf(S.sel || today); if (S.view === 'day' && !S.dayView) S.dayView = S.sel || today; return render(); }
     if (a === 'sel' && S.view === 'month' && S.sel === b.dataset.k) return openDay(b.dataset.k);
     if (a === 'sel') { S.sel = b.dataset.k; var p = P(keyMs(S.sel)); if (p.m !== S.cursor.m) { S.cursor = {y: p.y, m: p.m}; quietSync(); } return render(); }
     if (a === 'month') { var c = S.cursor, m = c.m + +b.dataset.d; S.cursor = {y: c.y + Math.floor(m / 12), m: (m + 12) % 12}; S.sel = dayKey(Date.UTC(S.cursor.y, S.cursor.m, 1) - H8 + 3600e3); render(); return quietSync(); }
     if (a === 'day') { S.dayView = addDays(S.dayView, +b.dataset.d); S.sel = S.dayView; var q = P(keyMs(S.dayView)); if (q.m !== S.cursor.m) { S.cursor = {y: q.y, m: q.m}; quietSync(); } return render(); }
-    if (a === 'today') { var t = P(Date.now()); S.cursor = {y: t.y, m: t.m}; S.sel = today; S.dayView = today; render(); return quietSync(); }
+    if (a === 'week') return goWeek(+b.dataset.d);
+    if (a === 'today') { var t = P(Date.now()); S.cursor = {y: t.y, m: t.m}; S.sel = today; S.agWeek = mondayOf(today); S.dayView = today; render(); return quietSync(); }
     if (a === 'new') return editor(null);
     if (a === 'ag-new') { closeModal(); S.sel = b.dataset.k; return editor(null); }
     if ((a === 'edit' || a === 'out' || a === 'cheer' || a === 'invite' || a === 'rsvp') && /^tmp/.test(b.dataset.id || '')) return toast('Still saving… one moment.');
@@ -1958,9 +1970,10 @@
   document.addEventListener('touchend', function (ev) {
     if (!sw0) return; var t = ev.changedTouches[0], dx = t.clientX - sw0.x, dy = t.clientY - sw0.y, dt = Date.now() - sw0.t; sw0 = null;
     if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 1.5 || dt > 800 || route().replace(/^[/]+/, '')) return;
-    var step = dx < 0 ? 1 : -1;   // swipe left = next month (or day), swipe right = previous
+    var step = dx < 0 ? 1 : -1;   // swipe left = next month (week in Agenda, day in Team day), swipe right = previous
     if (S.view === 'day') { S.dayView = addDays(S.dayView, step); S.sel = S.dayView; var q2 = P(keyMs(S.dayView)); if (q2.m !== S.cursor.m) { S.cursor = {y: q2.y, m: q2.m}; quietSync(); } return render(); }
     if (S.view === 'list') return;
+    if (S.view === 'agenda') { goWeek(step); $scroll.scrollTop = 0; return; }
     var c2 = S.cursor, m2 = c2.m + step; S.cursor = {y: c2.y + Math.floor(m2 / 12), m: (m2 + 12) % 12}; S.sel = dayKey(Date.UTC(S.cursor.y, S.cursor.m, 1) - H8 + 3600e3); render(); $scroll.scrollTop = 0; quietSync();
   }, {passive: true});
   window.addEventListener('hashchange', function () { closeModal(); render(); });
