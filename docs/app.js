@@ -7,7 +7,7 @@
   var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   var MONTH = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   var DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  var APP_VERSION = '47';
+  var APP_VERSION = '48';
   var H8 = 8 * 3600e3, DAY = 864e5, SELLING = {approach: 1, open: 1, present: 1, followup: 1, close: 1, joinfield: 1, recruit: 1};
 
   /* ---------- storage (each phone) ---------- */
@@ -1994,6 +1994,7 @@
      their top (the sheet's ✕) is cut off. Fix at the source: keep the frame (body, see style.css) exactly on the visible area.
      Checked on every viewport event and once a second, because iOS does not always fire an event when it gets it wrong. */
   var FRAME = {top: -1, h: -1, kb: null};
+  if (navigator.standalone === true || (window.matchMedia && matchMedia('(display-mode: standalone)').matches)) document.documentElement.classList.add('standalone');
   function fitFrame() {
     var v = window.visualViewport, root = document.documentElement;
     if (!v || Math.abs((v.scale || 1) - 1) > 0.01) return;          // pinch-zoomed: leave the frame alone
@@ -2018,7 +2019,7 @@
     var W = portrait ? sw : sh, H = portrait ? sh : sw;
     return Math.abs(window.innerWidth - W) <= 2 ? H : 0;                      // not full width (iPad split view): trust the browser
   }
-  function frameInfo() { var F = FRAME || {}; return 'Screen ' + (F.full || '–') + ' · view ' + (F.ih || innerHeight) + ' · visible ' + (F.vv || '–') + ' · app ' + (F.h > 0 ? F.h : '–'); }
+  function frameInfo() { var F = FRAME || {}; return 'Screen ' + (F.full || '–') + ' · view ' + (F.ih || innerHeight) + ' · visible ' + (F.vv || '–') + ' · app ' + (F.h > 0 ? F.h : '–') + ' · page ' + document.documentElement.offsetHeight; }
   function fitSoon() { fitFrame(); setTimeout(fitFrame, 60); setTimeout(fitFrame, 350); setTimeout(fitFrame, 800); }
   if (window.visualViewport) { visualViewport.addEventListener('resize', fitFrame); visualViewport.addEventListener('scroll', fitFrame); }
   ['resize', 'orientationchange', 'pageshow', 'focus'].forEach(function (ev) { window.addEventListener(ev, fitSoon); });

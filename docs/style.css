@@ -18,6 +18,10 @@ body.locked #scroll { overflow: hidden; }
 html { height: 100%; overflow: hidden; overscroll-behavior: none; }
 body { position: fixed; left: 0; right: 0; top: var(--frame-top, 0px); height: var(--frame-h, 100%); width: 100%; overflow: hidden; transform: translateZ(0); }
 #scroll { position: absolute; inset: 0; overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
+/* iOS 26 Home Screen app bug (WebKit 301108): the page is laid out one status bar shorter than the screen and anything below
+   that line is cut off, even fixed elements. Making the page itself (html) as tall as the screen lets the app draw to the bottom
+   edge. Capped by 100lvh so it can never be taller than the screen. html.standalone is set in app.js. */
+html.standalone { height: auto; min-height: min(100lvh, calc(100% + env(safe-area-inset-top, 0px))); }
 html.kb .tabs, html.kb .fab { display: none; }
 html.kb #app { padding-bottom: 16px; }
 a { color: inherit; text-decoration: none; }
