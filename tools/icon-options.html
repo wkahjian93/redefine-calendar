@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Icon options</title>
+<style>
+  body { margin: 0; font: 15px/1.4 -apple-system, "Segoe UI", Roboto, Arial, sans-serif; background: #F4F5F9; color: #1B1F2A; }
+  h1 { font-size: 20px; margin: 16px; }
+  .opts { display: flex; flex-wrap: wrap; gap: 16px; padding: 0 16px 16px; }
+  .opt { background: #fff; border-radius: 16px; padding: 14px; box-shadow: 0 2px 10px rgba(0,0,0,.08); width: 300px; }
+  .opt h2 { margin: 0 0 10px; font-size: 16px; }
+  .big { display: flex; gap: 12px; align-items: center; }
+  .big canvas.sq { width: 150px; height: 150px; border-radius: 34px; }
+  .big canvas.ci { width: 96px; height: 96px; border-radius: 50%; }
+  .phone { margin-top: 12px; border-radius: 22px; padding: 16px 12px; background: linear-gradient(160deg, #3a6186, #89253e); display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px 8px; }
+  .app { text-align: center; color: #fff; font-size: 10px; text-shadow: 0 1px 2px rgba(0,0,0,.5); }
+  .app canvas, .app i { display: block; width: 56px; height: 56px; border-radius: 13px; margin: 0 auto 4px; }
+  .app i { background: rgba(255,255,255,.35); }
+  .save { margin-top: 10px; width: 100%; padding: 10px; border: 0; border-radius: 10px; background: #14213D; color: #fff; font-weight: 700; cursor: pointer; }
+  #out { margin: 0 16px 16px; font-weight: 700; }
+</style></head>
+<body>
+<h1>REDEFINE Calendar: Home Screen icon options</h1>
+<div class="opts" id="opts"></div>
+<p id="out"></p>
+<script>
+/* Each option = the REDEFINE hexagon inside a calendar page. Drawn at any size so every icon file stays sharp. */
+var OPTS = {
+  A: {name: 'A · Navy classic', bg: ['#1D2F57', '#14213D'], page: '#FFFFFF', head: ['#F0646E', '#D9404D'], ring: '#FFFFFF', ringLine: '#14213D', hex: '#14213D', line: null},
+  B: {name: 'B · Coral pop', bg: ['#F0646E', '#C9364A'], page: '#FFFFFF', head: ['#1D2F57', '#14213D'], ring: '#FFFFFF', ringLine: '#14213D', hex: '#D9404D', line: null},
+  C: {name: 'C · Gold premium', bg: ['#1A2440', '#0B1226'], page: '#16213D', head: ['#F2C14E', '#D69E12'], ring: '#F2C14E', ringLine: '#0B1226', hex: '#F2C14E', line: '#F2C14E'}
+};
+/* the hexagon is cut out of the full logo (larger than team-mark.png, so it stays sharp at 512 px) */
+var mark = document.createElement('canvas'), logo = new Image(); logo.src = '/icons/redefine-logo.png';
+function cutMark() {
+  var c = document.createElement('canvas'); c.width = logo.width; c.height = logo.height; var x = c.getContext('2d'); x.drawImage(logo, 0, 0);
+  var d = x.getImageData(0, 0, c.width, 190).data, x0 = 1e9, y0 = 1e9, x1 = -1, y1 = -1;
+  for (var y = 0; y < 190; y++) for (var i = 0; i < c.width; i++) if (d[(y * c.width + i) * 4 + 3] > 40) { if (i < x0) x0 = i; if (i > x1) x1 = i; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+  mark.width = x1 - x0 + 1; mark.height = y1 - y0 + 1; mark.getContext('2d').drawImage(c, x0, y0, mark.width, mark.height, 0, 0, mark.width, mark.height);
+}
+function tinted(color, w, h) {   // the white hexagon recoloured
+  var c = document.createElement('canvas'); c.width = w; c.height = h; var x = c.getContext('2d');
+  x.drawImage(mark, 0, 0, w, h); x.globalCompositeOperation = 'source-in'; x.fillStyle = color; x.fillRect(0, 0, w, h);
+  return c;
+}
+function rr(x, X, Y, W, H, r) { x.beginPath(); x.moveTo(X + r, Y); x.arcTo(X + W, Y, X + W, Y + H, r); x.arcTo(X + W, Y + H, X, Y + H, r); x.arcTo(X, Y + H, X, Y, r); x.arcTo(X, Y, X + W, Y, r); x.closePath(); }
+function grad(x, S, cols) { var g = x.createLinearGradient(0, 0, 0, S); g.addColorStop(0, cols[0]); g.addColorStop(1, cols[1]); return g; }
+/* scale < 1 shrinks the drawing towards the centre (Android "maskable" icons may be cut to a circle) */
+function draw(canvas, o, S, scale) {
+  canvas.width = canvas.height = S; var x = canvas.getContext('2d');
+  x.fillStyle = grad(x, S, o.bg); x.fillRect(0, 0, S, S);
+  x.save(); x.translate(S / 2, S / 2); x.scale(scale || 1, scale || 1); x.translate(-S / 2, -S / 2);
+  var L = 0.17 * S, T = 0.23 * S, W = 0.66 * S, H = 0.61 * S, R = 0.085 * S, HB = 0.17 * S;
+  // soft shadow
+  x.save(); x.shadowColor = 'rgba(0,0,0,.28)'; x.shadowBlur = 0.04 * S; x.shadowOffsetY = 0.015 * S; rr(x, L, T, W, H, R); x.fillStyle = o.page; x.fill(); x.restore();
+  // header band
+  x.save(); rr(x, L, T, W, H, R); x.clip(); x.fillStyle = grad(x, S, o.head); x.fillRect(L, T, W, HB); x.restore();
+  if (o.line) { rr(x, L, T, W, H, R); x.lineWidth = 0.012 * S; x.strokeStyle = o.line; x.stroke(); }
+  // binder rings
+  [0.36, 0.64].forEach(function (p) { var rw = 0.055 * S, rh = 0.13 * S, rx = p * S - rw / 2, ry = T - 0.06 * S; rr(x, rx, ry, rw, rh, rw / 2); x.fillStyle = o.ring; x.fill(); x.lineWidth = 0.012 * S; x.strokeStyle = o.ringLine; x.stroke(); });
+  // hexagon in the page
+  var hh = 0.31 * S, hw = hh * mark.width / mark.height, cy = T + HB + (H - HB) / 2;
+  x.drawImage(tinted(o.hex, Math.round(hw), Math.round(hh)), S / 2 - hw / 2, cy - hh / 2, hw, hh);
+  x.restore();
+  return canvas;
+}
+function make(o, S, scale) { return draw(document.createElement('canvas'), o, S, scale); }
+logo.onload = function () {
+  cutMark();
+  var wrap = document.getElementById('opts');
+  Object.keys(OPTS).forEach(function (k) {
+    var o = OPTS[k], d = document.createElement('div'); d.className = 'opt';
+    d.innerHTML = '<h2>' + o.name + '</h2><div class="big"></div><div class="phone"></div><button class="save" data-k="' + k + '">Use option ' + k + '</button>';
+    var big = d.querySelector('.big'), sq = make(o, 300); sq.className = 'sq'; big.appendChild(sq);
+    var ci = make(o, 192, 0.82); ci.className = 'ci'; big.appendChild(ci);
+    var ph = d.querySelector('.phone');
+    for (var i = 0; i < 8; i++) {
+      var a = document.createElement('div'); a.className = 'app';
+      if (i === 5) { var ic = make(o, 168); a.appendChild(ic); a.appendChild(document.createTextNode('REDEFINE Cal')); }
+      else { a.appendChild(document.createElement('i')); a.appendChild(document.createTextNode(['Phone', 'WhatsApp', 'Photos', 'Camera', 'Maps', '', 'Notes', 'Settings'][i])); }
+      ph.appendChild(a);
+    }
+    wrap.appendChild(d);
+  });
+  window.ICONS_READY = true;
+};
+/* writes the chosen design into docs/icons (local preview server only) */
+function save(name, canvas) { return fetch('/__save?name=' + name, {method: 'POST', body: canvas.toDataURL('image/png').split(',')[1]}).then(function (r) { if (!r.ok) throw new Error(name); }); }
+window.saveOption = function (k) {
+  var o = OPTS[k];
+  return Promise.all([save('icon-192.png', make(o, 192)), save('icon-512.png', make(o, 512)), save('apple-touch-icon.png', make(o, 180)), save('icon-maskable-512.png', make(o, 512, 0.82))])
+    .then(function () { document.getElementById('out').textContent = 'Saved option ' + k + ' ✓'; });
+};
+document.addEventListener('click', function (e) { var b = e.target.closest('.save'); if (b) window.saveOption(b.dataset.k); });
+/* one picture of all three options, for sending */
+window.sheet = function () {
+  var keys = Object.keys(OPTS), c = document.createElement('canvas'), W = 360, x; c.width = W * keys.length; c.height = 500; x = c.getContext('2d');
+  x.fillStyle = '#F4F5F9'; x.fillRect(0, 0, c.width, c.height);
+  keys.forEach(function (k, i) {
+    var o = OPTS[k], X = i * W;
+    x.fillStyle = '#1B1F2A'; x.font = 'bold 24px Segoe UI, Arial'; x.textAlign = 'center'; x.fillText(o.name, X + W / 2, 36);
+    x.save(); rr(x, X + 30, 56, 300, 300, 68); x.clip(); x.drawImage(make(o, 300), X + 30, 56); x.restore();
+    x.save(); x.beginPath(); x.arc(X + 130, 430, 40, 0, 7); x.clip(); x.drawImage(make(o, 80, 0.82), X + 90, 390); x.restore();
+    x.save(); rr(x, X + 196, 400, 60, 60, 14); x.clip(); x.drawImage(make(o, 60), X + 196, 400); x.restore();
+    x.fillStyle = '#6B7280'; x.font = '14px Segoe UI, Arial'; x.fillText('Android circle', X + 130, 488); x.fillText('real size', X + 226, 488);
+  });
+  return save('icon-options.png', c);
+};
+</script>
+</body></html>
