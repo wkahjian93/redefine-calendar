@@ -7,7 +7,7 @@
   var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   var MONTH = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   var DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  var APP_VERSION = '50';
+  var APP_VERSION = '51';
   var H8 = 8 * 3600e3, DAY = 864e5, SELLING = {approach: 1, open: 1, present: 1, followup: 1, close: 1, joinfield: 1, recruit: 1};
 
   /* ---------- storage (each phone) ---------- */
@@ -240,7 +240,11 @@
     if (op === 'delmsg') return function (d) { d.msgs = d.msgs.filter(function (m) { return m.id !== q.id; }); };
     if (op === 'profile' && q.bday != null) return function (d) { d.me.bday = q.bday; d.members.forEach(function (m) { if (m.id === my) m.bday = q.bday; }); };
     if (op === 'profile') return function (d) { [d.me].concat(d.members.filter(function (m) { return m.id === my; })).forEach(function (m) { if (q.color) m.color = q.color; if (q.short) { m.short = q.short; d.me.shortSet = true; } }); };
-    if (op === 'todo') return function (d) { var it = q.item; d.todos = d.todos || []; var ex = d.todos.filter(function (x) { return x.id === it.id; })[0]; if (ex) { ex.text = it.text; ex.q = String(it.q); ex.due = it.due || ''; ex.done = it.done ? (ex.done || now) : ''; } else d.todos.push({id: it.id || tmp, text: it.text, q: String(it.q), due: it.due || '', done: '', created: now}); };
+    if (op === 'todo') return function (d) {
+      var it = q.item; d.todos = d.todos || []; var ex = d.todos.filter(function (x) { return x.id === it.id; })[0], note = ex ? ex.kind === 'note' : it.kind === 'note';
+      if (ex) { ex.text = it.text; ex.updated = now; if (!note) { ex.q = String(it.q || '1'); ex.due = it.due || ''; ex.done = it.done ? (ex.done || now) : ''; if (it.notes != null) ex.notes = it.notes; } }
+      else d.todos.push({id: it.id || tmp, kind: note ? 'note' : '', text: it.text, q: note ? '' : String(it.q || '1'), due: note ? '' : (it.due || ''), notes: it.notes || '', done: '', created: now, updated: now});
+    };
     if (op === 'checked') return function (d) { (d.events || []).forEach(function (x) { if (x.id === q.id) x.source = 'voiceok'; }); };
     if (op === 'postpone') return function (d) { (d.events || []).forEach(function (x) { if (x.id !== q.id) return; var s0 = sMs(x), dur = Math.max(0, eMs(x) - s0) || 3600e3; if (x.allDay) { x.start = q.date; x.end = q.date; } else { var ns = Date.parse(q.date + 'T' + q.time + ':00+08:00'); x.start = new Date(ns).toISOString(); x.end = new Date(ns + dur).toISOString(); } x.out = ''; }); };
     if (op === 'tododel') return function (d) { d.todos = (d.todos || []).filter(function (x) { return x.id !== q.id; }); };
@@ -572,7 +576,7 @@
     tick();
   }
   // browsers only allow sound after a tap: start on the first tap when music is switched on
-  document.addEventListener('pointerdown', function (ev) { if (ev.target.closest && ev.target.closest('.fab.mic')) return; if (LS.get('music', false) && !MUS.on && !HOLD) musicStart(); }, {passive: true});
+  document.addEventListener('pointerdown', function (ev) { if (ev.target.closest && ev.target.closest('.fab.mic, .mic-hold')) return; if (LS.get('music', false) && !MUS.on && !HOLD) musicStart(); }, {passive: true});
   document.addEventListener('visibilitychange', function () { if (document.hidden) musicStop(); });
 
   /* files (posters, music) are fetched once and kept on the device */
@@ -776,14 +780,14 @@
   var HOLD = null, VQ = LS.get('voiceQ', []), vqBusy = false;
   function holdUI(h) {
     var el = document.getElementById('recbar'); if (!el) { el = document.createElement('div'); el.id = 'recbar'; document.body.appendChild(el); }
-    if (!h) { el.className = ''; document.querySelectorAll('.fab.mic').forEach(function (b) { b.classList.remove('rec'); }); return; }
+    if (!h) { el.className = ''; document.querySelectorAll('.fab.mic, .mic-hold').forEach(function (b) { b.classList.remove('rec'); }); return; }
     var sec = h.tStart ? Math.floor((Date.now() - h.tStart) / 1000) : 0;
     el.className = 'on' + (h.slide ? ' cancel' : '');
     el.innerHTML = h.slide ? '🗑️ Let go to cancel' : '<i class="recdot"></i><b>0:' + ('0' + Math.min(59, sec)).slice(-2) + '</b><span>' + (h.rec ? '‹ slide left to cancel' : 'Getting the microphone…') + '</span>';
     if (h.btn) h.btn.classList.add('rec');
   }
   function micDown(ev) {
-    var btn = ev.target.closest && ev.target.closest('.fab.mic'); if (!btn || HOLD) return;
+    var btn = ev.target.closest && ev.target.closest('.fab.mic, .mic-hold'); if (!btn || HOLD) return;
     ev.preventDefault();
     try { btn.setPointerCapture(ev.pointerId); } catch (x) {}
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.MediaRecorder) return toast('Voice recording isn’t supported here. Update your phone or use Chrome / Safari.', 'bad');
@@ -804,7 +808,7 @@
         stream.getTracks().forEach(function (t) { t.stop(); }); clearInterval(h.tm);
         if (h.cancel) return toast('Cancelled', '');
         if (Date.now() - h.tStart < 900) return toast('Hold the 🎤 button while you speak, then let go.', 'bad');
-        queueVoice(new Blob(chunks, {type: String(rec.mimeType || mime || 'audio/webm').split(';')[0]}));
+        queueVoice(new Blob(chunks, {type: String(rec.mimeType || mime || 'audio/webm').split(';')[0]}), btn.classList.contains('mic-hold') ? {kind: btn.dataset.kind === 'note' ? 'note' : '', q: btn.dataset.q || ''} : null);
       };
       rec.start(500);
       try { navigator.vibrate && navigator.vibrate(15); } catch (x) {}
@@ -824,12 +828,12 @@
   document.addEventListener('pointermove', micMove);
   document.addEventListener('pointerup', function (ev) { micUp(ev); });
   document.addEventListener('pointercancel', function (ev) { micUp(ev, true); });
-  document.addEventListener('contextmenu', function (ev) { if (ev.target.closest && ev.target.closest('.fab.mic')) ev.preventDefault(); });
+  document.addEventListener('contextmenu', function (ev) { if (ev.target.closest && ev.target.closest('.fab.mic, .mic-hold')) ev.preventDefault(); });
   function saveVQ() { try { localStorage.setItem('rcal.voiceQ', JSON.stringify(VQ)); } catch (x) { /* too big for this phone's storage: it still goes out from memory */ } }
-  function queueVoice(blob) {
+  function queueVoice(blob, to) {
     fileB64(blob).then(function (b64) {
-      VQ.push({id: 'v' + Date.now(), audio: b64, mime: blob.type || 'audio/webm', tries: 0, next: 0}); VQ = VQ.slice(-5); saveVQ();
-      toast('🎤 Got it! Adding to your calendar.', 'good');
+      VQ.push({id: 'v' + Date.now(), audio: b64, mime: blob.type || 'audio/webm', tries: 0, next: 0, to: to || null}); VQ = VQ.slice(-5); saveVQ();
+      toast(to ? (to.kind === 'note' ? '🎤 Got it! Writing your note down.' : '🎤 Got it! Adding your to-do.') : '🎤 Got it! Adding to your calendar.', 'good');
       runVoiceQ();
     });
   }
@@ -838,8 +842,9 @@
     if (vqBusy || !VQ.length || !S.token || !navigator.onLine) return;
     var it = VQ[0]; if (it.next > Date.now()) return;
     vqBusy = true;
-    api('voice', {audio: it.audio, mime: it.mime, save: true}).then(function (j) {
+    (it.to ? api('voicetodo', {audio: it.audio, mime: it.mime, kind: it.to.kind, q: it.to.q}) : api('voice', {audio: it.audio, mime: it.mime, save: true})).then(function (j) {
       vqBusy = false; VQ = VQ.filter(function (x) { return x.id !== it.id; }); saveVQ();
+      if (it.to) { var tdo = j.todo || {}; toast((it.to.kind === 'note' ? '📝 Note saved: ' : '✅ To-do added: ') + String(tdo.text || '').slice(0, 60), 'good'); quietSync(true); return runVoiceQ(); }
       var e = j.event || {}, v = j.voice || {}, when = e.allDay ? dayLabel(String(e.start).slice(0, 10)) + ' (all day)' : dayLabel(dayKey(Date.parse(e.start))) + ' ' + hm(Date.parse(e.start));
       toast('✅ Added: ' + (e.title || 'appointment') + ' · ' + when + (v.missing && v.missing.length ? ' · please check' : ''), 'good');
       quietSync(true); runVoiceQ();
@@ -1216,23 +1221,48 @@
   var QUAD = [['1', '🔴', 'Urgent & important', 'Do it now'], ['2', '🟠', 'Urgent, not important', 'Quick / delegate'], ['3', '🔵', 'Important, not urgent', 'Plan a time'], ['4', '⚪', 'Not urgent, not important', 'Later or drop']];
   function todos() { return (S.data && S.data.todos) || []; }
   function todoDue() { var t = dayKey(Date.now()); return todos().filter(function (x) { return !x.done && x.due && x.due <= t; }).length; }
+  function isNote(x) { return x.kind === 'note'; }
   function todoScreen() {
-    var tab = S.todoTab || 'today', t = dayKey(Date.now()), list = todos().filter(function (x) {
-      if (tab === 'all') return S.showDone || !x.done;
-      return x.done ? x.done.slice(0, 10) === new Date(Date.now()).toISOString().slice(0, 10) || dayKey(Date.parse(x.done)) === t : (!x.due || x.due <= t);
-    });
-    var addQ = S.todoQ || '1';
-    var html = topbar('To-do') + '<main class="todo"><div class="seg"><button class="' + (tab === 'today' ? 'on' : '') + '" data-act="todotab" data-v="today">Today</button><button class="' + (tab === 'all' ? 'on' : '') + '" data-act="todotab" data-v="all">All time</button></div>' +
-      '<form class="todo-add" id="todoadd"><input name="t" maxlength="300" placeholder="Add a to-do…" autocomplete="off"><div class="qpick">' + QUAD.map(function (q) { return '<button type="button" class="qb' + (addQ === q[0] ? ' on' : '') + '" data-act="todoq" data-q="' + q[0] + '">' + q[1] + ' ' + q[2] + '</button>'; }).join('') + '</div>' +
-      '<div class="row"><label class="switch"><input type="checkbox" name="today"' + (tab === 'today' ? ' checked' : '') + '> For today</label><input type="date" name="due" class="due-in"><button class="btn primary">Add</button></div></form>' +
-      '<div class="quads">' + QUAD.map(function (q) {
-        var items = list.filter(function (x) { return x.q === q[0]; }).sort(function (x, y) { return (x.done ? 1 : 0) - (y.done ? 1 : 0) || String(x.due || '9').localeCompare(String(y.due || '9')); });
-        return '<section class="quad q' + q[0] + '"><h4>' + q[1] + ' ' + q[2] + '<small>' + q[3] + '</small></h4>' + (items.length ? items.map(function (x) {
+    var tab = S.todoTab === 'notes' ? 'notes' : 'todo', t = dayKey(Date.now()), all = todos();
+    var html = topbar('To-do') + '<main class="todo"><div class="seg"><button class="' + (tab === 'todo' ? 'on' : '') + '" data-act="todotab" data-v="todo">✅ To-do</button><button class="' + (tab === 'notes' ? 'on' : '') + '" data-act="todotab" data-v="notes">📝 Notes</button></div>';
+    if (tab === 'notes') {
+      var notes = all.filter(isNote).sort(function (x, y) { return String(y.updated || y.created).localeCompare(String(x.updated || x.created)); });
+      return html + '<div class="note-add"><button class="btn primary" data-act="note-new">＋ New note</button><button class="btn mic-hold" data-act="noop" data-kind="note" aria-label="Hold to record a note">🎤 Hold to talk</button></div>' +
+        '<p class="tiny muted">Hold 🎤 and speak, then let go: what you say is written down and saved as a note. Tap a note to edit it. Notes are private.</p>' +
+        (notes.length ? notes.map(function (x) {
+          var when = Date.parse(x.updated || x.created);
+          return '<button class="card note" data-act="note-edit" data-id="' + x.id + '"><span class="nt">' + (x.src === 'voice' ? '🎤 ' : '') + esc(String(x.text).slice(0, 400)) + (String(x.text).length > 400 ? '…' : '') + '</span><small>' + (when ? esc(dayLabel(dayKey(when))) + ' ' + hm(when) : '') + '</small></button>';
+        }).join('') : '<p class="empty">No notes yet.</p>') + '</main>' + tabs('todo');
+    }
+    var weekAgo = Date.now() - 7 * DAY, todo = all.filter(function (x) { return !isNote(x); });
+    var older = todo.filter(function (x) { return x.done && Date.parse(x.done) < weekAgo; }).length;
+    var list = todo.filter(function (x) { return !x.done || S.showDone || Date.parse(x.done) >= weekAgo; });
+    html += '<p class="tiny muted">Tap a box to add a to-do there, or hold its 🎤 and speak. Tap a to-do to edit it or move it to another box.</p><div class="quads">' + QUAD.map(function (q) {
+      var items = list.filter(function (x) { return x.q === q[0]; }).sort(function (x, y) { return (x.done ? 1 : 0) - (y.done ? 1 : 0) || String(x.due || '9').localeCompare(String(y.due || '9')) || String(x.created).localeCompare(String(y.created)); });
+      return '<section class="quad q' + q[0] + '" data-act="todo-new" data-q="' + q[0] + '"><div class="qhead"><h4>' + q[1] + ' ' + q[2] + '<small>' + q[3] + '</small></h4><button class="mic-hold qmic" data-act="noop" data-kind="todo" data-q="' + q[0] + '" aria-label="Hold to record a to-do in ' + q[2] + '">🎤</button></div>' +
+        items.map(function (x) {
           var late = !x.done && x.due && x.due < t;
-          return '<div class="td' + (x.done ? ' done' : '') + '"><button class="tick-btn" data-act="todotick" data-id="' + x.id + '" aria-label="Done">' + (x.done ? '✅' : '⬜') + '</button><span class="tt">' + esc(x.text) + (x.due ? '<small class="' + (late ? 'late' : '') + '">' + (x.due === t ? 'Today' : esc(dayLabel(x.due))) + '</small>' : '') + '</span><button class="link danger" data-act="tododel" data-id="' + x.id + '" aria-label="Delete">✕</button></div>';
-        }).join('') : '<p class="empty small">Nothing here.</p>') + '</section>';
-      }).join('') + '</div>' + (tab === 'all' ? '<p class="center"><button class="link" data-act="todoshowdone">' + (S.showDone ? 'Hide' : 'Show') + ' finished ones</button></p>' : '') + '</main>';
+          return '<div class="td' + (x.done ? ' done' : '') + '"><button class="tick-btn" data-act="todotick" data-id="' + x.id + '" aria-label="Done">' + (x.done ? '✅' : '⬜') + '</button><button class="tt" data-act="todo-edit" data-id="' + x.id + '">' + (x.src === 'voice' ? '🎤 ' : '') + esc(x.text) + (x.notes ? ' <i class="hasnote">📝</i>' : '') + (x.due ? '<small class="' + (late ? 'late' : '') + '">' + (x.due === t ? 'Today' : esc(dayLabel(x.due))) + '</small>' : '') + '</button></div>';
+        }).join('') + '<div class="qadd">＋ Tap to add</div></section>';
+    }).join('') + '</div>' + (older || S.showDone ? '<p class="center"><button class="link" data-act="todoshowdone">' + (S.showDone ? 'Hide older finished ones' : 'Show older finished ones (' + older + ')') + '</button></p>' : '') + '</main>';
     return html + tabs('todo');
+  }
+  function todoSheet(x, q) {
+    var isNew = !x; x = x || {q: q || '1', text: '', notes: '', due: ''};
+    modal('<form id="todoform" data-id="' + esc(x.id || '') + '"><div class="row between"><h3>' + (isNew ? 'New to-do' : 'Edit to-do') + '</h3><button type="button" class="icon-btn" data-act="close-modal" aria-label="Close">✕</button></div>' +
+      '<label>What to do<input name="t" maxlength="300" autocomplete="off" value="' + esc(x.text) + '"></label>' +
+      '<label>Details (optional)<textarea name="n" rows="3" maxlength="2000" placeholder="Anything to remember">' + esc(x.notes || '') + '</textarea></label>' +
+      '<p class="lbl">Box</p><div class="qpick4">' + QUAD.map(function (o) { return '<label class="qopt q' + o[0] + '"><input type="radio" name="q" value="' + o[0] + '"' + (String(x.q) === o[0] ? ' checked' : '') + '><span>' + o[1] + ' ' + o[2] + '</span></label>'; }).join('') + '</div>' +
+      '<label>Date (optional)<input type="date" name="due" value="' + esc(x.due || '') + '"></label>' +
+      '<div class="row sheet-btns"><button class="btn primary big">Save</button>' + (isNew ? '' : '<button type="button" class="btn danger" data-act="todo-del" data-id="' + esc(x.id) + '">🗑️ Delete</button>') + '</div></form>',
+      function (sh) { if (isNew) setTimeout(function () { var i = sh.querySelector('[name=t]'); if (i) i.focus(); }, 60); });
+  }
+  function noteSheet(x) {
+    var isNew = !x; x = x || {text: ''};
+    modal('<form id="noteform" data-id="' + esc(x.id || '') + '"><div class="row between"><h3>' + (isNew ? 'New note' : 'Edit note') + '</h3><button type="button" class="icon-btn" data-act="close-modal" aria-label="Close">✕</button></div>' +
+      '<textarea name="t" rows="10" maxlength="5000" placeholder="Write your note…">' + esc(x.text) + '</textarea>' +
+      '<div class="row sheet-btns"><button class="btn primary big">Save</button>' + (isNew ? '' : '<button type="button" class="btn danger" data-act="todo-del" data-id="' + esc(x.id) + '">🗑️ Delete</button>') + '</div></form>',
+      function (sh) { if (isNew) setTimeout(function () { var i = sh.querySelector('[name=t]'); if (i) i.focus(); }, 60); });
   }
   function invitesScreen() {
     var list = myInvites();
@@ -1872,10 +1902,16 @@
     if (a === 'tour') { location.hash = '#/'; return setTimeout(function () { tour(0); }, 200); }
     if (a === 'pinchange') return askNewPin(true);
     if (a === 'todotab') { S.todoTab = b.dataset.v; return render(); }
-    if (a === 'todoq') { S.todoQ = b.dataset.q; var keep = (document.querySelector('#todoadd [name=t]') || {}).value; render(); var ti = document.querySelector('#todoadd [name=t]'); if (ti) { ti.value = keep || ''; ti.focus(); } return; }
+    if (a === 'noop') return;
+    if (a === 'todo-new') return todoSheet(null, b.dataset.q);
+    if (a === 'todo-edit') { var te = todos().filter(function (x) { return x.id === b.dataset.id; })[0]; return te ? todoSheet(te) : null; }
+    if (a === 'note-new') return noteSheet(null);
+    if (a === 'note-edit') { var ne = todos().filter(function (x) { return x.id === b.dataset.id; })[0]; return ne ? noteSheet(ne) : null; }
+    if (a === 'todo-del') { var tdid = b.dataset.id; return confirmBox('Delete this?', 'It will be removed from all your devices.', 'Delete', true).then(function (y) { if (y) { closeModal(); send('tododel', {id: tdid}, 'Deleted'); } }); }
+
     if (a === 'todoshowdone') { S.showDone = !S.showDone; return render(); }
     if (a === 'todotick') { var tx = todos().filter(function (x) { return x.id === b.dataset.id; })[0]; if (!tx) return; return send('todo', {item: {id: tx.id, text: tx.text, q: tx.q, due: tx.due, done: !tx.done}}, tx.done ? '' : '✅ Done!'); }
-    if (a === 'tododel') return send('tododel', {id: b.dataset.id});
+
     if (a === 'goalp') { S.goalP = +b.dataset.i; return render(); }
     if (a === 'goalsave') { var gv = (document.getElementById('goalin') || {}).value || ''; if (gv !== '' && !(+gv >= 0)) return toast('Type the ANP goal in RM.', 'bad'); S.prog = null; return send('goal', {key: b.dataset.key, anp: gv === '' ? '' : Math.round(+gv)}, gv === '' ? 'Goal removed' : '🎯 Goal saved'); }
     if (a === 'bdaysave') { var bv = (document.getElementById('bdayin') || {}).value || ''; if (!bv) return toast('Pick your birthday first.', 'bad'); return send('profile', {bday: bv.slice(5)}, '🎂 Birthday saved'); }
@@ -1968,10 +2004,14 @@
   document.addEventListener('submit', function (ev) {
     var f = ev.target;
     if (f.id === 'signin') { ev.preventDefault(); return doSignIn(f); }
-    if (f.id === 'todoadd') {
-      ev.preventDefault(); var txt = f.t.value.trim(); if (!txt) return;
-      var due = f.today.checked ? dayKey(Date.now()) : (f.due.value || '');
-      f.t.value = ''; return send('todo', {item: {text: txt, q: S.todoQ || '1', due: due}});
+    if (f.id === 'todoform') {
+      ev.preventDefault(); var txt = f.t.value.trim(); if (!txt) return toast('Type what to do.', 'bad');
+      var tid = f.dataset.id, old = tid ? todos().filter(function (x) { return x.id === tid; })[0] : null, qv = (f.querySelector('[name=q]:checked') || {}).value || '1';
+      closeModal(); return send('todo', {item: {id: tid || undefined, text: txt, notes: f.n.value.trim(), q: qv, due: f.due.value || '', done: !!(old && old.done)}}, tid ? 'Saved' : '✅ Added');
+    }
+    if (f.id === 'noteform') {
+      ev.preventDefault(); var nt = f.t.value.trim(); if (!nt) return toast('Write something first.', 'bad');
+      closeModal(); return send('todo', {item: {id: f.dataset.id || undefined, kind: 'note', text: nt}}, f.dataset.id ? 'Saved' : '📝 Note saved');
     }
     if (f.id === 'personadd') {
       ev.preventDefault(); var nm = f.n.value.trim(), dd = f.d.value; if (!nm || !dd) return toast('Name and date please.', 'bad');

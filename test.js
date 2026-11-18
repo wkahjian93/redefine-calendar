@@ -488,6 +488,19 @@ function fresh() {
   ok(!part.complete && part.missing.join() === 'date,time' && part.event.with.join() === wx.me.id, 'voice: missing date/time reported, teammate found by short name');
   throws(() => h({op: 'voice', token: mj.token, audio, mime: 'video/mp4'}), 'bad_audio', 'odd recording refused');
   throws(() => h({op: 'voice', token: mj.token, audio: 'A'.repeat(4 * 1024 * 1024), mime: 'audio/webm'}), 'bad_audio', 'recording too long refused');
+  // voice to-do and voice note: the words are saved as they are, in the box held
+  const vt = h({op: 'voicetodo', token: mj.token, audio, mime: 'audio/webm', kind: '', q: '3'}).todo;
+  ok(vt.q === '3' && vt.src === 'voice' && /Mr Lim/.test(vt.text) && !vt.kind, 'voice to-do saved in the box that was held, transcript as the text');
+  const vn = h({op: 'voicetodo', token: mj.token, audio, mime: 'audio/webm', kind: 'note'}).todo;
+  ok(vn.kind === 'note' && /Mr Lim/.test(vn.text) && vn.q === '' && vn.src === 'voice', 'voice note saved as a note');
+  throws(() => h({op: 'voicetodo', token: mj.token, audio, mime: 'video/mp4'}), 'bad_audio', 'voice to-do: odd recording refused');
+  // edit details and move a to-do to another box; notes keep long text
+  const ed = h({op: 'todo', token: mj.token, item: {id: vt.id, text: 'Call Mr Lim', q: '4', notes: 'Ask about the claim form', due: '2027-03-05'}}).todo;
+  ok(ed.q === '4' && ed.text === 'Call Mr Lim' && ed.notes === 'Ask about the claim form' && ed.due === '2027-03-05' && ed.src === 'voice', 'to-do edited: text, details, date and box changed');
+  const nt = h({op: 'todo', token: mj.token, item: {kind: 'note', text: 'x'.repeat(1200), q: '2', due: '2027-01-01'}}).todo;
+  ok(nt.kind === 'note' && nt.text.length === 1200 && nt.q === '' && nt.due === '', 'note keeps long text, has no box or date');
+  ok(h({op: 'todo', token: mj.token, item: {id: nt.id, text: 'Short now', kind: ''}}).todo.kind === 'note', 'a note stays a note when edited');
+  throws(() => h({op: 'todo', token: kj.token, item: {id: nt.id, text: 'hack'}}), 'not_found', 'nobody else can edit my note');
   s.setNow(null);
   // celebration themes: owner only
   ok(h({op: 'sync', token: kj.token, force: true}).me.owner && !h({op: 'sync', token: al.token, force: true}).me.owner, 'owner = first leader (other leaders are not)');

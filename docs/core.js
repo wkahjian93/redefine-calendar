@@ -11,7 +11,7 @@ var CORE = (function () {
     photos: ['memberId', 'data', 'updated'],
     sessions: ['token', 'memberId', 'created', 'lastSeen', 'device'],
     events: ['id', 'ownerId', 'title', 'type', 'start', 'end', 'allDay', 'place', 'notes', 'vis', 'with', 'remind', 'count', 'out', 'anp', 'source', 'remSent', 'created', 'updated', 'noc', 'all', 'cases', 'rep', 'repEnd'],
-    todos: ['id', 'ownerId', 'text', 'q', 'due', 'done', 'created', 'updated'],
+    todos: ['id', 'ownerId', 'text', 'q', 'due', 'done', 'created', 'updated', 'kind', 'notes', 'src'],
     goals: ['memberId', 'key', 'anp', 'updated'],
     msgs: ['id', 'to', 'from', 'kind', 'text', 'created'],
     devices: ['token', 'memberId', 'created'],
@@ -544,17 +544,27 @@ var CORE = (function () {
     fail('bad_request');
   }
 
-  /* ---------- my to-do list (4 quadrants, private to the owner) ---------- */
+  /* ---------- my to-do list (4 quadrants) and notes, private to the owner ----------
+     kind '' = to-do (text = the task, notes = details), kind 'note' = a note (text = the note). src 'voice' = from a voice recording. */
   function todo(q, store, me) {
-    var it = q.item || {}, rows = store.load('todos'), now = nowIso(store), text = str(it.text, 300);
+    var it = q.item || {}, rows = store.load('todos'), now = nowIso(store), isNote = it.kind === 'note';
+    var text = str(it.text, isNote ? 5000 : 300);
     if (!text) fail('empty');
     var qd = ['1', '2', '3', '4'].indexOf(String(it.q)) >= 0 ? String(it.q) : '1', due = isDate(str(it.due, 10)) ? str(it.due, 10) : '';
     var row = it.id ? rows.filter(function (r) { return r.id === it.id && r.ownerId === me.id; })[0] : null;
     if (it.id && !row) fail('not_found');
-    if (!row) { if (rows.filter(function (r) { return r.ownerId === me.id; }).length >= 1000) fail('too_many'); row = {id: newId(store, 10), ownerId: me.id, created: now}; rows.push(row); }
-    row.text = text; row.q = qd; row.due = due; row.done = it.done ? (row.done || now) : ''; row.updated = now;
+    if (!row) { if (rows.filter(function (r) { return r.ownerId === me.id; }).length >= 1000) fail('too_many'); row = {id: newId(store, 10), ownerId: me.id, created: now, kind: isNote ? 'note' : '', src: it.src === 'voice' ? 'voice' : ''}; rows.push(row); }
+    var note = row.kind === 'note';
+    row.text = note ? str(it.text, 5000) : str(it.text, 300); row.updated = now;
+    if (note) { row.q = ''; row.due = ''; row.done = ''; row.notes = ''; }
+    else { row.q = qd; row.due = due; row.done = it.done ? (row.done || now) : ''; if (it.notes != null) row.notes = str(it.notes, 2000); }
     store.save('todos', rows); store.version(true);
     return {todo: row};
+  }
+  /* hold 🎤 on a to-do box or on Notes: the words are written down and saved as they are (no AI guessing). The recording is not kept. */
+  function voiceTodo(heard, q, store, me) {
+    var note = q.kind === 'note', text = note ? heard : heard.slice(0, 300);
+    return todo({item: {text: text, kind: note ? 'note' : '', q: q.q, notes: !note && heard.length > 300 ? heard : '', src: 'voice'}}, store, me);
   }
   function todoDel(q, store, me) {
     var rows = store.load('todos'), keep = rows.filter(function (r) { return !(r.id === q.id && r.ownerId === me.id); });
@@ -1141,6 +1151,13 @@ var CORE = (function () {
       if (!vv.event.title && !vv.event.date && !vv.event.start) fail('not_an_appointment');
       var saved = store.withLock(function () { var w2 = who(q, store); return saveEvent({event: voiceToEvent(vv, store.now().getTime())}, store, w2.me, w2.leader); });
       return {ok: true, voice: vv, event: saved.event};
+    }
+    if (q.op === 'voicetodo') {   // same limits as voice booking; speech-to-text outside the lock
+      if (!b64ok(q.audio, MAX_AUDIO_B64) || !AUDIO_OK[str(q.mime, 30).split(';')[0]]) fail('bad_audio');
+      store.withLock(function () { countRead(store, who(q, store).me); });
+      var said = str(store.transcribe(q.audio, str(q.mime, 30).split(';')[0], q.kind === 'note' ? 'Malaysian insurance agent dictating a note. Mixed English, 华语, 广东话, Hokkien, Bahasa Melayu.' : 'Malaysian insurance agent dictating a to-do task. Mixed English, 华语, 广东话, Hokkien, Bahasa Melayu.'), 5000).trim();
+      if (!said) fail('nothing_heard');
+      return store.withLock(function () { var w3 = who(q, store); return Object.assign({ok: true}, voiceTodo(said, q, store, w3.me)); });
     }
     if (q.op === 'themeai') {   // owner only; poster read outside the lock, not kept
       if (!b64ok(q.poster, MAX_POSTER_B64)) fail('bad_photo');
