@@ -7,7 +7,7 @@
   var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   var MONTH = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   var DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  var APP_VERSION = '43';
+  var APP_VERSION = '44';
   var H8 = 8 * 3600e3, DAY = 864e5, SELLING = {approach: 1, open: 1, present: 1, followup: 1, close: 1, joinfield: 1, recruit: 1};
 
   /* ---------- storage (each phone) ---------- */
@@ -871,10 +871,17 @@
 
   /* ---------- layout ---------- */
   function logoSvg(s) { return '<svg width="' + s + '" height="' + s + '" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="14" fill="#14213D"/><rect x="12" y="16" width="40" height="36" rx="6" fill="#fff"/><rect x="12" y="16" width="40" height="10" rx="5" fill="#E8505B"/><rect x="12" y="22" width="40" height="4" fill="#E8505B"/><circle cx="23" cy="36" r="4" fill="#2E86DE"/><circle cx="32" cy="36" r="4" fill="#10AC84"/><circle cx="41" cy="36" r="4" fill="#F39C12"/><circle cx="23" cy="45" r="4" fill="#8E44AD"/><circle cx="32" cy="45" r="4" fill="#E8505B"/></svg>'; }
+  var TAB_ICON = {
+    cal: '<rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 9.5h17M8 3v4M16 3v4"/><path d="M7.5 13h2M11 13h2M14.5 13h2M7.5 16.5h2M11 16.5h2"/>',
+    feed: '<path d="M6 10a6 6 0 0 1 12 0c0 4.5 2 6 2 6H4s2-1.5 2-6"/><path d="M10 19.5a2 2 0 0 0 4 0"/>',
+    todo: '<rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8.5 12.2l2.4 2.4 4.6-5"/>',
+    stats: '<path d="M4 20h16"/><path d="M7 16v-4M12 16V7M17 16v-6"/>',
+    me: '<circle cx="12" cy="8.5" r="3.8"/><path d="M4.5 20c.8-3.6 3.8-5.6 7.5-5.6s6.7 2 7.5 5.6"/>'
+  };
   function tabs(active) {
     var u = unreadAll(), c = toConfirm().length + myInvites().length;
-    var t = [['cal', '#/', '📅', 'Calendar', c], ['feed', '#/feed', '🔔', 'Comments', u], ['todo', '#/todo', '✅', 'To-do', todoDue()], ['stats', '#/stats', '📈', 'Activity', 0], ['me', '#/me', '👤', 'Me', 0]];
-    return '<nav class="tabs">' + t.map(function (x) { return '<a href="' + x[1] + '" class="' + (active === x[0] ? 'on' : '') + '"><span class="ti">' + x[2] + (x[4] ? '<i class="badge">' + (x[4] > 99 ? '99+' : x[4]) + '</i>' : '') + '</span>' + x[3] + '</a>'; }).join('') + '</nav>';
+    var t = [['cal', '#/', 'Calendar', c], ['feed', '#/feed', 'Comments', u], ['todo', '#/todo', 'To-do', todoDue()], ['stats', '#/stats', 'Activity', 0], ['me', '#/me', 'Me', 0]];
+    return '<nav class="tabs">' + t.map(function (x) { return '<a href="' + x[1] + '" class="' + (active === x[0] ? 'on' : '') + '"><span class="ti"><svg viewBox="0 0 24 24" aria-hidden="true">' + TAB_ICON[x[0]] + '</svg>' + (x[3] ? '<i class="badge">' + (x[3] > 99 ? '99+' : x[3]) + '</i>' : '') + '</span>' + x[2] + '</a>'; }).join('') + '</nav>';
   }
   function topbar(title, opts) {
     opts = opts || {};
@@ -1954,7 +1961,7 @@
     var step = dx < 0 ? 1 : -1;   // swipe left = next month (or day), swipe right = previous
     if (S.view === 'day') { S.dayView = addDays(S.dayView, step); S.sel = S.dayView; var q2 = P(keyMs(S.dayView)); if (q2.m !== S.cursor.m) { S.cursor = {y: q2.y, m: q2.m}; quietSync(); } return render(); }
     if (S.view === 'list') return;
-    var c2 = S.cursor, m2 = c2.m + step; S.cursor = {y: c2.y + Math.floor(m2 / 12), m: (m2 + 12) % 12}; S.sel = dayKey(Date.UTC(S.cursor.y, S.cursor.m, 1) - H8 + 3600e3); render(); window.scrollTo(0, 0); quietSync();
+    var c2 = S.cursor, m2 = c2.m + step; S.cursor = {y: c2.y + Math.floor(m2 / 12), m: (m2 + 12) % 12}; S.sel = dayKey(Date.UTC(S.cursor.y, S.cursor.m, 1) - H8 + 3600e3); render(); document.body.scrollTop = 0; quietSync();
   }, {passive: true});
   window.addEventListener('hashchange', function () { closeModal(); render(); });
   /* Phones keep home-screen apps paused in memory, so an update would only arrive after swiping the app away.
@@ -1968,7 +1975,13 @@
       LS.set('reloadedFor', v); location.reload();
     }).catch(function () {});
   }
-  document.addEventListener('visibilitychange', function () { if (!document.hidden) { quietSync(); checkUpdate(); } });
+  // iPhone sometimes leaves the whole page shifted after a swipe, the keyboard or coming back to the app, which lifts the bottom bar. Snap it back.
+  function pinPage() { if (window.scrollY || window.scrollX || document.documentElement.scrollTop) { window.scrollTo(0, 0); document.documentElement.scrollTop = 0; } }
+  function pinSoon() { pinPage(); setTimeout(pinPage, 120); setTimeout(pinPage, 500); }
+  window.addEventListener('scroll', pinPage, {passive: true});
+  ['resize', 'orientationchange', 'pageshow', 'focusout', 'touchend'].forEach(function (ev) { window.addEventListener(ev, pinSoon, {passive: true}); });
+  if (window.visualViewport) { visualViewport.addEventListener('resize', pinSoon); visualViewport.addEventListener('scroll', function () { if (!document.activeElement || !/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) pinPage(); }); }
+  document.addEventListener('visibilitychange', function () { if (!document.hidden) { pinSoon(); quietSync(); checkUpdate(); } });
   window.addEventListener('pageshow', function (e) { if (e.persisted) { quietSync(); checkUpdate(); } });
   window.addEventListener('online', function () { quietSync(); });
 
