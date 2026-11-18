@@ -42,7 +42,7 @@ You stay signed in on that phone for good, like WhatsApp. Only two things sign y
 - **🎯 Goals (Activity tab):** set an ANP goal for the month, quarter, half-year or year. The app works out how many approaches, appointments, presentations and closes you need **each week**, from your own last 90 days (or the team's if you're new). **📄 Monthly report** compares you with the team average and adds a coach's note.
 - **📖 Tour:** Me → Take the tour, any time.
 - **Agenda** shows one week, Monday at the top and Sunday at the bottom.
-- **Swipe:** on the calendar, swipe left for the next month (next week in Agenda, next day in Team day), swipe right for the previous one.
+- **Swipe:** on the calendar, swipe left for the next month (next week in Agenda, next day in Team day, anywhere on the people grid), swipe right for the previous one.
 
 ## More (app version 29)
 - **🎤 Voice booking:** tap the 🎤 button above **+** and say the appointment in any mix of English, 华语, Cantonese, Hokkien or Malay, e.g. "Esok 3 点 present medical card to Mr Lim at Gurney". Up to 1 minute. If the app heard what, the date and the time, it saves straight away (with **Undo**). If something is missing it opens the form with what it heard, and you fill in the rest. Hokkien is understood less well than the other languages. Each recording counts towards the daily photo-reading limit, and recordings are not kept.

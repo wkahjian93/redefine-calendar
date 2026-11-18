@@ -7,7 +7,7 @@
   var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   var MONTH = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   var DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  var APP_VERSION = '48';
+  var APP_VERSION = '49';
   var H8 = 8 * 3600e3, DAY = 864e5, SELLING = {approach: 1, open: 1, present: 1, followup: 1, close: 1, joinfield: 1, recruit: 1};
 
   /* ---------- storage (each phone) ---------- */
@@ -1966,7 +1966,7 @@
   function delMsg(id) { confirmBox('Delete this comment?', 'It will be removed for everyone.', 'Delete', true).then(function (y) { if (y) send('delmsg', {id: id}); }); }
 
   var sw0 = null;
-  document.addEventListener('touchstart', function (ev) { if (!ev.target.closest || !ev.target.closest('#calmain') || ev.touches.length > 1 || ev.target.closest('.gd.sel .gd-evs, .team, .chips')) { sw0 = null; return; } sw0 = {x: ev.touches[0].clientX, y: ev.touches[0].clientY, t: Date.now()}; }, {passive: true});
+  document.addEventListener('touchstart', function (ev) { if (!ev.target.closest || !ev.target.closest('#calmain') || ev.touches.length > 1 || ev.target.closest('.gd.sel .gd-evs, .chips, .tablewrap')) { sw0 = null; return; } sw0 = {x: ev.touches[0].clientX, y: ev.touches[0].clientY, t: Date.now()}; }, {passive: true});
   document.addEventListener('touchend', function (ev) {
     if (!sw0) return; var t = ev.changedTouches[0], dx = t.clientX - sw0.x, dy = t.clientY - sw0.y, dt = Date.now() - sw0.t; sw0 = null;
     if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 1.5 || dt > 800 || route().replace(/^[/]+/, '')) return;
