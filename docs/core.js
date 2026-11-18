@@ -177,6 +177,7 @@ var CORE = (function () {
       var s = startMs(e); if (!(s >= fromMs && s < toMs)) return;
       var o = by[e.ownerId] || (by[e.ownerId] = blankStats());
       o.events++;
+      if (t === 'present') o.O++;   // setting a presentation = an appointment (O +1), done or not; P +1 only when it happened
       if (e.out === 'cancel') { o.cancelled++; return; }
       if (e.out !== 'done' && e.out !== 'closed') { if (endMs(e) <= nowMs) o.unconfirmed++; return; }
       var n = t === 'approach' ? Math.max(1, Math.min(999, Math.floor(+e.count) || 1)) : 1;
@@ -376,6 +377,24 @@ var CORE = (function () {
   }
   /* Agent confirms what happened: done / closed (+NOC cases, +total ANP) / cancel / '' (undo). Can be changed any time later,
      e.g. a presentation marked Done today, then Closed next week. A new close pops up a 🎉 to the team. */
+  function postpone(q, store, me) {
+    var rows = store.load('events'), e = rows.filter(function (x) { return x.id === q.id; })[0];
+    if (!e) fail('not_found'); if (e.ownerId !== me.id) fail('not_yours'); if (e.rep) fail('bad_request');
+    if (e.out === 'done' || e.out === 'closed') fail('already_done');
+    var date = str(q.date, 10), time = str(q.time, 5), allDay = e.allDay === 'true' || e.allDay === true;
+    if (!isDate(date) || (!allDay && !/^\d{2}:\d{2}$/.test(time))) fail('bad_date');
+    var oldS = startMs(e), dur = Math.max(0, endMs(e) - oldS), was = whenText(e);
+    if (allDay) { var days = Math.round(dur / 864e5) - 1; e.start = date; e.end = new Date(Date.parse(date + 'T00:00:00Z') + Math.max(0, days) * 864e5).toISOString().slice(0, 10); }
+    else { var ns = Date.parse(date + 'T' + time + ':00+08:00'); if (isNaN(ns)) fail('bad_date'); e.start = new Date(ns).toISOString(); e.end = new Date(ns + (dur || 3600e3)).toISOString(); }
+    if (startMs(e) === oldS) fail('same_time');
+    e.out = ''; e.remSent = ''; e.updated = nowIso(store);
+    e.notes = str('📅 Postponed from ' + was + (e.notes ? '\n' + e.notes : ''), 1500);
+    store.save('events', rows);
+    var a = answers(e.id, store.load('msgs')), who = withList(e).filter(function (id) { return a[id] !== 'no' && id !== me.id; });
+    if (who.length) store.push(who, {title: '📅 Postponed: ' + e.title, body: shortOf(me) + ' moved it to ' + whenText(e), tag: 'ev-' + e.id, url: '#/e/' + e.id});
+    store.version(true); log(store, me.id, 'postpone', e.id + ' ' + was + ' -> ' + whenText(e));
+    return {event: viewEvent(e, me, true)};
+  }
   function outcome(q, store, me) {
     var rows = store.load('events'), e = rows.filter(function (x) { return x.id === q.id; })[0];
     if (!e) fail('not_found'); if (e.ownerId !== me.id) fail('not_yours');
@@ -1089,7 +1108,7 @@ var CORE = (function () {
 
   var READ_ONLY = {sync: 1, teamtotals: 1, photos: 1, progress: 1, file: 1, themes: 1, besttime: 1};
   var OPS = {sync: sync, save: saveEvent, del: delEvent, outcome: outcome, import: importEvents, send: send, delmsg: delMsg,
-    pushreg: pushReg, pushoff: pushOff, pushtest: pushTest, teamtotals: teamTotals, rsvp: rsvp, member: member, partner: partner, profile: profile, todo: todo, tododel: todoDel, goal: goal, changepin: changePin, progress: progress, feed: feedOp, checked: checkedOp, besttime: bestTime, themes: themesList, theme: themeSave, themedel: themeDel, themeson: themesSwitch, file: getFile, photo: setPhoto, photos: getPhotos, signout: signOut};
+    pushreg: pushReg, pushoff: pushOff, pushtest: pushTest, teamtotals: teamTotals, rsvp: rsvp, member: member, partner: partner, profile: profile, todo: todo, tododel: todoDel, goal: goal, changepin: changePin, progress: progress, feed: feedOp, checked: checkedOp, postpone: postpone, besttime: bestTime, themes: themesList, theme: themeSave, themedel: themeDel, themeson: themesSwitch, file: getFile, photo: setPhoto, photos: getPhotos, signout: signOut};
   function handle(q, store) {
     if (!q || typeof q !== 'object') fail('bad_request');
     if (q.op === 'signin') {

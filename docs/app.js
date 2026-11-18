@@ -7,7 +7,7 @@
   var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   var MONTH = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   var DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  var APP_VERSION = '41';
+  var APP_VERSION = '42';
   var H8 = 8 * 3600e3, DAY = 864e5, SELLING = {approach: 1, open: 1, present: 1, followup: 1, close: 1, joinfield: 1, recruit: 1};
 
   /* ---------- storage (each phone) ---------- */
@@ -140,6 +140,7 @@
     document.getElementById('toasts').appendChild(t); setTimeout(function () { t.classList.add('out'); }, 2800); setTimeout(function () { t.remove(); }, 3300);
   }
   var ERR = {
+    already_done: 'It already happened (Done / Closed), so it can’t be postponed.', same_time: 'Pick a different date or time.',
     not_an_appointment: 'That didn’t sound like an appointment. Say what, which day and what time.',
     bad_audio: 'That recording couldn’t be used. Try again (up to 60 seconds).', nothing_heard: 'Nothing was heard. Hold the phone closer and try again.', owner_only: 'Only the owner can change celebration themes.', bad_theme: 'Please pick the colours again.', bad_music: 'Use an MP3 or M4A file up to 5 MB.',
     wrong_code: 'That team code is not right.', wrong_pin: 'Wrong PIN for that name.', pin_4_digits: 'PIN must be 4–6 digits.', name_needed: 'Please type your name.',
@@ -241,6 +242,7 @@
     if (op === 'profile') return function (d) { [d.me].concat(d.members.filter(function (m) { return m.id === my; })).forEach(function (m) { if (q.color) m.color = q.color; if (q.short) { m.short = q.short; d.me.shortSet = true; } }); };
     if (op === 'todo') return function (d) { var it = q.item; d.todos = d.todos || []; var ex = d.todos.filter(function (x) { return x.id === it.id; })[0]; if (ex) { ex.text = it.text; ex.q = String(it.q); ex.due = it.due || ''; ex.done = it.done ? (ex.done || now) : ''; } else d.todos.push({id: it.id || tmp, text: it.text, q: String(it.q), due: it.due || '', done: '', created: now}); };
     if (op === 'checked') return function (d) { (d.events || []).forEach(function (x) { if (x.id === q.id) x.source = 'voiceok'; }); };
+    if (op === 'postpone') return function (d) { (d.events || []).forEach(function (x) { if (x.id !== q.id) return; var s0 = sMs(x), dur = Math.max(0, eMs(x) - s0) || 3600e3; if (x.allDay) { x.start = q.date; x.end = q.date; } else { var ns = Date.parse(q.date + 'T' + q.time + ':00+08:00'); x.start = new Date(ns).toISOString(); x.end = new Date(ns + dur).toISOString(); } x.out = ''; }); };
     if (op === 'tododel') return function (d) { d.todos = (d.todos || []).filter(function (x) { return x.id !== q.id; }); };
     if (op === 'goal') return function (d) { d.goals = (d.goals || []).filter(function (g) { return g.key !== q.key; }); if (q.anp !== '') d.goals.push({key: q.key, anp: String(q.anp)}); };
     if (op === 'del') return function (d) { d.events = d.events.filter(function (x) { return x.id !== q.id; }); };
@@ -1084,6 +1086,7 @@
         '<button class="out' + (e.out === 'done' ? ' on' : '') + '" data-act="out" data-id="' + e.id + '" data-v="done">✓ Done</button>' +
         (C.PROSPECT[e.type] ? '<button class="out gold' + (e.out === 'closed' ? ' on' : '') + '" data-act="out" data-id="' + e.id + '" data-v="closed">💰 Closed</button>' : '') +
         '<button class="out grey' + (e.out === 'cancel' ? ' on' : '') + '" data-act="out" data-id="' + e.id + '" data-v="cancel">✕ Didn\'t happen</button></div>' +
+        (e.type === 'present' && e.out !== 'done' && e.out !== 'closed' ? '<button class="btn postpone-btn" data-act="postpone" data-id="' + e.id + '">📅 Postpone to a new date</button>' : '') +
         (e.out === 'closed' ? caseList(e) + '<p class="muted">NOC: <b>' + (e.noc || 1) + ' case' + ((e.noc || 1) > 1 ? 's' : '') + '</b> · Total ANP: <b>' + (e.anp ? rm(e.anp) : 'not entered') + '</b> <button class="link" data-act="out" data-id="' + e.id + '" data-v="closed">edit</button></p>' : (C.PROSPECT[e.type] ? '<p class="tiny muted">Not sure yet? Tap ✓ Done now. If the client signs later, come back and tap 💰 Closed.</p>' : '')) +
         (e.type === 'approach' && (e.out === 'done') ? '<p class="muted">New friends approached: <b>' + (e.count || 1) + '</b> <button class="link" data-act="out" data-id="' + e.id + '" data-v="done">edit</button></p>' : '') +
         (e.out ? '<button class="link" data-act="out" data-id="' + e.id + '" data-v="">Undo</button>' : '') + '</div>';
@@ -1334,8 +1337,24 @@
   }
 
   /* ---------- confirming what happened ---------- */
+  /* Presentation postponed: same appointment (O counted once) moved to a new date/time; it waits to happen again. */
+  function postponeBox(e, fromCancel) {
+    var st = sMs(e), def = addDays(dayKey(Math.max(Date.now(), st)), 1);
+    modal('<h3>📅 ' + (fromCancel ? 'Presentation didn’t happen?' : 'Postpone presentation') + '</h3><p class="muted">' + esc(e.title) + '<br>' + esc(dayLabel(dayKey(st), true)) + ' · ' + esc(evTime(e)) + '</p>' +
+      (fromCancel ? '<p class="tiny muted">Postpone it to a new date: it stays one appointment (O), and P counts when it happens.</p>' : '') +
+      '<div class="two"><label class="big-l"><span>📅 New date</span><input class="big-in" id="ppd" type="date" value="' + def + '"></label>' + (e.allDay ? '' : '<label class="big-l"><span>🕐 Time</span><input class="big-in" id="ppt" type="time" value="' + hm24(st) + '"></label>') + '</div>' +
+      '<div class="row end wrap">' + (fromCancel ? '<button class="btn ghost" data-x="cancel">✕ Just mark didn’t happen</button>' : '<button class="btn ghost" data-act="close-modal">Cancel</button>') + '<button class="btn primary" data-x="ok">📅 Postpone</button></div>', function (sh) {
+      var c = sh.querySelector('[data-x=cancel]'); if (c) c.onclick = function () { closeModal(); send('outcome', {id: e.id, out: 'cancel'}, 'Marked as didn’t happen'); };
+      sh.querySelector('[data-x=ok]').onclick = function () {
+        var dd = sh.querySelector('#ppd').value, tt = e.allDay ? '' : (sh.querySelector('#ppt').value || hm24(st));
+        if (!dd) return toast('Pick the new date.', 'bad');
+        closeModal(); send('postpone', {id: e.id, date: dd, time: tt}, '📅 Postponed to ' + dayLabel(dd) + (tt ? ' ' + tt : ''));
+      };
+    });
+  }
   function setOutcome(id, v) {
     var e = events().filter(function (x) { return x.id === id; })[0]; if (!e) return;
+    if (v === 'cancel' && e.type === 'present' && !e.occ && e.out !== 'cancel') return postponeBox(e, true);
     if (v === 'closed') {
       var rows = (e.cases && e.cases.length ? e.cases : [{plan: '', anp: e.anp || '', mode: ''}]).map(function (c) { return {plan: c.plan, anp: c.anp, mode: c.mode}; });
       return modal('<h3>💰 Closed! Well done</h3><p class="muted">' + esc(e.title) + '</p><div id="cases"></div><button type="button" class="btn ghost" data-x="add">+ Add another case</button>' +
@@ -1839,6 +1858,7 @@
     if ((a === 'edit' || a === 'out' || a === 'cheer' || a === 'invite' || a === 'rsvp') && /^tmp/.test(b.dataset.id || '')) return toast('Still saving… one moment.');
     if (a === 'edit') { var eid = String(b.dataset.id || '').split('~')[0]; return editor(rawEvents().filter(function (e) { return e.id === eid; })[0]); }
     if (a === 'out') return setOutcome(b.dataset.id, b.dataset.v);
+    if (a === 'postpone') { var pe = events().filter(function (x) { return x.id === b.dataset.id; })[0]; if (pe) postponeBox(pe, false); return; }
     if (a === 'cheer') return send('send', {to: 'ev:' + b.dataset.id, kind: 'cheer'});
     if (a === 'invite') {
       var iv = b.dataset.v, go = function () { return send('rsvp', {id: b.dataset.id, answer: iv}, iv === 'yes' ? '✅ Accepted. It is on your calendar.' : 'Rejected. Removed from your calendar.'); };

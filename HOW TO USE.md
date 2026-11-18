@@ -18,6 +18,7 @@ You stay signed in on that phone for good, like WhatsApp. Only two things sign y
 - **Add an appointment:** tap **+**, type what it is ("Present Mr Lim medical card", "签单 Ooi", "FU Jason"). The app works out the type (👋 Approach, ☕ Open, 📊 Present, 🔁 Follow-up, ✍️ Closing, 🌱 Recruit, 👥 Meeting, 🛠️ Service, 🎁 CRM, 📝 Paperwork, 🏠 Personal). Tap another type if it guessed wrong.
 - **Team or Only me:** 👥 Team = everyone sees it. 🔒 Only me = others see a grey **Busy** block, with no title, client or place. Hidden work events still count in your numbers. Personal events never count.
 - **After the appointment:** tap **✓ Done**, **💰 Closed**, or **✕ Didn't happen**. Only confirmed events count. The app never guesses. At 9pm it reminds you if anything is still unconfirmed.
+- **Presentations:** setting a 📊 presentation counts **O +1** (an appointment) straight away. When it happens (✓ Done or 💰 Closed) it also counts **P +1**. If it didn't happen, O stays and P doesn't count. The app then offers **📅 Postpone**: pick the new date and time, and it moves the same appointment (O isn't counted twice), notes the old date, and tells anyone invited. The presentation page also has a **📅 Postpone to a new date** button.
 - **Not sure if the client will sign?** Tap **✓ Done** on the presentation or follow-up. If they sign later, open the same event and tap **💰 Closed**. Add **one line per policy**:
   - **Plan name**, as on the proposal
   - **ANP** (yearly premium, e.g. RM300 monthly = RM3,600)

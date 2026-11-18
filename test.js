@@ -163,12 +163,12 @@ function fresh() {
   ok(s.pushes.filter(p => /closed a case/.test(p.note.title)).length === 2 && !s.load('msgs').length, 'closing pops up a 🎉 to the team (no chat message)');
   throws(() => h({op: 'outcome', token: ali.token, id: pr.id, out: 'closed', anp: '-5'}), 'bad_anp', 'negative ANP refused');
   const st = CORE.stats(s.load('events'), NOW - 7 * D, NOW + 7 * D, NOW)[ali.me.id];
-  ok(st.A === 6 && st.O === 1 && st.P === 2 && st.F === 1 && st.C === 2, 'A/O/P/F/C counted only from confirmed events: ' + JSON.stringify([st.A, st.O, st.P, st.F, st.C]));
+  ok(st.A === 6 && st.O === 4 && st.P === 2 && st.F === 1 && st.C === 2, 'A/O/P/F/C: O = 1 open + 3 presentations set (done or not), P only when done: ' + JSON.stringify([st.A, st.O, st.P, st.F, st.C]));
   ok(st.anp === 3600 && st.anpCases === 1, 'ANP never guessed: a close without ANP is a case with no RM');
   ok(st.cancelled === 1 && st.unconfirmed === 1, 'cancelled not counted; past unconfirmed paperwork shown as unconfirmed');
   ok(st.personal === 0, 'personal events never count');
   const r = CORE.ratios(st);
-  ok(r.OA === 1 / 6 && r.PO === 2 && r.FP === 0.5 && r.CP === 1 && r.M === 3600, 'ratios: O/A, P/O, F/P, NOC/P, avg case');
+  ok(r.OA === 4 / 6 && r.PO === 0.5 && r.FP === 0.5 && r.CP === 1 && r.M === 3600, 'ratios: O/A, P/O, F/P, NOC/P, avg case');
   ok(CORE.ratios(CORE.addStats([])).CP === null, 'no presentations -> ratio shown as – (not 0%)');
   // teammates get counts but not ANP; leader gets ANP
   const mv = h({op: 'sync', token: mar.token, force: true}).events, bv = h({op: 'sync', token: boss.token, force: true}).events;
@@ -587,6 +587,29 @@ function fresh() {
   ok(CORE.detectType('Present Mr Lim medical card') === 'present', 'other titles unchanged');
   const st = CORE.stats([{ownerId: 'x', type: 'joinfield', start: '2026-11-03T02:00:00.000Z', end: '2026-11-03T03:00:00.000Z', out: 'done'}], 0, 9e15, 9e15).x;
   ok(st.joinfield === 1 && st.P === 0, 'a confirmed join field counts as join field (not as a presentation)');
+}
+
+/* ---------- presentation = appointment (O); postpone ---------- */
+{
+  const {s, h, join} = fresh();
+  const ali = join('Alicia Tan'), kj = join('Kah Jian', true);
+  const mk = (title, hoursAgo, extra) => h({op: 'save', token: ali.token, event: Object.assign({title, start: iso(NOW - hoursAgo * H), end: iso(NOW - hoursAgo * H + 2 * H)}, extra || {})}).event;
+  const st = () => CORE.stats(s.load('events'), NOW - 7 * D, NOW + 7 * D, NOW)[ali.me.id];
+  const p1 = mk('Present Jason', 30), p2 = mk('Present Mei', 20, {with: [kj.me.id]}), p3 = mk('Present Ravi', -24);
+  ok(st().O === 3 && st().P === 0, 'presentations set: O +1 each, P waits for Done');
+  h({op: 'outcome', token: ali.token, id: p1.id, out: 'done'});
+  h({op: 'outcome', token: ali.token, id: p2.id, out: 'cancel'});
+  ok(st().O === 3 && st().P === 1 && st().cancelled === 1, 'done: O and P; did not happen: O only');
+  s.pushes.length = 0;
+  const moved = h({op: 'postpone', token: ali.token, id: p2.id, date: '2026-11-14', time: '15:00'}).event;
+  const row = s.load('events').find(e => e.id === p2.id);
+  ok(row.start === '2026-11-14T07:00:00.000Z' && row.end === '2026-11-14T09:00:00.000Z' && row.out === '' && row.remSent === '', 'postponed: new date, same 2 hours, waiting to happen again');
+  ok(/^📅 Postponed from /.test(row.notes) && moved.id === p2.id, 'the old date is kept in the notes');
+  ok(s.pushes.some(p => p.ids[0] === kj.me.id && /Postponed/.test(p.note.title)), 'invited people get a pop-up');
+  ok(st().O === 3, 'still one appointment (O not counted twice)');
+  throws(() => h({op: 'postpone', token: ali.token, id: p1.id, date: '2026-11-20', time: '15:00'}), 'already_done', 'a done presentation cannot be postponed');
+  throws(() => h({op: 'postpone', token: kj.token, id: p3.id, date: '2026-11-20', time: '15:00'}), 'not_yours', 'only the owner postpones');
+  throws(() => h({op: 'postpone', token: ali.token, id: p3.id, date: '2026-11-31', time: '15:00'}), 'bad_date', 'impossible date refused');
 }
 
 /* ---------- sample team sanity ---------- */
