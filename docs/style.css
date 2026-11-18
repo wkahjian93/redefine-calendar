@@ -560,3 +560,8 @@ html[data-celebrate] .calhead { background: color-mix(in srgb, var(--bg) 92%, tr
 
 /* ---------- postpone a presentation ---------- */
 .postpone-btn { width: 100%; margin-top: 8px; }
+
+/* sliding pages: Month / Agenda / Team day follow the finger; the next page sits right beside the current one */
+.pager { position: relative; overflow: hidden; overflow: clip; touch-action: pan-y; }
+.ptrack { position: relative; will-change: transform; }
+.page.side { position: absolute; top: 0; width: 100%; pointer-events: none; }

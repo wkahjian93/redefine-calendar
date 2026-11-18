@@ -7,7 +7,7 @@
   var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   var MONTH = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   var DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  var APP_VERSION = '49';
+  var APP_VERSION = '50';
   var H8 = 8 * 3600e3, DAY = 864e5, SELLING = {approach: 1, open: 1, present: 1, followup: 1, close: 1, joinfield: 1, recruit: 1};
 
   /* ---------- storage (each phone) ---------- */
@@ -939,12 +939,6 @@
   function mondayOf(k) { return addDays(k, -((P(keyMs(k)).w + 6) % 7)); }
   function agWeek() { return S.agWeek || (S.agWeek = mondayOf(S.sel || dayKey(Date.now()))); }
   function weekLabel(mon) { var a = P(keyMs(mon)), b = P(keyMs(addDays(mon, 6))), s = function (m) { return MONTH[m].slice(0, 3); }; return a.d + (a.m !== b.m ? ' ' + s(a.m) + (a.y !== b.y ? ' ' + a.y : '') : '') + ' – ' + b.d + ' ' + s(b.m) + ' ' + b.y; }
-  function goWeek(step) {
-    S.agWeek = addDays(agWeek(), 7 * step); var today = dayKey(Date.now()), inWk = today >= S.agWeek && today <= addDays(S.agWeek, 6);
-    S.sel = inWk ? today : S.agWeek; var q = P(keyMs(addDays(S.agWeek, 3)));
-    if (q.m !== S.cursor.m || q.y !== S.cursor.y) { S.cursor = {y: q.y, m: q.m}; render(); return quietSync(); }
-    render();
-  }
   function agendaView() {
     var mon = agWeek(), today = dayKey(Date.now()), list = filtered(), my = me().id, html = '<div class="ag">';
     for (var i = 0; i < 7; i++) {
@@ -957,6 +951,40 @@
         }).join('') + '</div></div>';
     }
     return html + '</div>';
+  }
+  function calBody() {
+    return S.view === 'day' ? (isLeader() ? '<a class="btn primary big bt-link" href="#/besttime">🔎 Best date for a team activity</a>' : '') + teamDay() : S.view === 'list' ? listView() : S.view === 'agenda' ? agendaView() : monthGrid() + '<p class="tiny muted hint">Tap a day to choose it (scroll inside to see all). Tap it again to open that day’s events.</p>';
+  }
+  /* Move the calendar one page: month (Month view), week (Agenda) or day (Team day). Returns true if new data must be fetched. */
+  function stepState(step) {
+    if (S.view === 'day') { S.dayView = addDays(S.dayView, step); S.sel = S.dayView; var q = P(keyMs(S.dayView)); if (q.m !== S.cursor.m || q.y !== S.cursor.y) { S.cursor = {y: q.y, m: q.m}; return true; } return false; }
+    if (S.view === 'agenda') {
+      S.agWeek = addDays(agWeek(), 7 * step); var today = dayKey(Date.now()), inWk = today >= S.agWeek && today <= addDays(S.agWeek, 6);
+      S.sel = inWk ? today : S.agWeek; var w = P(keyMs(addDays(S.agWeek, 3)));
+      if (w.m !== S.cursor.m || w.y !== S.cursor.y) { S.cursor = {y: w.y, m: w.m}; return true; } return false;
+    }
+    var c = S.cursor, m = c.m + step; S.cursor = {y: c.y + Math.floor(m / 12), m: (m + 12) % 12}; S.sel = dayKey(Date.UTC(S.cursor.y, S.cursor.m, 1) - H8 + 3600e3); return true;
+  }
+  /* the page next to this one, drawn without changing anything */
+  function neighbourHtml(step) {
+    var keep = {cursor: S.cursor, sel: S.sel, agWeek: S.agWeek, dayView: S.dayView};
+    try { stepState(step); return calBody(); } catch (e) { return ''; } finally { S.cursor = keep.cursor; S.sel = keep.sel; S.agWeek = keep.agWeek; S.dayView = keep.dayView; }
+  }
+  function commitStep(step) { var need = stepState(step); PG.drag = false; render(); $scroll.scrollTop = Math.min($scroll.scrollTop, PG.top0 || 0); if (need) quietSync(); }
+  /* ---------- sliding pages (follows the finger like a phone calendar) ---------- */
+  var PG = {drag: false};
+  function pgAdd(track, step) {
+    if (track.querySelector('.page[data-s="' + step + '"]')) return;
+    var d = document.createElement('div'); d.className = 'page side'; d.dataset.s = step; d.style.left = (step * 100) + '%'; d.innerHTML = neighbourHtml(step); track.appendChild(d);
+  }
+  function pgSet(x, anim) { var t = PG.track; if (!t) return; t.style.transition = anim ? 'transform .24s cubic-bezier(.2,.7,.3,1)' : 'none'; t.style.transform = x ? 'translate3d(' + x + 'px,0,0)' : ''; }
+  function slideTo(step) {   // used by ‹ › and by a finished swipe
+    var t = document.getElementById('ptrack');
+    if (!t || !window.matchMedia || matchMedia('(prefers-reduced-motion: reduce)').matches) return commitStep(step);
+    PG.track = t; PG.drag = true; PG.top0 = $scroll.scrollTop; pgAdd(t, step);
+    var w = t.parentNode.offsetWidth, done = false, fin = function () { if (done) return; done = true; commitStep(step); };
+    requestAnimationFrame(function () { pgSet(-step * w, true); });
+    t.addEventListener('transitionend', fin, {once: true}); setTimeout(fin, 400);
   }
   function scrollToToday() {
     var r = document.getElementById('ag-' + dayKey(Date.now())), h = document.querySelector('.calhead');
@@ -983,7 +1011,7 @@
       : S.view === 'agenda'
       ? '<div class="monthnav"><button class="nav" data-act="week" data-d="-1" aria-label="Previous week">‹</button><b class="mtitle">' + whoseFaces() + '<span>' + esc(weekLabel(agWeek())) + '</span></b><button class="nav" data-act="week" data-d="1" aria-label="Next week">›</button><button class="btn tiny ghost" data-act="today">Today</button></div>'
       : '<div class="monthnav"><button class="nav" data-act="month" data-d="-1" aria-label="Previous month">‹</button><b class="mtitle">' + whoseFaces() + '<span>' + MONTH[c.m] + ' ' + c.y + '</span></b><button class="nav" data-act="month" data-d="1" aria-label="Next month">›</button><button class="btn tiny ghost" data-act="today">Today</button></div>';
-    var body = S.view === 'day' ? (isLeader() ? '<a class="btn primary big bt-link" href="#/besttime">🔎 Best date for a team activity</a>' : '') + teamDay() : S.view === 'list' ? listView() : S.view === 'agenda' ? agendaView() : monthGrid() + '<p class="tiny muted hint">Tap a day to choose it (scroll inside to see all). Tap it again to open that day’s events.</p>';
+    var body = S.view === 'list' ? calBody() : '<div class="pager"><div class="ptrack" id="ptrack"><div class="page">' + calBody() + '</div></div></div>';
     var nowP = P(Date.now()), yLeft = Math.round((Date.UTC(nowP.y, 11, 31) - Date.UTC(nowP.y, nowP.m, nowP.d)) / DAY), mLeft = new Date(Date.UTC(nowP.y, nowP.m + 1, 0)).getUTCDate() - nowP.d;
     var countdown = '<div class="countdown">⏳ <b>' + yLeft + '</b> days left in ' + nowP.y + ' · <b>' + mLeft + '</b> days left in ' + MONTH[nowP.m] + '</div>';
     return '<div class="calhead">' + topbar('REDEFINE Calendar', {right: '<a class="icon-btn" href="#/import" aria-label="Import calendar">⤓</a>'}) +
@@ -1776,7 +1804,7 @@
   function route() { return (location.hash || '#/').slice(1); }
   var lastRoute = '';
   function render() {
-    if (HOLD) { S.renderLater = true; return; }   // never swap the screen while someone is holding 🎤 (their finger would lose the button)
+    if (HOLD || (PG && PG.drag)) { S.renderLater = true; return; }   // never swap the screen while someone is holding 🎤 (their finger would lose the button)
     if (!S.token) { $app.innerHTML = signInScreen(); return; }
     if (!S.data) { $app.innerHTML = topbar('REDEFINE Calendar') + '<main><p class="empty">Loading your team…</p></main>'; return; }
     celebrate();
@@ -1868,9 +1896,9 @@
     if (a === 'view') { S.view = b.dataset.v; LS.set('view', S.view); if (S.view === 'agenda') S.agWeek = mondayOf(S.sel || today); if (S.view === 'day' && !S.dayView) S.dayView = S.sel || today; return render(); }
     if (a === 'sel' && S.view === 'month' && S.sel === b.dataset.k) return openDay(b.dataset.k);
     if (a === 'sel') { S.sel = b.dataset.k; var p = P(keyMs(S.sel)); if (p.m !== S.cursor.m) { S.cursor = {y: p.y, m: p.m}; quietSync(); } return render(); }
-    if (a === 'month') { var c = S.cursor, m = c.m + +b.dataset.d; S.cursor = {y: c.y + Math.floor(m / 12), m: (m + 12) % 12}; S.sel = dayKey(Date.UTC(S.cursor.y, S.cursor.m, 1) - H8 + 3600e3); render(); return quietSync(); }
-    if (a === 'day') { S.dayView = addDays(S.dayView, +b.dataset.d); S.sel = S.dayView; var q = P(keyMs(S.dayView)); if (q.m !== S.cursor.m) { S.cursor = {y: q.y, m: q.m}; quietSync(); } return render(); }
-    if (a === 'week') return goWeek(+b.dataset.d);
+    if (a === 'month') return slideTo(+b.dataset.d);
+    if (a === 'day') return slideTo(+b.dataset.d);
+    if (a === 'week') return slideTo(+b.dataset.d);
     if (a === 'today') { var t = P(Date.now()); S.cursor = {y: t.y, m: t.m}; S.sel = today; S.agWeek = mondayOf(today); S.dayView = today; render(); return quietSync(); }
     if (a === 'new') return editor(null);
     if (a === 'ag-new') { closeModal(); S.sel = b.dataset.k; return editor(null); }
@@ -1966,16 +1994,33 @@
   function delMsg(id) { confirmBox('Delete this comment?', 'It will be removed for everyone.', 'Delete', true).then(function (y) { if (y) send('delmsg', {id: id}); }); }
 
   var sw0 = null;
-  document.addEventListener('touchstart', function (ev) { if (!ev.target.closest || !ev.target.closest('#calmain') || ev.touches.length > 1 || ev.target.closest('.gd.sel .gd-evs, .chips, .tablewrap')) { sw0 = null; return; } sw0 = {x: ev.touches[0].clientX, y: ev.touches[0].clientY, t: Date.now()}; }, {passive: true});
-  document.addEventListener('touchend', function (ev) {
-    if (!sw0) return; var t = ev.changedTouches[0], dx = t.clientX - sw0.x, dy = t.clientY - sw0.y, dt = Date.now() - sw0.t; sw0 = null;
-    if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 1.5 || dt > 800 || route().replace(/^[/]+/, '')) return;
-    var step = dx < 0 ? 1 : -1;   // swipe left = next month (week in Agenda, day in Team day), swipe right = previous
-    if (S.view === 'day') { S.dayView = addDays(S.dayView, step); S.sel = S.dayView; var q2 = P(keyMs(S.dayView)); if (q2.m !== S.cursor.m) { S.cursor = {y: q2.y, m: q2.m}; quietSync(); } return render(); }
-    if (S.view === 'list') return;
-    if (S.view === 'agenda') { goWeek(step); $scroll.scrollTop = 0; return; }
-    var c2 = S.cursor, m2 = c2.m + step; S.cursor = {y: c2.y + Math.floor(m2 / 12), m: (m2 + 12) % 12}; S.sel = dayKey(Date.UTC(S.cursor.y, S.cursor.m, 1) - H8 + 3600e3); render(); $scroll.scrollTop = 0; quietSync();
+  document.addEventListener('touchstart', function (ev) {
+    sw0 = null;
+    if (!ev.target.closest || ev.touches.length > 1 || PG.drag || route().replace(/^[/]+/, '') || S.view === 'list') return;
+    var t = ev.target.closest('#ptrack'); if (!t || ev.target.closest('.gd.sel .gd-evs, .chips, .tablewrap')) return;
+    sw0 = {x: ev.touches[0].clientX, y: ev.touches[0].clientY, t: Date.now(), mode: '', track: t, w: t.parentNode.offsetWidth};
   }, {passive: true});
+  document.addEventListener('touchmove', function (ev) {
+    if (!sw0 || ev.touches.length > 1) return;
+    var dx = ev.touches[0].clientX - sw0.x, dy = ev.touches[0].clientY - sw0.y;
+    if (!sw0.mode) {
+      if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
+      sw0.mode = Math.abs(dx) > Math.abs(dy) ? 'h' : 'v';
+      if (sw0.mode === 'v') { sw0 = null; return; }
+      PG.track = sw0.track; PG.drag = true; PG.top0 = $scroll.scrollTop; pgAdd(sw0.track, 1); pgAdd(sw0.track, -1);
+    }
+    sw0.lx = dx; sw0.lt = Date.now(); pgSet(dx, false);
+  }, {passive: true});
+  function swipeEnd(ev) {
+    if (!sw0) return; var s = sw0; sw0 = null; if (s.mode !== 'h') return;
+    var dx = s.lx || 0, v = dx / Math.max(1, Date.now() - s.t), step = 0;
+    if (ev.type === 'touchend' && (Math.abs(dx) > s.w * 0.22 || (Math.abs(v) > 0.45 && Math.abs(dx) > 30))) step = dx < 0 ? 1 : -1;   // swipe left = next month / week / day
+    if (!step) { pgSet(0, true); setTimeout(function () { PG.drag = false; if (S.renderLater) { S.renderLater = false; render(); } }, 260); return; }
+    var done = false, fin = function () { if (done) return; done = true; commitStep(step); };
+    pgSet(-step * s.w, true); s.track.addEventListener('transitionend', fin, {once: true}); setTimeout(fin, 400);
+  }
+  document.addEventListener('touchend', swipeEnd, {passive: true});
+  document.addEventListener('touchcancel', swipeEnd, {passive: true});
   window.addEventListener('hashchange', function () { closeModal(); render(); });
   /* Phones keep home-screen apps paused in memory, so an update would only arrive after swiping the app away.
      Instead: whenever the app comes back on screen, check for a newer version and reload (never mid-typing / with a form open). */
