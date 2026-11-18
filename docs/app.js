@@ -7,7 +7,7 @@
   var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   var MONTH = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   var DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  var APP_VERSION = '42';
+  var APP_VERSION = '43';
   var H8 = 8 * 3600e3, DAY = 864e5, SELLING = {approach: 1, open: 1, present: 1, followup: 1, close: 1, joinfield: 1, recruit: 1};
 
   /* ---------- storage (each phone) ---------- */
@@ -1443,7 +1443,7 @@
     var seg = '<div class="seg">' + [['week', 'This week'], ['lastweek', 'Last week'], ['month', 'This month'], ['lastmonth', 'Last month']].map(function (x) { return '<button class="' + (p === x[0] ? 'on' : '') + '" data-act="period" data-p="' + x[0] + '">' + x[1] + '</button>'; }).join('') + '</div>';
     if (!d.events) return topbar('Activity') + '<main>' + seg + '<p class="empty">Loading…</p></main>' + tabs('stats');
     var by = C.stats(d.events, d.r.from, d.r.to, Date.now()), mine = by[my] || C.addStats([]), r = C.ratios(mine);
-    var funnel = [['A', 'Approach', mine.A], ['O', 'Open', mine.O], ['P', 'Present', mine.P], ['F', 'Follow-up', mine.F], ['C', 'Close', mine.C]], top = Math.max.apply(null, funnel.map(function (f) { return f[2]; }).concat([1]));
+    var funnel = [['A', 'Approach', mine.A], ['O', 'Appointment', mine.O], ['P', 'Present', mine.P], ['F', 'Follow-up', mine.F], ['C', 'Close', mine.C]], top = Math.max.apply(null, funnel.map(function (f) { return f[2]; }).concat([1]));
     var html = topbar('Activity') + '<main class="stats">' + seg + goalsCard() +
       '<div class="card"><h4>My ' + esc(/^(This|Last) /.test(d.r.label) ? d.r.label.toLowerCase() : d.r.label) + '</h4><div class="funnel">' + funnel.map(function (f) { return '<div class="fr"><span class="fl"><b>' + f[0] + '</b> ' + f[1] + '</span><span class="fb"><i style="width:' + (f[2] / top * 100) + '%"></i></span><b class="fv">' + f[2] + '</b></div>'; }).join('') + '</div>' +
       '<div class="kpis">' + kpi('O/A', pct(r.OA), 'prospecting') + kpi('P/O', pct(r.PO), 'presentation') + kpi('F/P', pct(r.FP), 'follow-up') + kpi('NOC/P', pct(r.CP), 'closing') + '</div>' + ratioNote(r) +
@@ -1547,7 +1547,7 @@
     if (!ms.A) out.push('👋 No new approaches logged. Everything starts here: aim for a few new friends every week.');
     if (ms.P < team.P) out.push('📊 Presentations: ' + ms.P + ' (team average ' + team.P.toFixed(1) + '). More presentations = more closes.');
     else if (ms.P) out.push('📊 Strong presentation activity: ' + ms.P + ' (team average ' + team.P.toFixed(1) + ').');
-    var gaps = [['OA', 'Turn more approaches into appointments: ask for the meeting on the spot.'], ['PO', 'Turn more fact-finds into presentations: book the presentation before you leave.'], ['CP', 'Your closing ratio is below the team: follow up within 48 hours and ask for the decision.']]
+    var gaps = [['OA', 'Turn more approaches into appointments: ask for the meeting on the spot.'], ['PO', 'Too many booked presentations are not happening: confirm with the client the day before, and postpone instead of letting it drop.'], ['CP', 'Your closing ratio is below the team: follow up within 48 hours and ask for the decision.']]
       .map(function (g) { return {g: g, gap: r[g[0]] != null && tr[g[0]] != null ? tr[g[0]] - r[g[0]] : 0}; }).sort(function (x, y) { return y.gap - x.gap; });
     if (gaps[0].gap > 0.05) out.push('🔍 ' + gaps[0].g[1]);
     if (ms.unconfirmed) out.push('✅ ' + ms.unconfirmed + (ms.unconfirmed > 1 ? ' activities were' : ' activity was') + ' not confirmed, so ' + (ms.unconfirmed > 1 ? 'they' : 'it') + ' did not count. Confirm them after each meeting.');
@@ -1559,7 +1559,7 @@
     var head = topbar('Monthly report', {back: '#/stats'}) + '<main class="stats"><div class="monthnav"><a class="nav" href="#/report/' + prev + '">‹</a><b>' + MONTH[m] + ' ' + y + '</b><a class="nav" href="#/report/' + next + '">›</a></div>';
     if (!pr || !pr.month) return head + '<p class="empty">Loading…</p></main>' + tabs('stats');
     var ms = pr.month.me, t = pr.month.teamAvg, goal = goalOf('M' + mk), row = function (lbl, k2) { return '<tr><td class="l">' + lbl + '</td><td><b>' + ms[k2] + '</b></td><td>' + (+t[k2]).toFixed(1) + '</td></tr>'; };
-    return head + '<div class="card"><h4>My numbers</h4><table class="board"><thead><tr><th class="l"></th><th>Me</th><th>Team avg</th></tr></thead><tbody>' + row('👋 Approach', 'A') + row('☕ Open', 'O') + row('📊 Present', 'P') + row('🔁 Follow-up', 'F') + row('✍️ NOC', 'C') +
+    return head + '<div class="card"><h4>My numbers</h4><table class="board"><thead><tr><th class="l"></th><th>Me</th><th>Team avg</th></tr></thead><tbody>' + row('👋 Approach', 'A') + row('📅 Appointment (O)', 'O') + row('📊 Present', 'P') + row('🔁 Follow-up', 'F') + row('✍️ NOC', 'C') +
       '<tr><td class="l">💰 ANP</td><td><b>' + rm(ms.anp) + '</b></td><td>' + rm(t.anp) + '</td></tr>' + (goal ? '<tr><td class="l">🎯 Goal</td><td><b>' + rm(goal) + '</b></td><td></td></tr>' : '') + '</tbody></table></div>' +
       '<div class="card coach"><h4>📝 Coach’s note</h4>' + coachNote(ms, t, goal).map(function (l) { return '<p>' + esc(l) + '</p>'; }).join('') + '</div></main>' + tabs('stats');
   }
@@ -1581,7 +1581,7 @@
   }
   function downloadCsv() {
     var x = reportRows(); if (!x) return;
-    var head = ['Agent', 'Approach', 'Open', 'Present', 'Follow-up', 'Recruit', 'Total activities', 'NOC', 'ANP', 'Avg case', 'O/A', 'P/O', 'F/P', 'NOC/P', 'Meeting', 'Service', 'CRM', 'Paperwork', 'Not confirmed'];
+    var head = ['Agent', 'Approach', 'Appointment (O)', 'Present', 'Follow-up', 'Recruit', 'Total activities', 'NOC', 'ANP', 'Avg case', 'O/A', 'P/O', 'F/P', 'NOC/P', 'Meeting', 'Service', 'CRM', 'Paperwork', 'Not confirmed'];
     var all = {m: {name: 'TEAM TOTAL'}, s: C.addStats(x.rows.map(function (r) { return r.s; }))};
     var lines = [head.join(',')].concat(x.rows.concat([all]).map(function (r) { var s = r.s, q = C.ratios(s); return ['"' + r.m.name.replace(/"/g, '""') + '"', s.A, s.O, s.P, s.F, s.recruit, actTotal(s), s.C, s.anp, q.M == null ? '' : Math.round(q.M), pct(q.OA), pct(q.PO), pct(q.FP), pct(q.CP), s.meeting, s.service, s.crm, s.paperwork, s.unconfirmed].join(','); }));
     var a = document.createElement('a'); a.href = URL.createObjectURL(new Blob(['﻿' + lines.join('\n')], {type: 'text/csv'})); a.download = 'REDEFINE activity ' + x.d.r.label + '.csv'; a.click();
@@ -1611,7 +1611,7 @@
       '<div class="card"><h4>Move my calendar here</h4><p class="muted">Google Calendar, TimeTree, iPhone, or a paper diary: snap photos or screenshots and the AI copies them in. You check every row first.</p><a class="btn primary" href="#/import">⤓ Import calendar</a></div>' +
       (!standalone() ? '<div class="card"><h4>Install</h4><p class="muted">Add REDEFINE Calendar to your home screen so it opens like an app.</p><button class="btn ghost" data-act="install">How?</button></div>' : '') +
       (m.leader ? '<div class="card"><h4>Leader</h4><a class="btn ghost" href="#/members">👥 Manage members</a></div>' : '') +
-      '<div class="card"><h4>How counting works</h4><p class="tiny muted">Each event has a type (👋 Approach, ☕ Open, 📊 Present, 🔁 Follow-up, ✍️ Closing, 🌱 Recruit, 👥 Meeting, 🛠️ Service, 🎁 CRM, 📝 Paperwork, 🏠 Personal). The app guesses it from the title. After the event, tap ✓ Done, 💰 Closed (with ANP) or ✕ Didn\'t happen. Only confirmed events count. O/A = prospecting, P/O = presentation, F/P = follow-up, NOC/P = closing ratio. Personal events never count.</p></div>' +
+      '<div class="card"><h4>How counting works</h4><p class="tiny muted">Each event has a type (👋 Approach, 📊 Present, 🔁 Follow-up, ✍️ Closing, 🌱 Recruit, 👥 Meeting, 🛠️ Service, 🎁 CRM, 📝 Paperwork, 🏠 Personal). The app guesses it from the title. After the event, tap ✓ Done, 💰 Closed (with ANP) or ✕ Didn\'t happen. Only confirmed events count, except: setting a 📊 presentation counts O (appointment) straight away; P counts when it’s Done. O/A = prospecting, P/O = presentation, F/P = follow-up, NOC/P = closing ratio. Personal events never count.</p></div>' +
       subCard() + soundCard() + (m.owner ? '<div class="card"><h4>🎉 Celebration themes</h4><p class="tiny muted">Only you (the owner) see this. Upload a festival poster: the app takes its colours and pictures for the whole team.</p><a class="btn primary" href="#/themes">Manage themes</a></div>' : '') +
       '<div class="card"><h4>Help & security</h4><div class="row"><button class="btn primary" data-act="tour">📖 Take the tour</button><button class="btn ghost" data-act="pinchange">🔑 Change my PIN</button></div></div>' +
       '<p class="center tiny muted">App version ' + APP_VERSION + ' · ' + (isIOS() ? 'iPhone' : 'Android / other') + (standalone() ? ' · home-screen app' : ' · browser') + ' · notifications: ' + ('Notification' in window ? Notification.permission : 'not supported') + ' · server has ' + (me().devices || 0) + ' phone(s) for you</p>' +

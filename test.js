@@ -51,13 +51,13 @@ function fresh() {
   const pub = h({op: 'save', token: ali.token, event: {title: 'Present Mr Lim medical card', start: st, end: en, place: 'Gurney'}}).event;
   const hid = h({op: 'save', token: ali.token, event: {title: 'FF Encik Zul 0123456789', start: iso(NOW + 28 * H), end: iso(NOW + 29 * H), vis: 'private', place: 'his house', notes: 'IC 900101'}}).event;
   const per = h({op: 'save', token: ali.token, event: {title: 'Gym', start: iso(NOW + 30 * H), end: iso(NOW + 31 * H), vis: 'private'}}).event;
-  ok(pub.type === 'present' && hid.type === 'open' && per.type === 'personal', 'types detected from titles');
+  ok(pub.type === 'present' && hid.type === 'present' && per.type === 'personal', 'types detected from titles (FF = presentation now)');
   const view = tok => h({op: 'sync', token: tok, force: true}).events;
   const m = view(mar.token), b = view(boss.token), a = view(ali.token);
   const find = (list, id) => list.find(e => e.id === id);
   ok(find(m, pub.id).title === 'Present Mr Lim medical card', 'team event visible to teammates');
   const mh = find(m, hid.id);
-  ok(mh.busy && !mh.title && !mh.place && !mh.notes && mh.t === 'open', 'private work event: teammate sees only Busy (+type for counts)');
+  ok(mh.busy && !mh.title && !mh.place && !mh.notes && mh.t === 'present', 'private work event: teammate sees only Busy (+type for counts)');
   ok(find(b, hid.id).busy && !find(b, hid.id).title, 'leader also sees only Busy (as chosen)');
   const mp = find(m, per.id);
   ok(mp.busy && !mp.t && !mp.title, 'private personal event reveals only the time');
@@ -163,12 +163,12 @@ function fresh() {
   ok(s.pushes.filter(p => /closed a case/.test(p.note.title)).length === 2 && !s.load('msgs').length, 'closing pops up a 🎉 to the team (no chat message)');
   throws(() => h({op: 'outcome', token: ali.token, id: pr.id, out: 'closed', anp: '-5'}), 'bad_anp', 'negative ANP refused');
   const st = CORE.stats(s.load('events'), NOW - 7 * D, NOW + 7 * D, NOW)[ali.me.id];
-  ok(st.A === 6 && st.O === 4 && st.P === 2 && st.F === 1 && st.C === 2, 'A/O/P/F/C: O = 1 open + 3 presentations set (done or not), P only when done: ' + JSON.stringify([st.A, st.O, st.P, st.F, st.C]));
+  ok(st.A === 6 && st.O === 5 && st.P === 3 && st.F === 1 && st.C === 2, 'A/O/P/F/C: O = 5 presentations set (done or not), P = 3 done: ' + JSON.stringify([st.A, st.O, st.P, st.F, st.C]));
   ok(st.anp === 3600 && st.anpCases === 1, 'ANP never guessed: a close without ANP is a case with no RM');
   ok(st.cancelled === 1 && st.unconfirmed === 1, 'cancelled not counted; past unconfirmed paperwork shown as unconfirmed');
   ok(st.personal === 0, 'personal events never count');
   const r = CORE.ratios(st);
-  ok(r.OA === 4 / 6 && r.PO === 0.5 && r.FP === 0.5 && r.CP === 1 && r.M === 3600, 'ratios: O/A, P/O, F/P, NOC/P, avg case');
+  ok(r.OA === 5 / 6 && r.PO === 3 / 5 && r.FP === 1 / 3 && r.CP === 2 / 3 && r.M === 3600, 'ratios: O/A, P/O, F/P, NOC/P, avg case');
   ok(CORE.ratios(CORE.addStats([])).CP === null, 'no presentations -> ratio shown as – (not 0%)');
   // teammates get counts but not ANP; leader gets ANP
   const mv = h({op: 'sync', token: mar.token, force: true}).events, bv = h({op: 'sync', token: boss.token, force: true}).events;
@@ -179,7 +179,7 @@ function fresh() {
   // present marked Done today, client signs next week: come back and tick Closed with NOC + ANP
   h({op: 'outcome', token: ali.token, id: pr.id, out: 'closed', noc: 2, anp: '9000'});
   const st2 = CORE.stats(s.load('events'), NOW - 7 * D, NOW + 7 * D, NOW)[ali.me.id];
-  ok(st2.P === 2 && st2.C === 4 && st2.anp === 12600 && st2.anpCases === 3, 'later close: P stays, C adds NOC (2), ANP adds');
+  ok(st2.P === 3 && st2.C === 4 && st2.anp === 12600 && st2.anpCases === 3, 'later close: P stays, C adds NOC (2), ANP adds');
   ok(CORE.ratios(st2).M === 4200, 'avg case size = ANP / NOC (12,600 / 3)');
   ok(s.pushes.some(p => /closed 2 cases/.test(p.note.title)), 'team pop-up says how many cases');
   throws(() => h({op: 'outcome', token: ali.token, id: pr.id, out: 'closed', noc: 0}), 'bad_noc', 'NOC 0 refused');
@@ -582,7 +582,7 @@ function fresh() {
 
 /* ---------- join field (陪访) type ---------- */
 {
-  ok(CORE.TYPES.joinfield && CORE.TYPE_ORDER.indexOf('joinfield') === 5, 'join field is an activity type');
+  ok(CORE.TYPES.joinfield && CORE.TYPE_ORDER.indexOf('joinfield') > 0, 'join field is an activity type');
   ok(CORE.detectType('Join field Mr Lim with KJ') === 'joinfield' && CORE.detectType('陪访 Ali') === 'joinfield' && CORE.detectType('JF present Mr Tan') === 'joinfield', 'join field picked from the title (EN / 中文)');
   ok(CORE.detectType('Present Mr Lim medical card') === 'present', 'other titles unchanged');
   const st = CORE.stats([{ownerId: 'x', type: 'joinfield', start: '2026-11-03T02:00:00.000Z', end: '2026-11-03T03:00:00.000Z', out: 'done'}], 0, 9e15, 9e15).x;
@@ -610,6 +610,20 @@ function fresh() {
   throws(() => h({op: 'postpone', token: ali.token, id: p1.id, date: '2026-11-20', time: '15:00'}), 'already_done', 'a done presentation cannot be postponed');
   throws(() => h({op: 'postpone', token: kj.token, id: p3.id, date: '2026-11-20', time: '15:00'}), 'not_yours', 'only the owner postpones');
   throws(() => h({op: 'postpone', token: ali.token, id: p3.id, date: '2026-11-31', time: '15:00'}), 'bad_date', 'impossible date refused');
+}
+
+/* ---------- Open removed: new events become presentations, old Open events still count ---------- */
+{
+  const {s, h, join} = fresh();
+  const ali = join('Alicia Tan');
+  ok(CORE.TYPE_ORDER.indexOf('open') < 0, 'Open is not offered any more');
+  const e = h({op: 'save', token: ali.token, event: {title: 'Ali', type: 'open', start: iso(NOW - 3 * H), end: iso(NOW - 2 * H)}}).event;
+  ok(e.type === 'present', 'an event sent as Open is saved as a presentation');
+  ok(CORE.parseRead(JSON.stringify({events: [{date: '2026-11-10', start: '10:00', title: 'Ali', type: 'open', confidence: 0.9}]})).events[0].type === 'present', 'photo import: Open becomes Presentation');
+  ok(CORE.parseVoice(JSON.stringify({title: 'Ali', type: 'open'}), 'x', []).event.type === 'present', 'voice: Open becomes Presentation');
+  const rows = s.load('events'); rows.push({id: 'old1', ownerId: ali.me.id, title: 'FF Jason (2025)', type: 'open', start: iso(NOW - 5 * H), end: iso(NOW - 4 * H), out: 'done', vis: 'team', with: ''}); s.save('events', rows);
+  const st = CORE.stats(s.load('events'), NOW - D, NOW + D, NOW)[ali.me.id];
+  ok(st.O === 2 && st.P === 0, 'an old Open event marked Done still counts O (history unchanged)');
 }
 
 /* ---------- sample team sanity ---------- */

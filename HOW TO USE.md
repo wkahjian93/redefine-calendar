@@ -15,10 +15,10 @@
 You stay signed in on that phone for good, like WhatsApp. Only two things sign you out: tapping **Sign out** on that phone, or a leader removing you. Changing the team code or losing signal never does.
 
 ## Every day (agents)
-- **Add an appointment:** tap **+**, type what it is ("Present Mr Lim medical card", "签单 Ooi", "FU Jason"). The app works out the type (👋 Approach, ☕ Open, 📊 Present, 🔁 Follow-up, ✍️ Closing, 🌱 Recruit, 👥 Meeting, 🛠️ Service, 🎁 CRM, 📝 Paperwork, 🏠 Personal). Tap another type if it guessed wrong.
+- **Add an appointment:** tap **+**, type what it is ("Present Mr Lim medical card", "签单 Ooi", "FU Jason"). The app works out the type (👋 Approach, 📊 Present, 🔁 Follow-up, ✍️ Closing, 🌱 Recruit, 👥 Meeting, 🛠️ Service, 🎁 CRM, 📝 Paperwork, 🏠 Personal). Tap another type if it guessed wrong.
 - **Team or Only me:** 👥 Team = everyone sees it. 🔒 Only me = others see a grey **Busy** block, with no title, client or place. Hidden work events still count in your numbers. Personal events never count.
 - **After the appointment:** tap **✓ Done**, **💰 Closed**, or **✕ Didn't happen**. Only confirmed events count. The app never guesses. At 9pm it reminds you if anything is still unconfirmed.
-- **Presentations:** setting a 📊 presentation counts **O +1** (an appointment) straight away. When it happens (✓ Done or 💰 Closed) it also counts **P +1**. If it didn't happen, O stays and P doesn't count. The app then offers **📅 Postpone**: pick the new date and time, and it moves the same appointment (O isn't counted twice), notes the old date, and tells anyone invited. The presentation page also has a **📅 Postpone to a new date** button.
+- **Presentations:** setting a 📊 presentation counts **O +1** (an appointment) straight away, so there is no separate Open type any more ("FF" / "1st meet" titles become presentations; older Open events still count). When it happens (✓ Done or 💰 Closed) it also counts **P +1**. If it didn't happen, O stays and P doesn't count. The app then offers **📅 Postpone**: pick the new date and time, and it moves the same appointment (O isn't counted twice), notes the old date, and tells anyone invited. The presentation page also has a **📅 Postpone to a new date** button.
 - **Not sure if the client will sign?** Tap **✓ Done** on the presentation or follow-up. If they sign later, open the same event and tap **💰 Closed**. Add **one line per policy**:
   - **Plan name**, as on the proposal
   - **ANP** (yearly premium, e.g. RM300 monthly = RM3,600)
@@ -39,7 +39,7 @@ You stay signed in on that phone for good, like WhatsApp. Only two things sign y
 - **Holidays:** Malaysia + Penang public holidays (red date), festivals, and school holidays (light blue days) show on the calendar. You get a pop-up the day before and on the day.
 - **🎂 Birthdays:** Me → **My birthday** (day + month only) puts it on everyone's calendar with a pop-up that morning. Me → **Important people** adds yearly birthdays and anniversaries for family or clients (🔒 only you by default).
 - **✅ To-do tab:** 4 boxes: 🔴 urgent & important, 🟠 urgent, 🔵 important, ⚪ neither. Pick a box, type, Add. *Today* shows today's and overdue items; *All time* shows everything. To-dos are private.
-- **🎯 Goals (Activity tab):** set an ANP goal for the month, quarter, half-year or year. The app works out how many approaches, opens, presentations and closes you need **each week**, from your own last 90 days (or the team's if you're new). **📄 Monthly report** compares you with the team average and adds a coach's note.
+- **🎯 Goals (Activity tab):** set an ANP goal for the month, quarter, half-year or year. The app works out how many approaches, appointments, presentations and closes you need **each week**, from your own last 90 days (or the team's if you're new). **📄 Monthly report** compares you with the team average and adds a coach's note.
 - **📖 Tour:** Me → Take the tour, any time.
 - **Swipe:** on the calendar, swipe left for the next month (or day), swipe right for the previous one.
 

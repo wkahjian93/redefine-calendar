@@ -24,7 +24,7 @@ var CORE = (function () {
   /* Activity types. A/O/P/F/C follow REDEFINE's MAE vocabulary. "work" types count in the activity report. */
   var TYPES = {
     approach:  {label: 'Approach (new friend)', short: 'A', emoji: '👋', work: 1},
-    open:      {label: 'Open / fact-find', short: 'O', emoji: '☕', work: 1},
+    open:      {label: 'Open (old)', short: 'O', emoji: '☕', work: 1},   // no longer offered; kept so older events still show and count
     present:   {label: 'Presentation', short: 'P', emoji: '📊', work: 1},
     followup:  {label: 'Follow-up', short: 'F', emoji: '🔁', work: 1},
     close:     {label: 'Closing', short: 'C', emoji: '✍️', work: 1},
@@ -36,7 +36,7 @@ var CORE = (function () {
     paperwork: {label: 'Paperwork', short: 'PW', emoji: '📝', work: 1},
     personal:  {label: 'Personal', short: '', emoji: '🏠', work: 0}
   };
-  var TYPE_ORDER = ['approach', 'open', 'present', 'followup', 'close', 'joinfield', 'recruit', 'meeting', 'service', 'crm', 'paperwork', 'personal'];
+  var TYPE_ORDER = ['approach', 'present', 'followup', 'close', 'joinfield', 'recruit', 'meeting', 'service', 'crm', 'paperwork', 'personal'];
   var PROSPECT = {open: 1, present: 1, followup: 1, close: 1};   // these can end in "Closed 💰"
   var COLORS = ['#E8505B', '#2E86DE', '#10AC84', '#F39C12', '#8E44AD', '#16A085', '#D35400', '#C0392B', '#2C3E50', '#E84393', '#00B894', '#6C5CE7', '#FDCB6E', '#0984E3', '#B33771', '#3B3B98'];
   var ID_CHARS = 'abcdefghijkmnpqrstuvwxyz23456789';
@@ -147,7 +147,7 @@ var CORE = (function () {
     ['close', /\b(clos(e|ing|ed)|sign(ing)?|signed|collect (cheque|payment)|submit case|nb submit)\b|签单|签约|成交|收钱|tutup jualan|tandatangan/i],
     ['present', /\b(present(ation)?|pre|proposal|quotation|quote|bi|benefit illustration|plan explain|explain plan)\b|讲解|讲计划|建议书|报价|pembentangan/i],
     ['followup', /\b(follow[\s-]?up|f\/?u|fu|re-?meet|second meet|2nd meet|revisit)\b|跟进|复访|susulan/i],
-    ['open', /\b(open(ing)?|fact[\s-]?find(ing)?|ff|need(s)? analysis|1st meet|first meet|financial review|review plan)\b|开单|开拓|需求分析|第一次见|初次|semakan kewangan/i],
+    ['present', /\b(open(ing)?|fact[\s-]?find(ing)?|ff|need(s)? analysis|1st meet|first meet|financial review|review plan)\b|开单|开拓|需求分析|第一次见|初次|semakan kewangan/i],
     ['recruit', /\b(recruit(ment|ing)?|interview|career talk|bop|business opportunity|career|intern(ship)?)\b|招募|面试|增员|事业说明|temuduga|kerjaya/i],
     ['service', /\b(service|servicing|claim|claims|renewal|endorsement|nominee|reinstate|policy change|lapse)\b|理赔|服务|索赔|续保|tuntutan|perkhidmatan/i],
     ['personal', /\b(gym|workout|family|wife|husband|daughter|son|kid|baby|doctor|clinic|dentist|holiday|vacation|movie|date night|dinner with family|church|temple|mosque|haircut|personal|off day|rest)\b|家人|老婆|女儿|儿子|看医生|休息|放假|健身|peribadi|keluarga|cuti/i],
@@ -156,6 +156,7 @@ var CORE = (function () {
     ['meeting', /\b(meeting|mtg|training|bootcamp|class|workshop|seminar|briefing|team|rally|kick ?off|agency|conference|study|exam|pcil|ceilli)\b|会议|开会|培训|课|早会|mesyuarat|latihan|kursus/i],
     ['approach', /\b(approach|prospect(ing)?|cold call|calls?|roadshow|booth|survey|networking|new friend|warm market|referral(s)?|door ?to ?door)\b|新朋友|认识|陌拜|打电话|转介绍|kenalan|kawan baru/i]
   ];
+  function newType(t) { return t === 'open' ? 'present' : t; }   // anything new that says Open becomes a Presentation
   function detectType(title) {
     var t = str(title, 200); if (!t) return '';
     for (var i = 0; i < DETECT.length; i++) if (DETECT[i][1].test(t)) return DETECT[i][0];
@@ -312,7 +313,7 @@ var CORE = (function () {
   function cleanEvent(src, me, members) {
     var e = {}, allDay = src.allDay === true || src.allDay === 'true';
     e.title = str(src.title, 120); if (!e.title) fail('title_needed');
-    e.type = TYPES[src.type] ? src.type : (detectType(e.title) || 'meeting');
+    e.type = TYPES[src.type] ? newType(src.type) : (detectType(e.title) || 'meeting');
     e.allDay = allDay ? 'true' : 'false';
     if (allDay) {
       var sd = str(src.start, 10), ed = str(src.end || src.start, 10);
@@ -817,15 +818,15 @@ var CORE = (function () {
       'Transcript: """' + heard + '"""',
       '',
       'Return ONLY a JSON object:',
-      '{"title":"short title in the language they used, e.g. Present medical plan to Mr Lim","type":"approach|open|present|followup|close|joinfield|recruit|meeting|service|crm|paperwork|personal|",',
+      '{"title":"short title in the language they used, e.g. Present medical plan to Mr Lim","type":"approach|present|followup|close|joinfield|recruit|meeting|service|crm|paperwork|personal|",',
       ' "date":"YYYY-MM-DD or empty","start":"HH:MM 24h or empty","end":"HH:MM or empty","allDay":false,"place":"or empty","notes":"or empty",',
       ' "people":["team members to invite, only names from the list"],"repeat":"w|m|y|","clean":"the instruction rewritten clearly in English","unclear":"what was not said or not clear"}',
       '',
       'Rules: never invent a date, time or place that was not said. "esok"/"明天"/"听日"/"明仔载" = tomorrow; "lusa"/"后天" = day after;',
       '"this Sat"/"星期六"/"礼拜六"/"Sabtu" = the coming Saturday (today if today is Saturday); "next Tue"/"下个星期二" = Tuesday of next week.',
       '"3点"/"pukul 3"/"three" without am/pm: use the likely working time (8-11 = morning, 1-7 = afternoon/evening). "petang" = pm, "pagi" = am.',
-      'If only a start time is said, leave end empty. type: approach = meeting/calling new friends; open = first meeting / fact-find;',
-      'present = presenting a plan; followup = follow-up; close = signing; joinfield = join field (陪访): a leader / senior goes along to a client meeting; recruit = recruitment / interview / career talk; meeting = team meeting / training;',
+      'If only a start time is said, leave end empty. type: approach = meeting/calling new friends;',
+      'present = presentation / first meeting / fact-find with a client; followup = follow-up; close = signing; joinfield = join field (陪访): a leader / senior goes along to a client meeting; recruit = recruitment / interview / career talk; meeting = team meeting / training;',
       'service = claims / servicing; crm = client birthday / gift / visit; paperwork = forms / admin; personal = family / gym / private.',
       'If the transcript is not about an appointment, return empty title and explain in "unclear".'
     ].join('\n');
@@ -834,7 +835,7 @@ var CORE = (function () {
   function parseVoice(text, heard, members) {
     var j; try { j = JSON.parse(String(text).replace(/^```(json)?|```$/g, '')); } catch (e) { fail('ai_unreadable'); }
     var date = isDate(str(j.date, 10)) ? str(j.date, 10) : '', start = hhmm(j.start), end = hhmm(j.end), title = str(j.title, 120);
-    var type = TYPES[j.type] ? j.type : (title ? detectType(title) : ''), allDay = j.allDay === true && !start;
+    var type = TYPES[j.type] ? newType(j.type) : (title ? detectType(title) : ''), allDay = j.allDay === true && !start;
     var want = (Array.isArray(j.people) ? j.people : []).map(function (n) { return normName(n); }), ids = [];
     members.forEach(function (m) { if (String(m.active) !== 'false' && (want.indexOf(normName(shortOf(m))) >= 0 || want.indexOf(normName(m.name)) >= 0)) ids.push(m.id); });
     var missing = [];
@@ -965,7 +966,7 @@ var CORE = (function () {
       '{"source":"google|timetree|iphone|samsung|outlook|paper|whatsapp|other",',
       ' "monthShown":"YYYY-MM or empty",',
       ' "events":[{"date":"YYYY-MM-DD or empty","start":"HH:MM 24h or empty","end":"HH:MM or empty","allDay":false,',
-      '   "title":"exactly as written","type":"approach|open|present|followup|close|joinfield|recruit|meeting|service|crm|paperwork|personal|",',
+      '   "title":"exactly as written","type":"approach|present|followup|close|joinfield|recruit|meeting|service|crm|paperwork|personal|",',
       '   "count":1,"confidence":0.0,"unclear":"what is unclear, or empty"}],',
       ' "notes":"short note about anything you could not read"}',
       '',
@@ -990,7 +991,7 @@ var CORE = (function () {
     var j; try { j = JSON.parse(String(text).replace(/^```(json)?|```$/g, '')); } catch (e) { fail('ai_unreadable'); }
     var rows = (Array.isArray(j.events) ? j.events : []).slice(0, 80).map(function (r) {
       var date = isDate(str(r.date, 10)) ? str(r.date, 10) : '', start = hhmm(r.start), end = hhmm(r.end), title = str(r.title, 120);
-      var type = TYPES[r.type] ? r.type : detectType(title), conf = +r.confidence; conf = isFinite(conf) ? Math.max(0, Math.min(1, conf)) : 0.5;
+      var type = TYPES[r.type] ? newType(r.type) : detectType(title), conf = +r.confidence; conf = isFinite(conf) ? Math.max(0, Math.min(1, conf)) : 0.5;
       var allDay = r.allDay === true && !start, problems = [];
       if (!date) problems.push('date unclear');
       if (!start && !allDay) problems.push('time unclear');
