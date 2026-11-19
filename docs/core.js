@@ -1161,7 +1161,7 @@ var CORE = (function () {
     if (q.op === 'readtext') {   // words typed or pasted (WhatsApp, notes, a list): read by the same AI rules as a photo
       var words = str(q.text, 8000).trim(); if (words.length < 4) fail('empty');
       store.withLock(function () { countRead(store, who(q, store).me); });
-      return {ok: true, read: parseRead(store.ai(textPrompt(store.now().getTime(), words), ''))};
+      return {ok: true, read: parseRead(store.ai(textPrompt(store.now().getTime(), words), '', {quick: true}))};
     }
     if (q.op === 'read') {   // counted under the lock; the AI call (10-30 s) runs outside it. The photo is not kept.
       if (!b64ok(q.image, MAX_READ_B64)) fail('bad_photo');
@@ -1175,7 +1175,7 @@ var CORE = (function () {
       if (!heard) fail('nothing_heard');
       var nowMs = store.now().getTime(), team = store.load('members');
       var today = mytDay(nowMs), dow = DOW_EN[new Date(nowMs + 8 * 3600e3).getUTCDay()];
-      var vv = parseVoice(store.ai(voicePrompt(today, dow, team.filter(function (m) { return String(m.active) !== 'false' && m.id !== vm.id; }).map(shortOf), heard), ''), heard, team);
+      var vv = parseVoice(store.ai(voicePrompt(today, dow, team.filter(function (m) { return String(m.active) !== 'false' && m.id !== vm.id; }).map(shortOf), heard), '', {quick: true}), heard, team);
       if (!q.save) return {ok: true, voice: vv};
       if (!vv.event.title && !vv.event.date && !vv.event.start) fail('not_an_appointment');
       var saved = store.withLock(function () { var w2 = who(q, store); return saveEvent({event: voiceToEvent(vv, store.now().getTime())}, store, w2.me, w2.leader); });

@@ -7,7 +7,7 @@
   var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   var MONTH = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   var DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  var APP_VERSION = '53';
+  var APP_VERSION = '54';
   var H8 = 8 * 3600e3, DAY = 864e5, SELLING = {approach: 1, open: 1, present: 1, followup: 1, close: 1, joinfield: 1, recruit: 1};
 
   /* ---------- storage (each phone) ---------- */
@@ -832,8 +832,8 @@
   function saveVQ() { try { localStorage.setItem('rcal.voiceQ', JSON.stringify(VQ)); } catch (x) { /* too big for this phone's storage: it still goes out from memory */ } }
   function queueVoice(blob, to) {
     fileB64(blob).then(function (b64) {
-      VQ.push({id: 'v' + Date.now(), audio: b64, mime: blob.type || 'audio/webm', tries: 0, next: 0, to: to || null}); VQ = VQ.slice(-5); saveVQ();
-      toast(to ? (to.kind === 'note' ? '🎤 Got it! Writing your note down.' : '🎤 Got it! Adding your to-do.') : '🎤 Got it! Adding to your calendar.', 'good');
+      VQ.push({id: 'v' + Date.now(), audio: b64, mime: blob.type || 'audio/webm', tries: 0, next: 0, to: to || null, at: Date.now()}); VQ = VQ.slice(-5); saveVQ();
+      render();   // the "🎤 …" placeholder shows at once where the item will appear
       runVoiceQ();
     });
   }
@@ -844,18 +844,24 @@
     vqBusy = true;
     (it.to ? api('voicetodo', {audio: it.audio, mime: it.mime, kind: it.to.kind, q: it.to.q}) : api('voice', {audio: it.audio, mime: it.mime, save: true})).then(function (j) {
       vqBusy = false; VQ = VQ.filter(function (x) { return x.id !== it.id; }); saveVQ();
-      if (it.to) { var tdo = j.todo || {}; toast((it.to.kind === 'note' ? '📝 Note saved: ' : '✅ To-do added: ') + String(tdo.text || '').slice(0, 60), 'good'); quietSync(true); return runVoiceQ(); }
+      if (it.to) {
+        var tdo = j.todo || {}; if (tdo.id && S.data) { S.data.todos = (S.data.todos || []).filter(function (x) { return x.id !== tdo.id; }).concat([tdo]); }
+        render(); toast((it.to.kind === 'note' ? '📝 Note saved: ' : '✅ To-do added: ') + String(tdo.text || '').slice(0, 60), 'good'); quietSync(true); return runVoiceQ();
+      }
+      if (j.event && j.event.id && S.data) { S.data.events = (S.data.events || []).filter(function (x) { return x.id !== j.event.id; }).concat([j.event]); render(); }
       var e = j.event || {}, v = j.voice || {}, when = e.allDay ? dayLabel(String(e.start).slice(0, 10)) + ' (all day)' : dayLabel(dayKey(Date.parse(e.start))) + ' ' + hm(Date.parse(e.start));
       toast('✅ Added: ' + (e.title || 'appointment') + ' · ' + when + (v.missing && v.missing.length ? ' · please check' : ''), 'good');
       quietSync(true); runVoiceQ();
     }, function (err) {
       vqBusy = false; var code = err && (err.code || err.message);
-      if (VOICE_DROP[code] || ++it.tries >= 6) { VQ = VQ.filter(function (x) { return x.id !== it.id; }); saveVQ(); toast('🎤 Not added: ' + errText(err), 'bad'); return runVoiceQ(); }
+      if (VOICE_DROP[code] || ++it.tries >= 6) { VQ = VQ.filter(function (x) { return x.id !== it.id; }); saveVQ(); render(); toast('🎤 Not added: ' + errText(err), 'bad'); return runVoiceQ(); }
       it.next = Date.now() + Math.min(300e3, 15e3 * Math.pow(2, it.tries - 1)); saveVQ();   // network or busy: try again shortly
     });
   }
   window.addEventListener('online', runVoiceQ);
   /* entries made by voice that the agent has not checked yet */
+  function voicePending(fn) { return VQ.filter(fn); }
+  function pendRow(it) { return it.next > Date.now() ? '🎤 Waiting for signal, will save by itself…' : '🎤 Writing down what you said…'; }
   function voiceToCheck() { var my = me().id; return rawEvents().filter(function (e) { return e.ownerId === my && e.source === 'voice'; }).sort(function (x, y) { return sMs(x) - sMs(y); }); }
   function voiceCheckScreen() {
     var list = voiceToCheck();
@@ -1025,6 +1031,7 @@
       (upcomingTeam().length ? '<a class="confirm-bar team-bar" href="#/teamevents"><img class="tlogo" src="icons/team-mark.png" alt=""> Upcoming team events <b>(' + upcomingTeam().length + ')</b>' + (teamToAnswer() ? ' · <b class="ans">' + teamToAnswer() + ' to answer</b>' : '') + ' <span>›</span></a>' : '') +
       (myInvites().length ? '<a class="confirm-bar invite" href="#/invites">📩 <b>' + myInvites().length + '</b> invitation' + (myInvites().length > 1 ? 's' : '') + ' waiting for your answer <span>›</span></a>' : '') +
       (voiceToCheck().length ? '<a class="confirm-bar voicebar" href="#/voicecheck">🎤 <b>' + voiceToCheck().length + '</b> voice entr' + (voiceToCheck().length > 1 ? 'ies' : 'y') + ' to check <span>›</span></a>' : '') +
+      (voicePending(function (x) { return !x.to; }).length ? '<div class="confirm-bar voicebar pend"><span class="mini-spin"></span> 🎤 Adding ' + voicePending(function (x) { return !x.to; }).length + ' voice appointment' + (voicePending(function (x) { return !x.to; }).length > 1 ? 's' : '') + ' to your calendar…</div>' : '') +
       (confirm.length ? '<a class="confirm-bar" href="#/confirm">✅ <b>' + confirm.length + '</b> activit' + (confirm.length > 1 ? 'ies' : 'y') + ' to confirm so your numbers count <span>›</span></a>' : '') +
       body + (S.view !== 'day' ? legend() : '') + '</main><button class="fab mic" aria-label="Hold to record an appointment">🎤</button><button class="fab" data-act="new" aria-label="Add event">+</button>' + tabs('cal');
   }
@@ -1229,6 +1236,7 @@
       var notes = all.filter(isNote).sort(function (x, y) { return String(y.updated || y.created).localeCompare(String(x.updated || x.created)); });
       return html + '<div class="note-add"><button class="btn primary" data-act="note-new">＋ New note</button><button class="btn mic-hold" data-act="noop" data-kind="note" aria-label="Hold to record a note">🎤 Hold to talk</button></div>' +
         '<p class="tiny muted">Hold 🎤 and speak, then let go: what you say is written down and saved as a note. Tap a note to edit it. Notes are private.</p>' +
+        voicePending(function (v) { return v.to && v.to.kind === 'note'; }).map(function (v) { return '<div class="card note pend"><span class="mini-spin"></span> ' + pendRow(v) + '</div>'; }).join('') +
         (notes.length ? notes.map(function (x) {
           var when = Date.parse(x.updated || x.created);
           return '<button class="card note" data-act="note-edit" data-id="' + x.id + '"><span class="nt">' + (x.src === 'voice' ? '🎤 ' : '') + esc(String(x.text).slice(0, 400)) + (String(x.text).length > 400 ? '…' : '') + '</span><small>' + (when ? esc(dayLabel(dayKey(when))) + ' ' + hm(when) : '') + '</small></button>';
@@ -1243,7 +1251,7 @@
         items.map(function (x) {
           var late = !x.done && x.due && x.due < t;
           return '<div class="td' + (x.done ? ' done' : '') + '"><button class="tick-btn" data-act="todotick" data-id="' + x.id + '" aria-label="Done">' + (x.done ? '✅' : '⬜') + '</button><button class="tt" data-act="todo-edit" data-id="' + x.id + '">' + (x.src === 'voice' ? '🎤 ' : '') + esc(x.text) + (x.notes ? ' <i class="hasnote">📝</i>' : '') + (x.due ? '<small class="' + (late ? 'late' : '') + '">' + (x.due === t ? 'Today' : esc(dayLabel(x.due))) + '</small>' : '') + '</button></div>';
-        }).join('') + '<div class="qadd">＋ Tap to add</div></section>';
+        }).join('') + voicePending(function (v) { return v.to && v.to.kind !== 'note' && String(v.to.q || '1') === q[0]; }).map(function (v) { return '<div class="td pend"><span class="mini-spin"></span><span class="tt">' + pendRow(v) + '</span></div>'; }).join('') + '<div class="qadd">＋ Tap to add</div></section>';
     }).join('') + '</div>' + (older || S.showDone ? '<p class="center"><button class="link" data-act="todoshowdone">' + (S.showDone ? 'Hide older finished ones' : 'Show older finished ones (' + older + ')') + '</button></p>' : '') + '</main>';
     return html + tabs('todo');
   }

@@ -27,9 +27,9 @@ module.exports = function memStore(opts = {}) {
     delFile: id => { delete files[id]; },
     heard: [],
     transcribe: (b64, mime, hint) => { store.heard.push({bytes: b64.length, mime}); return opts.transcribe ? opts.transcribe(b64, mime) : 'Esok pukul 3 petang present medical plan to Mr Lim (sample) at Gurney Plaza'; },
-    ai: (prompt, b64) => {
+    ai: (prompt, b64, opt) => {
       b64 = b64 || '';
-      store.prompts.push({prompt, bytes: b64.length});
+      store.prompts.push({prompt, bytes: b64.length, quick: !!(opt && opt.quick)});
       if (opts.ai) return opts.ai(prompt, b64);
       if (/^VOICE BOOKING/.test(prompt)) {   // stand-in: tomorrow 15:00 presentation
         const today = /Today is (\d{4}-\d{2}-\d{2})/.exec(prompt)[1], tm = new Date(Date.parse(today + 'T00:00:00Z') + 864e5).toISOString().slice(0, 10);

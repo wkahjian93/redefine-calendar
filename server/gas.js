@@ -129,14 +129,17 @@ var GAS = (function () {
     return {mime: String(head[1]), data: n ? s.getRange(r, 6, 1, n).getValues()[0].join('') : ''};
   }
   function delFile(id) { var s = tab('files'), r = fileRow(s, id); if (r) s.deleteRow(r); }
-  function ai(prompt, b64) {
+  /* opt.quick = short spoken or typed text (voice booking, words import): light reasoning so the answer comes back in a few seconds.
+     Photos keep the careful read. Script property QUICK_MODEL can name a faster model for the quick reads. */
+  function ai(prompt, b64, opt) {
+    opt = opt || {};
     var key = P.getProperty('OPENAI_API_KEY'); if (!key) { var e = new Error('no_api_key'); e.appCode = 'no_api_key'; throw e; }
     var res = UrlFetchApp.fetch('https://api.openai.com/v1/responses', {
       method: 'post', contentType: 'application/json', muteHttpExceptions: true,
       headers: {Authorization: 'Bearer ' + key},
       payload: JSON.stringify({
-        model: P.getProperty('MODEL') || 'gpt-6.1-terra', store: false, max_output_tokens: 16000,
-        reasoning: {effort: 'medium'}, text: {format: {type: 'json_object'}},
+        model: (opt.quick && P.getProperty('QUICK_MODEL')) || P.getProperty('MODEL') || 'gpt-6.1-terra', store: false, max_output_tokens: opt.quick ? 4000 : 16000,
+        reasoning: {effort: opt.quick ? (P.getProperty('QUICK_EFFORT') || 'low') : 'medium'},   // set QUICK_EFFORT = medium to go back to the slower, more careful read text: {format: {type: 'json_object'}},
         input: [{role: 'user', content: [{type: 'input_text', text: prompt}].concat(b64 ? [{type: 'input_image', image_url: 'data:image/jpeg;base64,' + b64, detail: 'high'}] : [])}]
       })
     });

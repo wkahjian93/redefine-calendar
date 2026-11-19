@@ -1164,7 +1164,7 @@ var CORE = (function () {
     if (q.op === 'readtext') {   // words typed or pasted (WhatsApp, notes, a list): read by the same AI rules as a photo
       var words = str(q.text, 8000).trim(); if (words.length < 4) fail('empty');
       store.withLock(function () { countRead(store, who(q, store).me); });
-      return {ok: true, read: parseRead(store.ai(textPrompt(store.now().getTime(), words), ''))};
+      return {ok: true, read: parseRead(store.ai(textPrompt(store.now().getTime(), words), '', {quick: true}))};
     }
     if (q.op === 'read') {   // counted under the lock; the AI call (10-30 s) runs outside it. The photo is not kept.
       if (!b64ok(q.image, MAX_READ_B64)) fail('bad_photo');
@@ -1178,7 +1178,7 @@ var CORE = (function () {
       if (!heard) fail('nothing_heard');
       var nowMs = store.now().getTime(), team = store.load('members');
       var today = mytDay(nowMs), dow = DOW_EN[new Date(nowMs + 8 * 3600e3).getUTCDay()];
-      var vv = parseVoice(store.ai(voicePrompt(today, dow, team.filter(function (m) { return String(m.active) !== 'false' && m.id !== vm.id; }).map(shortOf), heard), ''), heard, team);
+      var vv = parseVoice(store.ai(voicePrompt(today, dow, team.filter(function (m) { return String(m.active) !== 'false' && m.id !== vm.id; }).map(shortOf), heard), '', {quick: true}), heard, team);
       if (!q.save) return {ok: true, voice: vv};
       if (!vv.event.title && !vv.event.date && !vv.event.start) fail('not_an_appointment');
       var saved = store.withLock(function () { var w2 = who(q, store); return saveEvent({event: voiceToEvent(vv, store.now().getTime())}, store, w2.me, w2.leader); });
@@ -1342,14 +1342,17 @@ var GAS = (function () {
     return {mime: String(head[1]), data: n ? s.getRange(r, 6, 1, n).getValues()[0].join('') : ''};
   }
   function delFile(id) { var s = tab('files'), r = fileRow(s, id); if (r) s.deleteRow(r); }
-  function ai(prompt, b64) {
+  /* opt.quick = short spoken or typed text (voice booking, words import): light reasoning so the answer comes back in a few seconds.
+     Photos keep the careful read. Script property QUICK_MODEL can name a faster model for the quick reads. */
+  function ai(prompt, b64, opt) {
+    opt = opt || {};
     var key = P.getProperty('OPENAI_API_KEY'); if (!key) { var e = new Error('no_api_key'); e.appCode = 'no_api_key'; throw e; }
     var res = UrlFetchApp.fetch('https://api.openai.com/v1/responses', {
       method: 'post', contentType: 'application/json', muteHttpExceptions: true,
       headers: {Authorization: 'Bearer ' + key},
       payload: JSON.stringify({
-        model: P.getProperty('MODEL') || 'gpt-6.1-terra', store: false, max_output_tokens: 16000,
-        reasoning: {effort: 'medium'}, text: {format: {type: 'json_object'}},
+        model: (opt.quick && P.getProperty('QUICK_MODEL')) || P.getProperty('MODEL') || 'gpt-6.1-terra', store: false, max_output_tokens: opt.quick ? 4000 : 16000,
+        reasoning: {effort: opt.quick ? (P.getProperty('QUICK_EFFORT') || 'low') : 'medium'},   // set QUICK_EFFORT = medium to go back to the slower, more careful read text: {format: {type: 'json_object'}},
         input: [{role: 'user', content: [{type: 'input_text', text: prompt}].concat(b64 ? [{type: 'input_image', image_url: 'data:image/jpeg;base64,' + b64, detail: 'high'}] : [])}]
       })
     });

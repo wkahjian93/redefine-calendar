@@ -494,6 +494,7 @@ function fresh() {
   s.setNow('2027-03-02T02:00:00.000Z');
   const v = h({op: 'voice', token: mj.token, audio, mime: 'audio/webm;codecs=opus'}).voice;
   ok(v.complete && v.event.date === '2027-03-03' && v.event.start === '15:00' && v.event.type === 'present' && v.event.place === 'Gurney Plaza', 'voice: tomorrow 3pm presentation understood');
+  ok(s.prompts[s.prompts.length - 1].quick, 'voice booking uses the quick AI read (answer in seconds)');
   ok(s.heard[0].mime === 'audio/webm' && /VOICE BOOKING/.test(s.prompts[s.prompts.length - 1].prompt) && /Tuesday/.test(s.prompts[s.prompts.length - 1].prompt), 'speech sent to text, then read with today’s weekday');
   const part = CORE.parseVoice(JSON.stringify({title: 'Jumpa Ali', type: 'open', date: '', start: '', people: ['Wong', 'nobody']}), 'jumpa ali', s.load('members'));
   ok(!part.complete && part.missing.join() === 'date,time' && part.event.with.join() === wx.me.id, 'voice: missing date/time reported, teammate found by short name');

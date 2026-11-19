@@ -583,3 +583,9 @@ html[data-celebrate] .calhead { background: color-mix(in srgb, var(--bg) 92%, tr
 .note-add { display: flex; gap: 8px; margin: 10px 0 4px; } .note-add .btn { flex: 1; }
 .card.note { display: block; width: 100%; text-align: left; font: inherit; color: inherit; cursor: pointer; margin-bottom: 8px; }
 .card.note .nt { display: block; white-space: pre-line; word-break: break-word; } .card.note small { display: block; margin-top: 6px; color: var(--muted); font-size: 11px; }
+
+/* voice placeholders: shown the moment the 🎤 is released, replaced by the saved item */
+.mini-spin { display: inline-block; width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--line); border-top-color: var(--coral); animation: spin .8s linear infinite; vertical-align: -2px; flex: none; }
+.td.pend { color: var(--muted); font-style: italic; } .td.pend .mini-spin { margin: 0 6px 0 4px; }
+.card.note.pend { color: var(--muted); font-style: italic; }
+.confirm-bar.pend { display: flex; align-items: center; gap: 8px; }
