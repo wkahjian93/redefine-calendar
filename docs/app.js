@@ -7,7 +7,7 @@
   var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   var MONTH = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   var DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  var APP_VERSION = '52';
+  var APP_VERSION = '53';
   var H8 = 8 * 3600e3, DAY = 864e5, SELLING = {approach: 1, open: 1, present: 1, followup: 1, close: 1, joinfield: 1, recruit: 1};
 
   /* ---------- storage (each phone) ---------- */
@@ -1710,6 +1710,8 @@
     var rows = S.importRows;
     if (rows) return importReview();
     return topbar('Import calendar', {back: '#/me'}) + '<main class="import"><p class="muted">Bring your existing appointments in. Nothing is added until you check the list and tap Add.</p>' +
+      '<div class="card"><h4>⌨️ Type or paste words</h4><p class="tiny muted">Paste a WhatsApp message, your notes or a list, or just type, e.g. “Tomorrow 3pm present Mr Lim at Gurney, Sat 10am coffee Ali, next Mon 8pm team meeting”. The AI works out each appointment. Clear ones are added straight away; anything without a clear date or time is shown for you to fix.</p>' +
+      '<form id="impwords"><textarea name="w" rows="5" maxlength="8000" placeholder="Type or paste here…"></textarea><button class="btn primary big">✨ Add from words</button></form></div>' +
       '<div class="card"><h4>📷 Photos or screenshots</h4><p class="tiny muted">Google Calendar, TimeTree, iPhone Calendar, Samsung, WhatsApp, or a handwritten diary. Up to 10 at a time. Week or day view reads best; zoom in on busy months.</p>' +
       '<label class="btn primary big file">Choose photos<input type="file" accept="image/*" multiple data-act="pick-photos" hidden></label>' +
       '<label class="btn ghost file">Take a photo<input type="file" accept="image/*" capture="environment" data-act="pick-photos" hidden></label></div>' +
@@ -1771,6 +1773,36 @@
     }
     next();
   }
+  function readWords(text) {
+    if (S.reading || S.importBusy) return;
+    S.reading = true;
+    modal('<h3>Reading your words…</h3><div class="spinner"></div><p class="tiny muted">A few seconds.</p>');
+    api('readtext', {text: text}).then(function (j) {
+      S.reading = false;
+      var have = existingKeys(), rows = j.read.events.map(function (r) {
+        var x = {title: r.title, type: r.type, typeGuessed: r.typeGuessed, date: r.date, st: r.start, et: r.end, allDay: r.allDay, count: r.count, problems: r.problems.slice(), vis: r.type === 'personal' ? 'private' : 'team', on: r.ok, source: 'manual'};
+        if (x.date && dup(x, have)) { x.on = false; x.problems.unshift('already in your calendar'); x.dupe = true; }
+        return x;
+      });
+      if (!rows.length) { closeModal(); return toast(j.read.notes || 'No appointments found in those words.', 'bad'); }
+      var clear = rows.filter(function (r) { return r.on && !r.problems.length; }), rest = rows.filter(function (r) { return clear.indexOf(r) < 0 && !r.dupe; }), dupes = rows.filter(function (r) { return r.dupe; }).length;
+      var show = function (added) {
+        closeModal();
+        if (rest.length) { S.importRows = rest; S.importNotes = [(added ? added + ' clear appointment' + (added > 1 ? 's were' : ' was') + ' added already. ' : '') + 'These need a date or time from you: fix, tick and tap Add.'].concat(j.read.notes ? [j.read.notes] : []); S.importFrom = 'words'; render(); }
+        else { S.importRows = null; location.hash = '#/'; }
+        toast((added ? '✅ Added ' + added + ' appointment' + (added > 1 ? 's' : '') : rest.length ? 'Nothing added yet' : 'Nothing new') + (dupes ? ' · ' + dupes + ' already there' : '') + (rest.length ? ' · ' + rest.length + ' to check' : ''), added ? 'good' : '');
+      };
+      if (!clear.length) return show(0);
+      S.importBusy = true;
+      api('import', {events: clear.map(rowToEvent)}).then(function (k) { S.importBusy = false; show(k.added); sync(true); }, function (e) { S.importBusy = false; rest = clear.concat(rest); show(0); toast(errText(e), 'bad'); });
+    }, function (e) { S.reading = false; closeModal(); toast(errText(e), 'bad'); });
+  }
+  function rowToEvent(r) {
+    var e = {title: r.title, type: r.type, allDay: r.allDay, vis: r.vis, count: r.count, place: r.place || '', source: r.source, remind: r.allDay ? '' : '30'};
+    if (r.allDay) { e.start = r.date; e.end = r.date2 && r.date2 >= r.date ? r.date2 : r.date; }
+    else { e.start = new Date(r.date + 'T' + r.st + ':00+08:00').toISOString(); var en = r.et ? Date.parse(r.date + 'T' + r.et + ':00+08:00') : 0; e.end = new Date(en > Date.parse(e.start) ? en : Date.parse(e.start) + 3600e3).toISOString(); }
+    return e;
+  }
   function dup(x, have) {
     var start = x.allDay ? x.date : x.st ? new Date(x.date + 'T' + x.st + ':00+08:00').toISOString() : '';
     return !!start && (have[start] || []).some(function (t) { return C.similarTitle(t, x.title); });
@@ -1815,10 +1847,7 @@
     S.importRows.forEach(function (r) {
       if (!r.on) return;
       if (!r.date || (!r.allDay && !r.st) || !r.title.trim()) { blocked++; return; }
-      var e = {title: r.title, type: r.type, allDay: r.allDay, vis: r.vis, count: r.count, place: r.place || '', source: r.source, remind: r.allDay ? '' : '30'};
-      if (r.allDay) { e.start = r.date; e.end = r.date2 && r.date2 >= r.date ? r.date2 : r.date; }
-      else { e.start = new Date(r.date + 'T' + r.st + ':00+08:00').toISOString(); var en = r.et ? Date.parse(r.date + 'T' + r.et + ':00+08:00') : 0; e.end = new Date(en > Date.parse(e.start) ? en : Date.parse(e.start) + 3600e3).toISOString(); }
-      list.push(e);
+      list.push(rowToEvent(r));
     });
     if (blocked) return toast(blocked + ' ticked row' + (blocked > 1 ? 's need' : ' needs') + ' a date and time first.', 'bad');
     var priv = list.filter(function (e) { return e.vis === 'private'; }).length;
@@ -2018,6 +2047,7 @@
   document.addEventListener('submit', function (ev) {
     var f = ev.target;
     if (f.id === 'signin') { ev.preventDefault(); return doSignIn(f); }
+    if (f.id === 'impwords') { ev.preventDefault(); var ww = f.w.value.trim(); if (ww.length < 4) return toast('Type or paste your appointments first.', 'bad'); f.w.blur(); return readWords(ww); }
     if (f.id === 'todoform') {
       ev.preventDefault(); var txt = f.t.value.trim(); if (!txt) return toast('Type what to do.', 'bad');
       var tid = f.dataset.id, old = tid ? todos().filter(function (x) { return x.id === tid; })[0] : null, qv = (f.querySelector('[name=q]:checked') || {}).value || '1';

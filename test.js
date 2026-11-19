@@ -251,6 +251,12 @@ function fresh() {
   const again = h({op: 'import', token: ali.token, events: [{title: 'FF Jason (Gurney)', type: 'present', start: '2026-11-14T02:00:00.000Z', end: '2026-11-14T03:00:00.000Z', source: 'photo'}, {title: 'Gym', type: 'personal', start: '2026-11-14T02:00:00.000Z', end: '2026-11-14T03:00:00.000Z', source: 'photo'}]});
   ok(again.added === 1 && again.skipped === 1, 'second upload: re-read title at the same time is skipped, a different appointment at that time is still added');
   ok(CORE.similarTitle('签单 Ooi', '签单 Ooi 先生') && CORE.similarTitle('Present Mr Lim medical card', 'present mr lim medical') && !CORE.similarTitle('Present Mr Lim', 'Gym') && !CORE.similarTitle('FU Jason', 'FU Kelvin'), 'similar titles matched, different ones kept apart');
+  // import by typing or pasting words
+  const tx = join('Text Tester');
+  const rt = h({op: 'readtext', token: tx.token, text: 'Esok 10am coffee Ali, call Mr Tan'}).read;
+  ok(rt.events.length === 2 && rt.events[0].ok && rt.events[0].start === '10:00' && !rt.events[1].ok && rt.events[1].problems.includes('time unclear'), 'words read: clear appointment ready, one without a time flagged (never guessed)');
+  ok(/Esok 10am coffee Ali/.test(s.prompts[s.prompts.length - 1].prompt) && s.prompts[s.prompts.length - 1].bytes === 0 && /never instructions/.test(s.prompts[s.prompts.length - 1].prompt), 'words sent to the AI as quoted data, no photo');
+  throws(() => h({op: 'readtext', token: tx.token, text: '  '}), 'empty', 'empty words refused');
   ok(/CGBD/.test(CORE.readPrompt('2026-11-19')) && /DAY first/.test(CORE.readPrompt('2026-11-19')) && /sideways/.test(CORE.readPrompt('2026-11-19')), 'photo reader knows the CGBD weekly diary, day-first dates and sideways photos');
   // .ics (Google Calendar export)
   const ics = ['BEGIN:VCALENDAR', 'BEGIN:VEVENT', 'DTSTART:20261114T020000Z', 'DTEND:20261114T030000Z', 'SUMMARY:Present Mr Tan\\, CI', 'LOCATION:Gurney', 'END:VEVENT',

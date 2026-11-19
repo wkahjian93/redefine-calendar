@@ -106,6 +106,7 @@ You stay signed in on that phone for good, like WhatsApp. Only two things sign y
 The name is the agent's first name as they signed up, so members should sign up with the name the team uses. A case with no ANP yet shows as "ANP?" and isn't added to the total.
 
 ## Moving an old calendar in
+- **Type or paste words:** Me → Import → **Type or paste words**. Paste a WhatsApp message, notes or a list, or just type (e.g. "Tomorrow 3pm present Mr Lim at Gurney, Sat 10am coffee Ali"), then tap **✨ Add from words**. The AI finds each appointment: clear ones are added straight away, and anything without a clear date or time is shown for you to fix. Pasting the same words again adds nothing new.
 - **Photos or screenshots** (Google Calendar, TimeTree, iPhone, Samsung, WhatsApp, or a handwritten diary): **Me → Import → Choose photos**, up to 10 at a time. AI reads them, then you check the list:
   - **Green** rows are clear and already ticked.
   - **Red** rows have an unclear date or time. Fix them and tick them, or leave them out. Red rows are never added on their own.

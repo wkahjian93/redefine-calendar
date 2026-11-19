@@ -35,6 +35,10 @@ module.exports = function memStore(opts = {}) {
         const today = /Today is (\d{4}-\d{2}-\d{2})/.exec(prompt)[1], tm = new Date(Date.parse(today + 'T00:00:00Z') + 864e5).toISOString().slice(0, 10);
         return JSON.stringify({title: 'Present medical plan to Mr Lim (sample)', type: 'present', date: tm, start: '15:00', end: '', allDay: false, place: 'Gurney Plaza', notes: '', people: [], repeat: '', clean: 'Tomorrow 3pm present medical plan to Mr Lim at Gurney Plaza', unclear: ''});
       }
+      if (/^READ TEXT/.test(prompt)) {   // stand-in: one clear appointment tomorrow, one with no time
+        const today = /Today is \w+ (\d{4}-\d{2}-\d{2})/.exec(prompt)[1], tm = new Date(Date.parse(today + 'T00:00:00Z') + 864e5).toISOString().slice(0, 10);
+        return JSON.stringify({source: 'other', events: [{date: tm, start: '10:00', end: '11:00', allDay: false, title: 'Coffee with Ali (sample)', type: 'approach', count: 1, confidence: 0.95, unclear: ''}, {date: tm, start: '', end: '', allDay: false, title: 'Call Mr Tan (sample)', type: 'followup', count: 1, confidence: 0.6, unclear: 'no time said'}], notes: ''});
+      }
       if (/^THEME FROM POSTER/.test(prompt)) return JSON.stringify({occasion: 'christmas', title: 'Christmas (sample)', colors: {bg: '#FFF5F5', surface: '#FFFFFF', primary: '#B91C1C', accent: '#15803D', text: '#1F2937'}, anim: 'snow', motifs: ['🎅', '🦌', '⛄'], notes: 'Stand-in: red and white poster with Santa.'});
       const f = path.join(__dirname, '..', 'test', 'fixtures', 'sample-read.json');
       if (fs.existsSync(f)) return fs.readFileSync(f, 'utf8');
