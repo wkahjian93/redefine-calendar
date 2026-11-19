@@ -850,7 +850,7 @@ var CORE = (function () {
       '"this Sat"/"星期六"/"礼拜六"/"Sabtu" = the coming Saturday (today if today is Saturday); "next Tue"/"下个星期二" = Tuesday of next week.',
       '"3点"/"pukul 3"/"three" without am/pm: use the likely working time (8-11 = morning, 1-7 = afternoon/evening). "petang" = pm, "pagi" = am.',
       'If only a start time is said, leave end empty. type: approach = meeting/calling new friends;',
-      'present = presentation / first meeting / fact-find with a client; followup = follow-up, including a signing / closing meeting; joinfield = join field (陪访): a leader / senior goes along to a client meeting; recruit = recruitment / interview / career talk; meeting = team meeting / training;',
+      'present = presentation / first meeting / fact-find with a client; followup = follow-up, including a signing / closing meeting (closing a case is ALWAYS present or followup: present only if they say it closed at the first presentation, otherwise followup; never meeting or training); joinfield = join field (陪访): a leader / senior goes along to a client meeting; recruit = recruitment / interview / career talk; meeting = team meeting / training;',
       'service = claims / servicing; crm = client birthday / gift / visit; paperwork = forms / admin; personal = family / gym / private.',
       'If the transcript is not about an appointment, return empty title and explain in "unclear".'
     ].join('\n');
@@ -862,12 +862,15 @@ var CORE = (function () {
     var j; try { j = JSON.parse(String(text).replace(/^```(json)?|```$/g, '')); } catch (e) { fail('ai_unreadable'); }
     var list = Array.isArray(j.events) ? j.events.filter(function (x) { return x && typeof x === 'object'; }).slice(0, 10) : [j];
     if (!list.length) list = [{}];
-    var all = list.map(function (x) { return voiceOne(x, members); }), first = all[0];
+    var all = list.map(function (x) { return voiceOne(x, members, list.length === 1 ? heard : ''); }), first = all[0];
     return {heard: str(heard, 600), clean: str(j.clean, 300), unclear: str(j.unclear || (list[0] || {}).unclear, 200), missing: first.missing, complete: first.complete, event: first.event, events: all};
   }
-  function voiceOne(j, members) {
+  /* closing / signing a case happens at a presentation or a follow-up, never at a meeting or training */
+  var CLOSING_RE = /\b(clos(e|ing|ed)|sign(ing|ed)?|signature|submit case|collect (cheque|payment))\b|签单|签约|成交|收钱|tutup (jualan|kes)|tandatangan|sain/i;
+  function voiceOne(j, members, heard) {
     var date = isDate(str(j.date, 10)) ? str(j.date, 10) : '', start = hhmm(j.start), end = hhmm(j.end), title = str(j.title, 120);
     var type = TYPES[j.type] ? newType(j.type) : (title ? detectType(title) : ''), allDay = j.allDay === true && !start;
+    if (type !== 'present' && type !== 'followup' && CLOSING_RE.test(title + ' ' + str(j.notes, 500) + ' ' + str(heard, 600))) type = 'followup';
     var want = (Array.isArray(j.people) ? j.people : []).map(function (n) { return normName(n); }), ids = [];
     members.forEach(function (m) { if (String(m.active) !== 'false' && (want.indexOf(normName(shortOf(m))) >= 0 || want.indexOf(normName(m.name)) >= 0)) ids.push(m.id); });
     var missing = [];

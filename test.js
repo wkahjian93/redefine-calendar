@@ -682,6 +682,9 @@ function fresh() {
   ok(e.type === 'followup', 'saving a Closing event makes it a Follow-up');
   const e2 = h({op: 'save', token: a.token, event: {title: '签单 Tan', start: iso(NOW + 4 * H), end: iso(NOW + 5 * H)}}).event;
   ok(e2.type === 'followup', '签单 detected as Follow-up');
+  ok(CORE.parseVoice(JSON.stringify({title: 'Mr Lim medical card', type: 'meeting', date: '2027-03-05', start: '10:00'}), 'tomorrow 10am meet Mr Lim to sign the medical card', []).event.type === 'followup', 'voice about closing a case: never a meeting, becomes Follow-up');
+  ok(CORE.parseVoice(JSON.stringify({title: 'Present Ali and close', type: 'present', date: '2027-03-05', start: '10:00'}), 'present and close Ali', []).event.type === 'present', 'closing at the first presentation stays Presentation');
+  ok(CORE.parseVoice(JSON.stringify({title: 'Team training', type: 'meeting', date: '2027-03-05', start: '20:00'}), 'team training 8pm', []).event.type === 'meeting', 'a real training stays a meeting');
 }
 
 /* ---------- sample team sanity ---------- */
