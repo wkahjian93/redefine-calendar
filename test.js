@@ -247,6 +247,11 @@ function fresh() {
   const j = h({op: 'import', token: ali.token, events: list});
   ok(j.added === 1 && j.skipped === 1 && j.bad === 1, 'import skips duplicates and unusable rows');
   ok(h({op: 'import', token: ali.token, events: list.slice(0, 1)}).added === 0, 're-importing the same photo adds nothing');
+  // uploading again: the AI may read the same photo slightly differently; same time + similar title = same appointment
+  const again = h({op: 'import', token: ali.token, events: [{title: 'FF Jason (Gurney)', type: 'present', start: '2026-11-14T02:00:00.000Z', end: '2026-11-14T03:00:00.000Z', source: 'photo'}, {title: 'Gym', type: 'personal', start: '2026-11-14T02:00:00.000Z', end: '2026-11-14T03:00:00.000Z', source: 'photo'}]});
+  ok(again.added === 1 && again.skipped === 1, 'second upload: re-read title at the same time is skipped, a different appointment at that time is still added');
+  ok(CORE.similarTitle('签单 Ooi', '签单 Ooi 先生') && CORE.similarTitle('Present Mr Lim medical card', 'present mr lim medical') && !CORE.similarTitle('Present Mr Lim', 'Gym') && !CORE.similarTitle('FU Jason', 'FU Kelvin'), 'similar titles matched, different ones kept apart');
+  ok(/CGBD/.test(CORE.readPrompt('2026-11-19')) && /DAY first/.test(CORE.readPrompt('2026-11-19')) && /sideways/.test(CORE.readPrompt('2026-11-19')), 'photo reader knows the CGBD weekly diary, day-first dates and sideways photos');
   // .ics (Google Calendar export)
   const ics = ['BEGIN:VCALENDAR', 'BEGIN:VEVENT', 'DTSTART:20261114T020000Z', 'DTEND:20261114T030000Z', 'SUMMARY:Present Mr Tan\\, CI', 'LOCATION:Gurney', 'END:VEVENT',
     'BEGIN:VEVENT', 'DTSTART;TZID=Asia/Kuala_Lumpur:20261115T200000', 'DTEND;TZID=Asia/Kuala_Lumpur:20261115T210000', 'SUMMARY:Team meeting', 'RRULE:FREQ=WEEKLY', 'END:VEVENT',

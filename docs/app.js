@@ -7,7 +7,7 @@
   var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   var MONTH = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   var DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  var APP_VERSION = '51';
+  var APP_VERSION = '52';
   var H8 = 8 * 3600e3, DAY = 864e5, SELLING = {approach: 1, open: 1, present: 1, followup: 1, close: 1, joinfield: 1, recruit: 1};
 
   /* ---------- storage (each phone) ---------- */
@@ -1744,15 +1744,16 @@
       img.src = url;
     });
   }
-  function existingKeys() { var k = {}, my = me().id; events().forEach(function (e) { if (e.ownerId === my && !e.busy) k[String(e.title).toLowerCase().replace(/\s+/g, ' ') + '|' + (e.allDay ? String(e.start).slice(0, 10) : new Date(sMs(e)).toISOString())] = 1; }); return k; }
+  function existingKeys() { var k = {}, my = me().id; rawEvents().forEach(function (e) { if (e.ownerId !== my || e.busy) return; var s = e.allDay ? String(e.start).slice(0, 10) : new Date(sMs(e)).toISOString(); (k[s] = k[s] || []).push(e.title); }); return k; }
   function readPhotos(files) {
-    files = Array.prototype.slice.call(files, 0, 10); if (!files.length) return;
+    files = Array.prototype.slice.call(files, 0, 10); if (!files.length || S.reading) return;
+    S.reading = true;
     var rows = [], notes = [], i = 0;
     var prog = function (t) { modal('<h3>Reading your calendar…</h3><p class="muted">' + esc(t) + '</p><div class="spinner"></div><p class="tiny muted">About 10–30 seconds per photo.</p>'); };
     function next() {
-      if (i >= files.length) { closeModal(); return finish(); }
+      if (i >= files.length) { closeModal(); S.reading = false; return finish(); }
       var f = files[i++]; prog('Photo ' + i + ' of ' + files.length);
-      return shrink(f).then(function (b64) { return api('read', {image: b64}); }).then(function (j) {
+      return Promise.resolve().then(function () { return shrink(f); }).then(function (b64) { return api('read', {image: b64}); }).then(function (j) {
         j.read.events.forEach(function (r) { r.photo = i; rows.push(r); }); if (j.read.notes) notes.push('Photo ' + i + ': ' + j.read.notes);
         return next();
       }, function (e) { notes.push('Photo ' + i + ': ' + errText(e)); return next(); });
@@ -1772,7 +1773,7 @@
   }
   function dup(x, have) {
     var start = x.allDay ? x.date : x.st ? new Date(x.date + 'T' + x.st + ':00+08:00').toISOString() : '';
-    return start && have[String(x.title).toLowerCase().replace(/\s+/g, ' ') + '|' + start];
+    return !!start && (have[start] || []).some(function (t) { return C.similarTitle(t, x.title); });
   }
   function readIcs(file) {
     var fr = new FileReader();
@@ -1807,7 +1808,7 @@
           (r.problems.length || r.typeGuessed ? '<small class="probs">' + esc(r.problems.concat(r.typeGuessed && r.problems.indexOf('type?') < 0 ? ['type guessed'] : []).join(' · ')) + (r.photo ? ' · photo ' + r.photo : '') + '</small>' : (r.photo ? '<small class="muted tiny">photo ' + r.photo + '</small>' : '')) +
           '</div></div>';
       }).join('') +
-      '<div class="sticky-actions"><button class="btn primary big" data-act="imp-go"' + (on ? '' : ' disabled') + '>Add ' + on + ' event' + (on === 1 ? '' : 's') + (priv ? ' (' + priv + ' private)' : '') + '</button></div></main>';
+      '<div class="sticky-actions"><button class="btn primary big" data-act="imp-go"' + (on && !S.importBusy ? '' : ' disabled') + '>Add ' + on + ' event' + (on === 1 ? '' : 's') + (priv ? ' (' + priv + ' private)' : '') + '</button></div></main>';
   }
   function importGo() {
     var list = [], blocked = 0;
@@ -1821,12 +1822,25 @@
     });
     if (blocked) return toast(blocked + ' ticked row' + (blocked > 1 ? 's need' : ' needs') + ' a date and time first.', 'bad');
     var priv = list.filter(function (e) { return e.vis === 'private'; }).length;
+    if (S.importBusy) return;
     confirmBox('Add ' + list.length + ' events?', (list.length - priv) + ' visible to the team, ' + priv + ' only you (team sees "Busy"). Duplicates are skipped.', 'Add').then(function (y) {
-      if (!y) return;
+      if (!y || S.importBusy) return;
+      S.importBusy = true;   // one tap = one upload: the button is locked and a progress box covers the screen until the server answers
+      modal('<h3>Adding ' + list.length + ' event' + (list.length === 1 ? '' : 's') + '…</h3><div class="spinner"></div><p class="tiny muted">Please keep the app open. This takes a few seconds.</p>');
       api('import', {events: list}).then(function (j) {
-        S.importRows = null; toast('Added ' + j.added + (j.skipped ? ', ' + j.skipped + ' already there' : '') + (j.bad ? ', ' + j.bad + ' unusable' : ''), 'good');
+        S.importBusy = false; closeModal(); S.importRows = null;
+        toast('Added ' + j.added + (j.skipped ? ', ' + j.skipped + ' already there' : '') + (j.bad ? ', ' + j.bad + ' unusable' : ''), 'good');
         location.hash = '#/'; return sync(true);
-      }, function (e) { toast(errText(e), 'bad'); });
+      }, function (e) {
+        // no answer (weak signal): the events may have been added anyway. Check before letting them tap Add again.
+        sync(true).catch(function () {}).then(function () {
+          S.importBusy = false; closeModal();
+          var have = existingKeys(), done = 0;
+          (S.importRows || []).forEach(function (r) { if (r.on && r.date && dup(r, have)) { r.on = false; done++; if (r.problems.indexOf('already in your calendar') < 0) r.problems.unshift('already in your calendar'); } });
+          render();
+          toast(done ? done + ' were added before the connection dropped (now unticked). Tap Add again only for the rest.' : errText(e) + ' Nothing was added. Try again when the signal is better.', 'bad');
+        });
+      });
     });
   }
 

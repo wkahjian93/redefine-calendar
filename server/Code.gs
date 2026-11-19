@@ -54,6 +54,16 @@ var CORE = (function () {
   function nowIso(store) { return store.now().toISOString(); }
   function myt(ms) { return new Date(ms + 8 * 3600e3).toISOString(); }          // Malaysia time as ISO text (no daylight saving)
   function normName(s) { return str(s).toLowerCase().replace(/\s+/g, ' '); }
+  /* Same appointment written slightly differently? (the AI may read a re-uploaded photo a bit differently: "FU Jason" vs "FU Jason Gurney")
+     Used for duplicates only together with the SAME start time, so two real appointments are never merged by title alone. */
+  function similarTitle(x, y) {
+    var a = normName(x).replace(/[^\p{L}\p{N} ]/gu, ' ').replace(/\s+/g, ' ').trim(), b = normName(y).replace(/[^\p{L}\p{N} ]/gu, ' ').replace(/\s+/g, ' ').trim();
+    if (!a || !b) return a === b;
+    if (a === b || a.indexOf(b) >= 0 || b.indexOf(a) >= 0) return true;
+    var tok = function (s) { return s.match(/[\u3400-\u9fff]|[^\s\u3400-\u9fff]+/g) || []; }, ta = tok(a), tb = tok(b), set = {}, same = 0;
+    ta.forEach(function (t) { set[t] = 1; }); tb.forEach(function (t) { if (set[t]) { same++; set[t] = 0; } });
+    return same / Math.min(ta.length, tb.length) >= 0.6;
+  }
   function b64ok(s, max) { return typeof s === 'string' && s.length > 100 && s.length <= max && /^[A-Za-z0-9+/=]+$/.test(s); }
   function isDate(s) { return /^\d{4}-\d{2}-\d{2}$/.test(s) && !isNaN(Date.parse(s + 'T00:00:00Z')) && new Date(s + 'T00:00:00Z').toISOString().slice(0, 10) === s; }
   function log(store, by, action, detail) {
@@ -429,10 +439,10 @@ var CORE = (function () {
   function importEvents(q, store, me) {
     var list = Array.isArray(q.events) ? q.events : []; if (!list.length) fail('nothing_to_import'); if (list.length > MAX_IMPORT) fail('too_many');
     var members = store.load('members'), rows = store.load('events'), now = nowIso(store), added = 0, skipped = 0, bad = 0;
-    var have = {}; rows.forEach(function (e) { if (e.ownerId === me.id) have[normName(e.title) + '|' + e.start] = 1; });
+    var have = {}; rows.forEach(function (e) { if (e.ownerId === me.id) (have[e.start] = have[e.start] || []).push(e.title); });   // same start + similar title = already there
     list.forEach(function (src) {
       var e; try { e = cleanEvent(src, me, members); } catch (err) { bad++; return; }
-      var k = normName(e.title) + '|' + e.start; if (have[k]) { skipped++; return; } have[k] = 1;
+      var at = have[e.start] || []; if (at.some(function (t) { return similarTitle(t, e.title); })) { skipped++; return; } (have[e.start] = at).push(e.title);
       e.id = newId(store, 10); e.ownerId = me.id; e.out = ''; e.anp = ''; e.noc = ''; e.cases = ''; e.remSent = startMs(e) < store.now().getTime() ? 'past' : ''; e.created = now; e.updated = now;
       rows.push(e); added++;
     });
@@ -994,7 +1004,14 @@ var CORE = (function () {
       '   crm = client birthday/gift/relationship visit; paperwork = forms/submission/admin; personal = family/gym/private life.',
       '   Leave type empty if you really cannot tell. "count" = number of people approached if written (e.g. "approach 5"), else 1.',
       '5. confidence 0..1 = how sure you are you read the date, time and title correctly.',
-      '6. If the picture is not a calendar or diary, return "events":[] and say so in notes.'
+      '6. If the picture is not a calendar or diary, return "events":[] and say so in notes.',
+      '7. The photo may be sideways or upside down: read it in whichever direction the printed words are upright.',
+      '8. Paper week planners, e.g. the CGBD "7-11 活动划表 WEEKLY ACTIVITY TRACKING" diary: each page is ONE week with "FROM dd.mm.yyyy TO dd.mm.yyyy"',
+      '   at the top and one column per day (一 MON … 日 SUN, with the day number). Rows are hours printed 7, 8, 9, 10, 11, 12, 1, 2 … 11 =',
+      '   7am to 11pm (1–6 after 12 are afternoon, 7–11 after that are evening, e.g. row "3" = 15:00, the second "8" = 20:00).',
+      '   An entry\'s date comes from its column and its time from its row; if it covers several rows, the last row gives the end.',
+      '   Dates written dd.mm.yyyy or dd/mm are DAY first (14.12.2026 = 2026-12-14). Ignore empty grids, the printed headings,',
+      '   the small O / P / F / R tick boxes, the weekly review box and the SALES APPOINTMENT table: they are not appointments.'
     ].join('\n');
   }
   function hhmm(s) { var m = /^(\d{1,2})[:.]?(\d{2})$/.exec(str(s, 5)); if (!m || +m[1] > 23 || +m[2] > 59) return ''; return ('0' + m[1]).slice(-2) + ':' + m[2]; }
@@ -1178,7 +1195,7 @@ var CORE = (function () {
 
   return {TABLES: TABLES, TYPES: TYPES, TYPE_ORDER: TYPE_ORDER, PROSPECT: PROSPECT, COLORS: COLORS, REMIND: REMIND,
     handle: handle, voiceToEvent: voiceToEvent, feedIcs: feedIcs, parseVoice: parseVoice, voicePrompt: voicePrompt, parseThemeAI: parseThemeAI, isOwner: isOwner, OCCASIONS: OCCASIONS, ANIMS: ANIMS, tick: tick, occurrences: occurrences, holidaysOn: holidaysOn, schoolHoliday: schoolHoliday, HOLIDAYS: HOLIDAYS, defaultShort: defaultShort, answers: answers, attendance: attendance, TEAM_REMIND: TEAM_REMIND, cents: cents, MODES: MODES, casesOf: casesOf, commentTargets: commentTargets, isAll: isAll, MAX_NOC: MAX_NOC, morning: morning, evening: evening, detectType: detectType, stats: stats, addStats: addStats,
-    ratios: ratios, parseRead: parseRead, parseICS: parseICS, readPrompt: readPrompt, startMs: startMs, endMs: endMs, myt: myt, whenText: whenText};
+    ratios: ratios, parseRead: parseRead, parseICS: parseICS, similarTitle: similarTitle, readPrompt: readPrompt, startMs: startMs, endMs: endMs, myt: myt, whenText: whenText};
 })();
 
 /* ===== server/gas.js ===== */

@@ -109,7 +109,9 @@ The name is the agent's first name as they signed up, so members should sign up 
 - **Photos or screenshots** (Google Calendar, TimeTree, iPhone, Samsung, WhatsApp, or a handwritten diary): **Me → Import → Choose photos**, up to 10 at a time. AI reads them, then you check the list:
   - **Green** rows are clear and already ticked.
   - **Red** rows have an unclear date or time. Fix them and tick them, or leave them out. Red rows are never added on their own.
-  - Events already in your calendar are skipped, so importing the same photo twice is safe.
+  - Events already in your calendar are skipped, so importing the same photo twice is safe, even if the AI reads it slightly differently the second time.
+  - After you tap **Add**, a progress box stays on screen until it is done, so it can’t be sent twice. If the signal drops, the app checks what already went in and unticks those.
+  - **CGBD 7-11 weekly diary:** photograph one week page at a time (sideways is fine). The app reads the date range at the top, the day columns and the 7am–11pm rows; the O/P/F/R boxes and the review box are ignored.
 - **.ics file** (exact copy, no AI): Google Calendar on a computer → Settings → Import & export → Export.
 
 Photos are read and then thrown away; they are never saved. Crop out client IC or phone numbers first if they're visible.
