@@ -672,6 +672,18 @@ function fresh() {
   ok(big.events.length === 10, 'at most 10 appointments from one voice note');
 }
 
+/* ---------- Closing removed from new events: signing = Follow-up, then 💰 Closed ---------- */
+{
+  ok(CORE.TYPE_ORDER.indexOf('close') < 0 && CORE.TYPES.close, 'Closing not offered any more, old Closing events still show');
+  ok(CORE.parseVoice(JSON.stringify({title: '签单 Ooi', type: 'close', date: '2027-03-05', start: '10:00'}), 'x', []).event.type === 'followup', 'voice: Closing becomes Follow-up');
+  ok(CORE.parseRead(JSON.stringify({events: [{date: '2027-03-05', start: '10:00', title: 'Sign case Rosnah', type: 'close', confidence: 0.9}]})).events[0].type === 'followup', 'photo: Closing becomes Follow-up');
+  const {s, h, join} = fresh(); const a = join('Close Tester');
+  const e = h({op: 'save', token: a.token, event: {title: 'Sign case Ali', type: 'close', start: iso(NOW + 2 * H), end: iso(NOW + 3 * H)}}).event;
+  ok(e.type === 'followup', 'saving a Closing event makes it a Follow-up');
+  const e2 = h({op: 'save', token: a.token, event: {title: '签单 Tan', start: iso(NOW + 4 * H), end: iso(NOW + 5 * H)}}).event;
+  ok(e2.type === 'followup', '签单 detected as Follow-up');
+}
+
 /* ---------- sample team sanity ---------- */
 {
   const s = memStore(); seed(s, NOW);

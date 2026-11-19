@@ -7,7 +7,7 @@
   var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   var MONTH = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   var DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  var APP_VERSION = '56';
+  var APP_VERSION = '57';
   var H8 = 8 * 3600e3, DAY = 864e5, SELLING = {approach: 1, open: 1, present: 1, followup: 1, close: 1, joinfield: 1, recruit: 1};
 
   /* ---------- storage (each phone) ---------- */
@@ -1707,7 +1707,7 @@
       '<div class="card"><h4>Move my calendar here</h4><p class="muted">Google Calendar, TimeTree, iPhone, or a paper diary: snap photos or screenshots and the AI copies them in. You check every row first.</p><a class="btn primary" href="#/import">⤓ Import calendar</a></div>' +
       (!standalone() ? '<div class="card"><h4>Install</h4><p class="muted">Add REDEFINE Calendar to your home screen so it opens like an app.</p><button class="btn ghost" data-act="install">How?</button></div>' : '') +
       (m.leader ? '<div class="card"><h4>Leader</h4><a class="btn ghost" href="#/members">👥 Manage members</a></div>' : '') +
-      '<div class="card"><h4>How counting works</h4><p class="tiny muted">Each event has a type (👋 Approach, 📊 Present, 🔁 Follow-up, ✍️ Closing, 🌱 Recruit, 👥 Meeting, 🛠️ Service, 🎁 CRM, 📝 Paperwork, 🏠 Personal). The app guesses it from the title. After the event, tap ✓ Done, 💰 Closed (with ANP) or ✕ Didn\'t happen. Only confirmed events count, except: setting a 📊 presentation counts O (appointment) straight away; P counts when it’s Done. O/A = prospecting, P/O = presentation, F/P = follow-up, NOC/P = closing ratio. Personal events never count.</p></div>' +
+      '<div class="card"><h4>How counting works</h4><p class="tiny muted">Each event has a type (👋 Approach, 📊 Present, 🔁 Follow-up (signing meetings too), 🤝 Join field, 🌱 Recruit, 👥 Meeting, 🛠️ Service, 🎁 CRM, 📝 Paperwork, 🏠 Personal). The app guesses it from the title. After the event, tap ✓ Done, 💰 Closed (with ANP) or ✕ Didn\'t happen. Only confirmed events count, except: setting a 📊 presentation counts O (appointment) straight away; P counts when it’s Done. O/A = prospecting, P/O = presentation, F/P = follow-up, NOC/P = closing ratio. Personal events never count.</p></div>' +
       subCard() + soundCard() + (m.owner ? '<div class="card"><h4>🎉 Celebration themes</h4><p class="tiny muted">Only you (the owner) see this. Upload a festival poster: the app takes its colours and pictures for the whole team.</p><a class="btn primary" href="#/themes">Manage themes</a></div>' : '') +
       '<div class="card"><h4>Help & security</h4><div class="row"><button class="btn primary" data-act="tour">📖 Take the tour</button><button class="btn ghost" data-act="pinchange">🔑 Change my PIN</button></div></div>' +
       '<p class="center tiny muted">App version ' + APP_VERSION + ' · ' + frameInfo() + ' · ' + (isIOS() ? 'iPhone' : 'Android / other') + (standalone() ? ' · home-screen app' : ' · browser') + ' · notifications: ' + ('Notification' in window ? Notification.permission : 'not supported') + ' · server has ' + (me().devices || 0) + ' phone(s) for you</p>' +
