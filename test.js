@@ -651,6 +651,27 @@ function fresh() {
   ok(st.O === 2 && st.P === 0, 'an old Open event marked Done still counts O (history unchanged)');
 }
 
+/* ---------- one voice note, several appointments / dates ---------- */
+{
+  const reply = {events: [
+    {title: 'Present Mr Lim', type: 'present', date: '2027-03-03', start: '15:00', place: 'Gurney'},
+    {title: 'Training', type: 'meeting', date: '2027-03-08', start: '20:00'},
+    {title: 'Training', type: 'meeting', date: '2027-03-10', start: '20:00'},
+    {title: 'Call Ali', type: 'followup', date: '2027-03-04', start: ''}
+  ], clean: 'x'};
+  const s = memStore({ai: () => JSON.stringify(reply)}); s.setNow(Date.parse('2027-03-02T02:00:00.000Z'));
+  const h = q => CORE.handle(q, s), me = h({op: 'signin', code: 'test-team', name: 'Voice Many', pin: '1234', create: true});
+  const r = h({op: 'voice', token: me.token, audio: 'A'.repeat(4000), mime: 'audio/webm', save: true});
+  ok(r.events.length === 4 && r.event.id === r.events[0].id, 'one voice note saved as 4 appointments');
+  ok(r.events[1].start === '2027-03-08T12:00:00.000Z' && r.events[2].start === '2027-03-10T12:00:00.000Z', 'same training on two dates = two appointments');
+  ok(r.events[3].allDay && /Not said: the time/.test(r.events[3].notes) && /one of 4 appointments/.test(r.events[0].notes), 'one without a time is all-day and flagged; each says it came from a 4-appointment note');
+  ok(h({op: 'sync', token: me.token, force: true}).events.filter(e => e.source === 'voice').length === 4, 'all 4 are in the voice entries to check');
+  const old = CORE.parseVoice(JSON.stringify({title: 'Jumpa Ali', date: '2027-03-05', start: '10:00'}), 'jumpa ali', []);
+  ok(old.events.length === 1 && old.complete && old.event.title === 'Jumpa Ali', 'single-appointment reply still understood');
+  const big = CORE.parseVoice(JSON.stringify({events: Array.from({length: 15}, (_, i) => ({title: 'E' + i, date: '2027-03-05', start: '10:00'}))}), 'x', []);
+  ok(big.events.length === 10, 'at most 10 appointments from one voice note');
+}
+
 /* ---------- sample team sanity ---------- */
 {
   const s = memStore(); seed(s, NOW);

@@ -833,7 +833,7 @@ var CORE = (function () {
   /* ---------- Voice booking: speech (Malaysian English / 华语 / Cantonese / Hokkien / Malay / rojak) -> one appointment ---------- */
   function voicePrompt(today, dow, names, heard) {
     return [
-      'VOICE BOOKING. An insurance agent in Malaysia spoke ONE instruction to put an appointment in their calendar.',
+      'VOICE BOOKING. An insurance agent in Malaysia spoke a voice note to put one OR MORE appointments in their calendar.',
       'They may mix English, Mandarin, Cantonese, Hokkien and Malay ("rojak"). The text below is a speech-to-text transcript and may',
       'contain mistakes; read it the way a Malaysian colleague would. Today is ' + today + ' (' + dow + '), Malaysia time.',
       'Team members (short names): ' + (names.join(', ') || 'none') + '.',
@@ -841,9 +841,13 @@ var CORE = (function () {
       'Transcript: """' + heard + '"""',
       '',
       'Return ONLY a JSON object:',
-      '{"title":"short title in the language they used, e.g. Present medical plan to Mr Lim","type":"approach|present|followup|close|joinfield|recruit|meeting|service|crm|paperwork|personal|",',
-      ' "date":"YYYY-MM-DD or empty","start":"HH:MM 24h or empty","end":"HH:MM or empty","allDay":false,"place":"or empty","notes":"or empty",',
-      ' "people":["team members to invite, only names from the list"],"repeat":"w|m|y|","clean":"the instruction rewritten clearly in English","unclear":"what was not said or not clear"}',
+      '{"events":[{"title":"short title in the language they used, e.g. Present medical plan to Mr Lim","type":"approach|present|followup|close|joinfield|recruit|meeting|service|crm|paperwork|personal|",',
+      '   "date":"YYYY-MM-DD or empty","start":"HH:MM 24h or empty","end":"HH:MM or empty","allDay":false,"place":"or empty","notes":"or empty",',
+      '   "people":["team members to invite, only names from the list"],"repeat":"w|m|y|","unclear":"what was not said or not clear for THIS one"}],',
+      ' "clean":"the whole voice note rewritten clearly in English","unclear":"anything you could not understand"}',
+      'One item in "events" for EACH appointment, in the order said (at most 10). If the same thing happens on several dates',
+      '("Mon and Wed 8pm training", "15, 16 and 17 Dec roadshow"), make one item per date. A detail said once for a group',
+      '("all at Gurney", "all 8pm") applies to each of them. Never merge two different appointments into one item.',
       '',
       'Rules: never invent a date, time or place that was not said. "esok"/"明天"/"听日"/"明仔载" = tomorrow; "lusa"/"后天" = day after;',
       '"this Sat"/"星期六"/"礼拜六"/"Sabtu" = the coming Saturday (today if today is Saturday); "next Tue"/"下个星期二" = Tuesday of next week.',
@@ -855,28 +859,36 @@ var CORE = (function () {
     ].join('\n');
   }
   var DOW_EN = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  /* One voice note may hold several appointments ("events":[...]); an older single-object reply still works.
+     The reply keeps .event / .missing / .complete for the first one and adds .events for all of them. */
   function parseVoice(text, heard, members) {
     var j; try { j = JSON.parse(String(text).replace(/^```(json)?|```$/g, '')); } catch (e) { fail('ai_unreadable'); }
+    var list = Array.isArray(j.events) ? j.events.filter(function (x) { return x && typeof x === 'object'; }).slice(0, 10) : [j];
+    if (!list.length) list = [{}];
+    var all = list.map(function (x) { return voiceOne(x, members); }), first = all[0];
+    return {heard: str(heard, 600), clean: str(j.clean, 300), unclear: str(j.unclear || (list[0] || {}).unclear, 200), missing: first.missing, complete: first.complete, event: first.event, events: all};
+  }
+  function voiceOne(j, members) {
     var date = isDate(str(j.date, 10)) ? str(j.date, 10) : '', start = hhmm(j.start), end = hhmm(j.end), title = str(j.title, 120);
     var type = TYPES[j.type] ? newType(j.type) : (title ? detectType(title) : ''), allDay = j.allDay === true && !start;
     var want = (Array.isArray(j.people) ? j.people : []).map(function (n) { return normName(n); }), ids = [];
     members.forEach(function (m) { if (String(m.active) !== 'false' && (want.indexOf(normName(shortOf(m))) >= 0 || want.indexOf(normName(m.name)) >= 0)) ids.push(m.id); });
     var missing = [];
     if (!title) missing.push('what'); if (!date) missing.push('date'); if (!start && !allDay) missing.push('time');
-    return {heard: str(heard, 600), clean: str(j.clean, 300), unclear: str(j.unclear, 200), missing: missing, complete: !missing.length,
+    return {missing: missing, complete: !missing.length, unclear: str(j.unclear, 200),
       event: {title: title, type: type || 'meeting', date: date, start: start, end: end, allDay: allDay, place: str(j.place, 120), notes: str(j.notes, 500), with: ids, rep: /^[wmy]$/.test(j.repeat) ? j.repeat : ''}};
   }
   /* Voice note -> calendar entry, saved straight away (the agent checks it later). Nothing said is never invented:
      no date said = today, no time said = all day, and the note says what was missing. */
-  function voiceToEvent(v, nowMs) {
-    var x = v.event, date = x.date || mytDay(nowMs), ev = {title: x.title || ('🎤 ' + v.heard.slice(0, 80)), type: x.type || 'meeting', place: x.place, with: x.with, rep: x.rep, vis: 'team', source: 'voice'};
+  function voiceToEvent(v, nowMs, one, of) {
+    one = one || v; var x = one.event, date = x.date || mytDay(nowMs), ev = {title: x.title || ('🎤 ' + v.heard.slice(0, 80)), type: x.type || 'meeting', place: x.place, with: x.with, rep: x.rep, vis: 'team', source: 'voice'};
     if (x.start) {
       var st = Date.parse(date + 'T' + x.start + ':00+08:00'), en = x.end ? Date.parse(date + 'T' + x.end + ':00+08:00') : st + 3600e3;
       if (!(en > st)) en = st + 3600e3;
       ev.allDay = false; ev.start = new Date(st).toISOString(); ev.end = new Date(en).toISOString(); ev.remind = '30';
     } else { ev.allDay = true; ev.start = date; ev.end = date; ev.remind = ''; }
-    var miss = v.missing.map(function (m) { return {what: 'what it is', date: 'the date', time: 'the time'}[m]; });
-    ev.notes = (x.notes ? x.notes + '\n\n' : '') + '🎤 You said: “' + v.heard + '”' + (miss.length ? '\n⚠️ Not said: ' + miss.join(', ') + '. Please check.' : '');
+    var miss = one.missing.map(function (m) { return {what: 'what it is', date: 'the date', time: 'the time'}[m]; });
+    ev.notes = (x.notes ? x.notes + '\n\n' : '') + '🎤 You said: “' + v.heard + '”' + (of > 1 ? '\n(one of ' + of + ' appointments from this voice note)' : '') + (miss.length ? '\n⚠️ Not said: ' + miss.join(', ') + '. Please check.' : '');
     return ev;
   }
   function checkedOp(q, store, me) {   // "✓ Correct" on a voice entry
@@ -1180,9 +1192,13 @@ var CORE = (function () {
       var today = mytDay(nowMs), dow = DOW_EN[new Date(nowMs + 8 * 3600e3).getUTCDay()];
       var vv = parseVoice(store.ai(voicePrompt(today, dow, team.filter(function (m) { return String(m.active) !== 'false' && m.id !== vm.id; }).map(shortOf), heard), '', {quick: true}), heard, team);
       if (!q.save) return {ok: true, voice: vv};
-      if (!vv.event.title && !vv.event.date && !vv.event.start) fail('not_an_appointment');
-      var saved = store.withLock(function () { var w2 = who(q, store); return saveEvent({event: voiceToEvent(vv, store.now().getTime())}, store, w2.me, w2.leader); });
-      return {ok: true, voice: vv, event: saved.event};
+      var real = vv.events.filter(function (o) { return o.event.title || o.event.date || o.event.start; });
+      if (!real.length) fail('not_an_appointment');
+      var savedAll = store.withLock(function () {
+        var w2 = who(q, store), t0 = store.now().getTime();
+        return real.map(function (o) { return saveEvent({event: voiceToEvent(vv, t0, o, real.length)}, store, w2.me, w2.leader).event; });
+      });
+      return {ok: true, voice: vv, event: savedAll[0], events: savedAll};
     }
     if (q.op === 'voicetodo') {   // same limits as voice booking; speech-to-text outside the lock
       if (!b64ok(q.audio, MAX_AUDIO_B64) || !AUDIO_OK[str(q.mime, 30).split(';')[0]]) fail('bad_audio');

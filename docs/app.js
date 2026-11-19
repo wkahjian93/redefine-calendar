@@ -7,7 +7,7 @@
   var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   var MONTH = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   var DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  var APP_VERSION = '54';
+  var APP_VERSION = '55';
   var H8 = 8 * 3600e3, DAY = 864e5, SELLING = {approach: 1, open: 1, present: 1, followup: 1, close: 1, joinfield: 1, recruit: 1};
 
   /* ---------- storage (each phone) ---------- */
@@ -848,7 +848,9 @@
         var tdo = j.todo || {}; if (tdo.id && S.data) { S.data.todos = (S.data.todos || []).filter(function (x) { return x.id !== tdo.id; }).concat([tdo]); }
         render(); toast((it.to.kind === 'note' ? '📝 Note saved: ' : '✅ To-do added: ') + String(tdo.text || '').slice(0, 60), 'good'); quietSync(true); return runVoiceQ();
       }
-      if (j.event && j.event.id && S.data) { S.data.events = (S.data.events || []).filter(function (x) { return x.id !== j.event.id; }).concat([j.event]); render(); }
+      var got = (j.events && j.events.length ? j.events : j.event ? [j.event] : []).filter(function (x) { return x && x.id; });
+      if (got.length && S.data) { var ids = got.map(function (x) { return x.id; }); S.data.events = (S.data.events || []).filter(function (x) { return ids.indexOf(x.id) < 0; }).concat(got); render(); }
+      if (got.length > 1) { toast('✅ Added ' + got.length + ' appointments: ' + got.map(function (x) { return x.title + ' · ' + (x.allDay ? dayLabel(String(x.start).slice(0, 10)) : dayLabel(dayKey(Date.parse(x.start))) + ' ' + hm(Date.parse(x.start))); }).join(' | ') + (got.some(function (x) { return /Not said/.test(x.notes || ''); }) ? ' · please check' : ''), 'good'); quietSync(true); return runVoiceQ(); }
       var e = j.event || {}, v = j.voice || {}, when = e.allDay ? dayLabel(String(e.start).slice(0, 10)) + ' (all day)' : dayLabel(dayKey(Date.parse(e.start))) + ' ' + hm(Date.parse(e.start));
       toast('✅ Added: ' + (e.title || 'appointment') + ' · ' + when + (v.missing && v.missing.length ? ' · please check' : ''), 'good');
       quietSync(true); runVoiceQ();
@@ -1031,7 +1033,7 @@
       (upcomingTeam().length ? '<a class="confirm-bar team-bar" href="#/teamevents"><img class="tlogo" src="icons/team-mark.png" alt=""> Upcoming team events <b>(' + upcomingTeam().length + ')</b>' + (teamToAnswer() ? ' · <b class="ans">' + teamToAnswer() + ' to answer</b>' : '') + ' <span>›</span></a>' : '') +
       (myInvites().length ? '<a class="confirm-bar invite" href="#/invites">📩 <b>' + myInvites().length + '</b> invitation' + (myInvites().length > 1 ? 's' : '') + ' waiting for your answer <span>›</span></a>' : '') +
       (voiceToCheck().length ? '<a class="confirm-bar voicebar" href="#/voicecheck">🎤 <b>' + voiceToCheck().length + '</b> voice entr' + (voiceToCheck().length > 1 ? 'ies' : 'y') + ' to check <span>›</span></a>' : '') +
-      (voicePending(function (x) { return !x.to; }).length ? '<div class="confirm-bar voicebar pend"><span class="mini-spin"></span> 🎤 Adding ' + voicePending(function (x) { return !x.to; }).length + ' voice appointment' + (voicePending(function (x) { return !x.to; }).length > 1 ? 's' : '') + ' to your calendar…</div>' : '') +
+      (voicePending(function (x) { return !x.to; }).length ? '<div class="confirm-bar voicebar pend"><span class="mini-spin"></span> 🎤 Adding your voice note' + (voicePending(function (x) { return !x.to; }).length > 1 ? 's' : '') + ' to the calendar…</div>' : '') +
       (confirm.length ? '<a class="confirm-bar" href="#/confirm">✅ <b>' + confirm.length + '</b> activit' + (confirm.length > 1 ? 'ies' : 'y') + ' to confirm so your numbers count <span>›</span></a>' : '') +
       body + (S.view !== 'day' ? legend() : '') + '</main><button class="fab mic" aria-label="Hold to record an appointment">🎤</button><button class="fab" data-act="new" aria-label="Add event">+</button>' + tabs('cal');
   }
