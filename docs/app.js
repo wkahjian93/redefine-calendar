@@ -7,7 +7,7 @@
   var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   var MONTH = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   var DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  var APP_VERSION = '55';
+  var APP_VERSION = '56';
   var H8 = 8 * 3600e3, DAY = 864e5, SELLING = {approach: 1, open: 1, present: 1, followup: 1, close: 1, joinfield: 1, recruit: 1};
 
   /* ---------- storage (each phone) ---------- */
@@ -829,7 +829,16 @@
   document.addEventListener('pointerup', function (ev) { micUp(ev); });
   document.addEventListener('pointercancel', function (ev) { micUp(ev, true); });
   document.addEventListener('contextmenu', function (ev) { if (ev.target.closest && ev.target.closest('.fab.mic, .mic-hold')) ev.preventDefault(); });
-  function saveVQ() { try { localStorage.setItem('rcal.voiceQ', JSON.stringify(VQ)); } catch (x) { /* too big for this phone's storage: it still goes out from memory */ } }
+  /* a turning ring on the 🎤 that is still saving (the app stays fully usable; you can even record again) */
+  function markMicBusy() {
+    var cal = VQ.some(function (x) { return !x.to; });
+    document.querySelectorAll('.fab.mic').forEach(function (b) { b.classList.toggle('busy', cal); });
+    document.querySelectorAll('.mic-hold').forEach(function (b) {
+      var note = b.dataset.kind === 'note', q = b.dataset.q || '';
+      b.classList.toggle('busy', VQ.some(function (x) { return x.to && (note ? x.to.kind === 'note' : x.to.kind !== 'note' && String(x.to.q || '1') === (q || '1')); }));
+    });
+  }
+  function saveVQ() { markMicBusy(); try { localStorage.setItem('rcal.voiceQ', JSON.stringify(VQ)); } catch (x) { /* too big for this phone's storage: it still goes out from memory */ } }
   function queueVoice(blob, to) {
     fileB64(blob).then(function (b64) {
       VQ.push({id: 'v' + Date.now(), audio: b64, mime: blob.type || 'audio/webm', tries: 0, next: 0, to: to || null, at: Date.now()}); VQ = VQ.slice(-5); saveVQ();
@@ -1905,7 +1914,7 @@
     if (/^new(\?|$)/.test(parts[0] || '')) {
       var qs = new URLSearchParams(r.split('?')[1] || '');
       history.replaceState(null, '', location.pathname + location.search + '#/');
-      lastRoute = '/'; $app.innerHTML = calendarScreen();
+      lastRoute = '/'; $app.innerHTML = calendarScreen(); markMicBusy();
       setTimeout(function () { editor(null, {title: qs.get('t'), date: qs.get('d'), time: qs.get('s'), notes: qs.get('n')}); }, 30);
       return;
     }
@@ -1926,7 +1935,7 @@
     else html = calendarScreen();
     var y = r === lastRoute ? $scroll.scrollTop : 0;   // only #scroll scrolls; the frame (body) never moves
     $app.innerHTML = html; lastRoute = r;
-    $scroll.scrollTop = y;
+    $scroll.scrollTop = y; markMicBusy();
     if (parts[0] === 'e' && parts[2] === 'c' && y === 0) { var cm = $app.querySelector('.comments'); if (cm) setTimeout(function () { cm.scrollIntoView({block: 'start'}); }, 30); }
   }
 

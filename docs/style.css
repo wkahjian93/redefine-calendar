@@ -589,3 +589,9 @@ html[data-celebrate] .calhead { background: color-mix(in srgb, var(--bg) 92%, tr
 .td.pend { color: var(--muted); font-style: italic; } .td.pend .mini-spin { margin: 0 6px 0 4px; }
 .card.note.pend { color: var(--muted); font-style: italic; }
 .confirm-bar.pend { display: flex; align-items: center; gap: 8px; }
+
+/* 🎤 still saving: a ring turns around the mic; the button and the rest of the app keep working */
+.qmic { position: relative; }
+.fab.mic.busy::after, .qmic.busy::after { content: ''; position: absolute; inset: -5px; border-radius: 50%; border: 3px solid transparent; border-top-color: var(--coral); border-right-color: var(--coral); animation: spin .9s linear infinite; pointer-events: none; }
+.btn.mic-hold { position: relative; }
+.btn.mic-hold.busy::after { content: ''; position: absolute; right: 10px; top: 50%; width: 14px; height: 14px; margin-top: -9px; border-radius: 50%; border: 2px solid var(--line); border-top-color: var(--coral); animation: spin .9s linear infinite; pointer-events: none; }
