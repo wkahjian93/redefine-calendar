@@ -687,6 +687,37 @@ function fresh() {
   ok(CORE.parseVoice(JSON.stringify({title: 'Team training', type: 'meeting', date: '2027-03-05', start: '20:00'}), 'team training 8pm', []).event.type === 'meeting', 'a real training stays a meeting');
 }
 
+/* ---------- join field: leader goes along; presentation or follow-up; numbers + closed cases belong to the agent ---------- */
+{
+  const {s, h, join} = fresh();
+  const kj = join('WONG KAH JIAN', true), mj = join('LIM MAY JING'), wen = join('Wen Lim');
+  // the leader sets it for the agent: agent picked automatically (the non-leader tagged), agent is in it straight away
+  const jf = h({op: 'save', token: kj.token, event: {title: 'JF Mr Tan medical card', type: 'joinfield', jfKind: 'present', with: [mj.me.id], start: iso(NOW - 3 * H), end: iso(NOW - 2 * H)}}).event;
+  ok(jf.agentId === mj.me.id && jf.jfKind === 'present', 'leader-made join field: agent = the agent tagged, kind = presentation');
+  ok(s.pushes.some(p => p.ids[0] === mj.me.id && /coming along \(join field\)/.test(p.note.title) && /your presentation/.test(p.note.body)), 'agent gets a join field pop-up (no accept / reject)');
+  const syncMj = h({op: 'sync', token: mj.token, force: true});
+  ok(syncMj.msgs.some(m => m.to === 'ev:' + jf.id && m.kind === 'rsvp' && m.from === mj.me.id && m.text === 'yes'), 'agent is in it straight away');
+  // the agent records the close and keys in the case
+  h({op: 'outcome', token: mj.token, id: jf.id, out: 'closed', cases: [{plan: 'GMS', anp: 1200, mode: 'M'}]});
+  const by = CORE.stats(s.load('events'), NOW - 10 * H, NOW + 10 * H, NOW);
+  ok(by[mj.me.id] && by[mj.me.id].O === 1 && by[mj.me.id].P === 1 && by[mj.me.id].C === 1 && by[mj.me.id].anp === 1200 && by[mj.me.id].joinfield === 1, 'O, P, closed case and ANP all counted for the agent');
+  ok(!by[kj.me.id] || (by[kj.me.id].O === 0 && by[kj.me.id].P === 0 && by[kj.me.id].C === 0 && by[kj.me.id].anp === 0), 'leader gets none of it');
+  ok(s.pushes.some(p => /LIM MAY JING closed a case/.test(p.note.title)), 'the team 🎉 names the agent');
+  throws(() => h({op: 'outcome', token: wen.token, id: jf.id, out: 'done'}), 'not_yours', 'someone else cannot record it');
+  // the agent sets a follow-up join field and tags the leader
+  const jf2 = h({op: 'save', token: mj.token, event: {title: 'JF follow up Ali', type: 'joinfield', with: [kj.me.id], start: iso(NOW - 6 * H), end: iso(NOW - 5 * H)}}).event;
+  ok(jf2.agentId === mj.me.id && jf2.jfKind === 'followup', 'agent-made join field: agent = me, "follow up" in the title = follow-up');
+  h({op: 'outcome', token: mj.token, id: jf2.id, out: 'done'});
+  const by2 = CORE.stats(s.load('events'), NOW - 10 * H, NOW + 10 * H, NOW);
+  ok(by2[mj.me.id].F === 1 && (!by2[kj.me.id] || by2[kj.me.id].F === 0), 'follow-up join field counts F for the agent only');
+  // the agent can be picked even when not tagged: they are added to the event
+  const jf3 = h({op: 'save', token: kj.token, event: {title: 'JF Wen client', type: 'joinfield', jfKind: 'followup', agentId: wen.me.id, start: iso(NOW + 5 * H), end: iso(NOW + 6 * H)}}).event;
+  ok(jf3.agentId === wen.me.id && jf3.with.indexOf(wen.me.id) >= 0, 'picked agent is put on the event');
+  // a private join field still counts for the agent on everyone's board
+  const view = h({op: 'sync', token: wen.token, force: true}).events.find(e => e.id === jf.id);
+  ok(view && view.busy ? (view.ag === mj.me.id && view.jk === 'present') : view.agentId === mj.me.id, 'other members can count it for the agent too');
+}
+
 /* ---------- sample team sanity ---------- */
 {
   const s = memStore(); seed(s, NOW);

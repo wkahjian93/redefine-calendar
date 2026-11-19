@@ -7,7 +7,7 @@
   var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   var MONTH = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   var DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  var APP_VERSION = '57';
+  var APP_VERSION = '58';
   var H8 = 8 * 3600e3, DAY = 864e5, SELLING = {approach: 1, open: 1, present: 1, followup: 1, close: 1, joinfield: 1, recruit: 1};
 
   /* ---------- storage (each phone) ---------- */
@@ -85,7 +85,7 @@
   function involves(e, id) { return e.ownerId === id || ((e.with || []).indexOf(id) >= 0 && ansOf(e)[id] !== 'no') || !!e.all; }
   function myInvites() { var my = me().id; return events().filter(function (e) { return pendingFor(e, my) && eMs(e) > Date.now() && e.out !== 'cancel'; }).sort(function (a, b) { return sMs(a) - sMs(b); }); }
   function isWork(e) { var t = e.type || e.t; return !!(C.TYPES[t] && C.TYPES[t].work); }
-  function needsConfirm(e) { return !e.occ && !e.bday && e.ownerId === me().id && !e.busy && isWork(e) && !e.out && eMs(e) <= Date.now(); }
+  function needsConfirm(e) { return !e.occ && !e.bday && C.creditId(e) === me().id && !e.busy && isWork(e) && !e.out && eMs(e) <= Date.now(); }
   function rawEvents() { return (S.data && S.data.events) || []; }
   /* Repeating events are expanded into their dates; team birthdays (Me → My birthday) appear for everyone. Cached per data version. */
   var expCache = {k: null, src: null, v: []};
@@ -1151,8 +1151,9 @@
     var cheers = thread.filter(function (m) { return m.kind === 'cheer'; }), comments = thread.filter(function (m) { return m.kind !== 'cheer' && m.kind !== 'rsvp'; });
     var iCheered = cheers.some(function (m) { return m.from === me().id; });
     var out = '';
-    if (mine && !e.occ && isWork(e) && sMs(e) <= Date.now()) {
-      out = '<div class="card"><h4>What happened?</h4><div class="outs">' +
+    var jfLine = e.type === 'joinfield' ? '<p class="jf-who">🤝 Join field · ' + (e.jfKind === 'followup' ? '🔁 Follow-up' : '📊 Presentation') + '<br>Agent: <b>' + esc(shortName(mem(C.creditId(e)))) + '</b> (the numbers and closed cases count for them) · Leader' + ([e.ownerId].concat(e.with || []).filter(function (id) { return id !== C.creditId(e); }).length > 1 ? 's' : '') + ': ' + esc([e.ownerId].concat(e.with || []).filter(function (id) { return id !== C.creditId(e); }).map(function (id) { return shortName(mem(id)); }).join(', ') || '–') + '</p>' : '';
+    if ((mine || C.creditId(e) === me().id) && !e.occ && isWork(e) && sMs(e) <= Date.now()) {
+      out = '<div class="card"><h4>What happened?</h4>' + (e.type === 'joinfield' && C.creditId(e) !== me().id ? '<p class="tiny muted">This counts for ' + esc(shortName(mem(C.creditId(e)))) + ', not for you.</p>' : '') + '<div class="outs">' +
         '<button class="out' + (e.out === 'done' ? ' on' : '') + '" data-act="out" data-id="' + e.id + '" data-v="done">✓ Done</button>' +
         (C.PROSPECT[e.type] ? '<button class="out gold' + (e.out === 'closed' ? ' on' : '') + '" data-act="out" data-id="' + e.id + '" data-v="closed">💰 Closed</button>' : '') +
         '<button class="out grey' + (e.out === 'cancel' ? ' on' : '') + '" data-act="out" data-id="' + e.id + '" data-v="cancel">✕ Didn\'t happen</button></div>' +
@@ -1167,7 +1168,7 @@
       '<main><div class="card evhead' + (e.all ? ' team' : '') + '" style="' + evStyle(e) + '"><h2>' + (e.all ? '<img class="tlogo" src="icons/team-mark.png" alt="">' + esc(e.title) : esc(T(e.type).emoji + ' ' + e.title)) + '</h2>' +
       '<p>' + esc(dayLabel(dayKey(sMs(e)), true)) + (e.allDay && e.end !== e.start ? ' → ' + esc(dayLabel(String(e.end).slice(0, 10), true)) : '') + '<br>' + esc(evTime(e)) + '</p>' +
       (e.place ? '<p>📍 ' + esc(e.place) + '</p>' : '') +
-      '<p>' + avatar(o, 'sm') + ' ' + esc(o.name) + ((e.with || []).length ? ' <span class="muted">with</span> ' + e.with.map(function (id) { return avatar(mem(id), 'sm') + ' ' + esc(shortName(mem(id))); }).join(' ') : '') + '</p>' +
+      '<p>' + avatar(o, 'sm') + ' ' + esc(o.name) + ((e.with || []).length ? ' <span class="muted">with</span> ' + e.with.map(function (id) { return avatar(mem(id), 'sm') + ' ' + esc(shortName(mem(id))); }).join(' ') : '') + '</p>' + jfLine +
       (e.notes ? '<p class="notes">' + esc(e.notes) + '</p>' : '') +
       (mine && e.source === 'voice' ? '<div class="card vnote">🎤 Added from your voice note. Is it right?<div class="row"><button class="btn primary tiny" data-act="vcheck" data-id="' + e.id + '">✓ Correct</button><button class="btn tiny" data-act="edit" data-id="' + e.id + '">✏️ Edit</button></div></div>' : '') + repNote + '<p class="muted tiny">' + (e.all ? '👥 Whole-team event: on everyone\'s calendar.' : e.vis === 'private' ? '🔒 Only ' + (mine ? 'you' : shortName(o)) + (e.with.length ? ' and the people tagged' : '') + ' can see this. Others see "Busy".' + (isWork(e) ? ' It still counts in the activity numbers.' : '') : '👥 The whole team can see this.') + (e.type === 'approach' ? ' · ' + (e.count || 1) + ' new friend(s)' : '') + '</p></div>' +
       out + (e.all ? attendCard(e) : (e.with || []).length ? inviteCard(e) : '') +
@@ -1360,6 +1361,9 @@
       '<input name="title" class="title-in" maxlength="120" placeholder="What? e.g. Present Mr Lim medical card" value="' + esc(e.title) + '" required>' +
       '<p class="detect tiny muted" id="detect"></p>' +
       '<div class="types">' + C.TYPE_ORDER.map(function (t) { return '<button type="button" class="tp' + (e.type === t ? ' on' : '') + '" data-t="' + t + '">' + T(t).emoji + ' ' + esc(T(t).label.replace(/ \(.*\)/, '')) + '</button>'; }).join('') + '</div>' +
+      '<div class="jf-row" hidden><div class="lbl">🤝 This join field is a</div><div class="vis jfk"><button type="button" class="jkb" data-k="present">📊 Presentation</button><button type="button" class="jkb" data-k="followup">🔁 Follow-up</button></div>' +
+      '<label>Agent (whose client: O / P / F and closed cases count for them)<select name="agent">' + [me()].concat(members().filter(function (m) { return m.id !== me().id && m.active !== false; })).map(function (m) { return '<option value="' + m.id + '">' + esc(shortName(m)) + (m.id === me().id ? ' (me)' : '') + (m.role === 'leader' ? ' · leader' : '') + '</option>'; }).join('') + '</select></label>' +
+      '<p class="tiny muted" id="jf-help"></p></div>' +
       '<div class="count-row" ' + (e.type === 'approach' ? '' : 'hidden') + '><label>How many new friends?<input name="count" type="number" min="1" max="999" value="' + (e.count || 1) + '"></label></div>' +
       '<label class="switch"><input type="checkbox" name="allDay"' + (e.allDay ? ' checked' : '') + '> All day</label>' +
       '<div class="two dt"><label class="big-l"><span>📅 Date</span><input class="big-in" name="date" type="date" value="' + dayKey(sMs(e)) + '" required></label>' +
@@ -1377,10 +1381,22 @@
       '<div class="row end sticky-actions">' + (!isNew ? '<button type="button" class="btn danger ghost" data-x="del">Delete</button>' : '') + '<button class="btn primary big" type="submit">' + (isNew ? 'Add to calendar' : 'Save') + '</button></div></form>';
     modal(html, function (sh) {
       var f = sh.querySelector('#ed'), type = e.type, vis = e.vis === 'private' ? 'private' : 'team', visPicked = !isNew, withIds = (e.with || []).slice();
+      var jk = e.jfKind || '', agentPicked = !!e.agentId;
+      var jfDefault = function () { if (!isLeader()) return me().id; var a = withIds.filter(function (id) { return mem(id).role !== 'leader'; })[0]; return a || ''; };
+      f.agent.value = e.agentId || jfDefault() || me().id;
+      f.agent.onchange = function () { agentPicked = true; paint(); };
+      sh.querySelectorAll('.jfk .jkb').forEach(function (b) { b.onclick = function () { jk = b.dataset.k; paint(); }; });
       function paint() {
         sh.querySelectorAll('.tp').forEach(function (b) { b.classList.toggle('on', b.dataset.t === type); });
         sh.querySelectorAll('.vb').forEach(function (b) { b.classList.toggle('on', b.dataset.v === vis); });
         sh.querySelector('.count-row').hidden = type !== 'approach';
+        sh.querySelector('.jf-row').hidden = type !== 'joinfield';
+        if (type === 'joinfield') {
+          if (!agentPicked && jfDefault()) f.agent.value = jfDefault();
+          sh.querySelectorAll('.jfk .jkb').forEach(function (b) { b.classList.toggle('on', b.dataset.k === jk); });
+          var leaders = [me().id].concat(withIds).filter(function (id) { return id !== f.agent.value; });
+          sh.querySelector('#jf-help').textContent = 'Agent: ' + shortName(mem(f.agent.value)) + ' · going along: ' + (leaders.map(function (id) { return shortName(mem(id)); }).join(', ') || 'tag the leader under Invite') + '. Only the agent gets the numbers.';
+        }
         sh.querySelector('.rep-only').hidden = !f.rep.value;
         sh.querySelector('#all-row').hidden = sh.querySelector('#all-help').hidden = vis === 'private';
         var everyone = vis !== 'private' && f.all.checked;   // whole-team event: everybody is in it, so every name shows selected
@@ -1397,7 +1413,7 @@
       });
       sh.querySelectorAll('.tp').forEach(function (b) { b.onclick = function () { type = b.dataset.t; picked = true; if (!visPicked) vis = type === 'personal' ? 'private' : 'team'; sh.querySelector('#detect').textContent = ''; paint(); }; });
       sh.querySelectorAll('.vb').forEach(function (b) { b.onclick = function () { vis = b.dataset.v; visPicked = true; paint(); }; });
-      sh.querySelectorAll('.wp').forEach(function (b) { b.onclick = function () { var i = withIds.indexOf(b.dataset.id); if (i >= 0) withIds.splice(i, 1); else withIds.push(b.dataset.id); b.classList.toggle('on'); }; });
+      sh.querySelectorAll('.wp').forEach(function (b) { b.onclick = function () { var i = withIds.indexOf(b.dataset.id); if (i >= 0) withIds.splice(i, 1); else withIds.push(b.dataset.id); b.classList.toggle('on'); paint(); }; });
       f.allDay.onchange = paint; f.all.onchange = paint; f.rep.onchange = paint;
       f.st.addEventListener('change', function () { var s = f.st.value.split(':'), en = f.et.value.split(':'); if (f.et.value <= f.st.value) f.et.value = pad(Math.min(23, +s[0] + 1)) + ':' + s[1]; });
       paint(); if (isNew) setTimeout(function () { f.title.focus(); if (f.title.value) f.title.dispatchEvent(new Event('input')); }, 50);   // a pre-filled title still picks its type
@@ -1413,7 +1429,12 @@
         if (!type) { type = C.detectType(f.title.value) || ''; if (!type) { toast('Pick what kind of activity this is.', 'bad'); sh.querySelector('.types').classList.add('shake'); return; } }
         var ad = f.allDay.checked, d = f.date.value;
         if (!d) return toast('Please pick a date.', 'bad');
-        var ev2 = {id: e.id, title: f.title.value, type: type, allDay: ad, place: f.place.value, notes: f.notes.value, vis: vis, all: vis !== 'private' && f.all.checked, with: withIds, remind: f.remind.value, count: f.count.value, source: e.source === 'voice' ? 'voiceok' : (e.source || 'manual'), rep: f.rep.value, repEnd: f.rep.value ? f.repEnd.value : ''};
+        if (type === 'joinfield') {
+          if (!jk) { toast('Is this join field a presentation or a follow-up?', 'bad'); sh.querySelector('.jfk').classList.add('shake'); return; }
+          if (f.agent.value !== me().id && withIds.indexOf(f.agent.value) < 0) withIds.push(f.agent.value);   // the agent is always on it
+          if (withIds.length === 0) { toast('Tag the leader (or agent) going along under Invite.', 'bad'); return; }
+        }
+        var ev2 = {id: e.id, title: f.title.value, type: type, allDay: ad, place: f.place.value, notes: f.notes.value, vis: vis, all: vis !== 'private' && f.all.checked, with: withIds, remind: f.remind.value, count: f.count.value, source: e.source === 'voice' ? 'voiceok' : (e.source || 'manual'), rep: f.rep.value, repEnd: f.rep.value ? f.repEnd.value : '', jfKind: type === 'joinfield' ? jk : '', agentId: type === 'joinfield' ? f.agent.value : ''};
         if (ad) { ev2.start = d; ev2.end = f.date2.value && f.date2.value >= d ? f.date2.value : d; }
         else {
           if (!f.st.value) return toast('Please pick a start time.', 'bad');
@@ -1422,7 +1443,7 @@
           ev2.end = new Date(en).toISOString();
         }
         var tmpId = isNew ? 'tmp' + Date.now() : e.id;
-        var view = {id: tmpId, ownerId: isNew ? me().id : e.ownerId, title: ev2.title.trim(), type: type, start: ev2.start, end: ev2.end, allDay: ad, place: ev2.place, notes: ev2.notes, vis: vis, all: !!ev2.all, with: withIds.slice(), remind: ev2.remind, count: type === 'approach' ? (+ev2.count || 1) : 0, out: isNew ? '' : e.out, anp: isNew ? 0 : e.anp, noc: isNew ? 0 : e.noc, cases: isNew ? [] : (e.cases || []), source: ev2.source, rep: ev2.rep, repEnd: ev2.repEnd};
+        var view = {id: tmpId, ownerId: isNew ? me().id : e.ownerId, title: ev2.title.trim(), type: type, start: ev2.start, end: ev2.end, allDay: ad, place: ev2.place, notes: ev2.notes, vis: vis, all: !!ev2.all, with: withIds.slice(), remind: ev2.remind, count: type === 'approach' ? (+ev2.count || 1) : 0, out: isNew ? '' : e.out, anp: isNew ? 0 : e.anp, noc: isNew ? 0 : e.noc, cases: isNew ? [] : (e.cases || []), source: ev2.source, rep: ev2.rep, repEnd: ev2.repEnd, jfKind: ev2.jfKind, agentId: ev2.agentId};
         closeModal(); S.sel = dayKey(sMs(view));
         if (!isNew) location.hash = '#/e/' + e.id;
         optimistic(function (d) { if (isNew) d.events.push(view); else d.events = d.events.map(function (x) { return x.id === e.id ? Object.assign({}, x, view) : x; }); }, 'save', {event: ev2}, isNew ? 'Added 📅' : 'Saved',
@@ -1587,10 +1608,10 @@
   /* Close case list, ready for WhatsApp:  "1. 1/11 Rex GMS 1198/M" ... "Total ANP: 23,705.65"
      One line per policy, in date order. Name = the agent's first name. ANP not entered yet shows as "ANP?". */
   function closeList(evs, r) {
-    var list = evs.filter(function (e) { return e.out === 'closed' && sMs(e) >= r.from && sMs(e) < r.to && members().some(function (m) { return m.id === e.ownerId && m.active !== false; }); })
+    var list = evs.filter(function (e) { return e.out === 'closed' && sMs(e) >= r.from && sMs(e) < r.to && members().some(function (m) { return m.id === C.creditId(e) && m.active !== false; }); })
       .sort(function (x, y) { return sMs(x) - sMs(y); }), lines = [], total = 0;
     list.forEach(function (e) {
-      var p = P(sMs(e)), who = shortName(mem(e.ownerId)), cs = e.cases && e.cases.length ? e.cases : [{plan: '(plan not entered)', anp: e.anp || '', mode: '?'}];
+      var p = P(sMs(e)), who = shortName(mem(C.creditId(e))), cs = e.cases && e.cases.length ? e.cases : [{plan: '(plan not entered)', anp: e.anp || '', mode: '?'}];
       if (!(e.cases && e.cases.length) && (e.noc || 1) > 1) for (var k = 1; k < e.noc; k++) cs.push({plan: '(plan not entered)', anp: '', mode: '?'});
       cs.forEach(function (c) {
         var has = c.anp !== '' && c.anp != null && +c.anp > 0; if (has) total += +c.anp;

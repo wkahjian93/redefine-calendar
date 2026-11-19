@@ -25,6 +25,7 @@ You stay signed in on that phone for good, like WhatsApp. Only two things sign y
   - **Payment mode:** M / Q / HY / Y
 
   Tap **+ Add another case** for more policies. NOC = number of lines and total ANP = their sum; average case size = ANP ÷ NOC. ANP can be left blank until you know; the case still counts. The whole team sees your plan names, ANP and mode in the close case list (never client details).
+- **🤝 Join field (陪访):** pick the Join field type, then say whether it is a **📊 Presentation** or a **🔁 Follow-up**, and who the **Agent** is (whose client it is). Everyone else tagged is the leader going along. The app picks the agent for you: if an agent sets it, it is them; if a leader sets it, it is the agent they tag. All the numbers (O, P, F) and any closed cases count **only for the agent**, never for the leader. The agent can tap ✓ Done / 💰 Closed and key in the cases themselves, even when the leader set the event. When a leader sets it, the agent is in it straight away (no accept / reject) and gets a pop-up.
 - **With:** tag a leader or teammate for joint field work. They see it on their calendar and get a pop-up.
 - **👥 Everyone's in it:** switch this on for the team meeting, training or a roadshow. It shows on every member's calendar.
 - **Cheer 👏 and comment** on any event. There's no separate chat; all talk happens in comments. When someone closes a case, the whole team gets a 🎉 pop-up.

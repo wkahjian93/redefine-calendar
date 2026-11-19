@@ -10,7 +10,7 @@ var CORE = (function () {
     members: ['id', 'name', 'pin', 'role', 'color', 'created', 'active', 'partner', 'partnerReq', 'short', 'photoV', 'bday', 'pinTemp', 'feed', 'merges'],
     photos: ['memberId', 'data', 'updated'],
     sessions: ['token', 'memberId', 'created', 'lastSeen', 'device'],
-    events: ['id', 'ownerId', 'title', 'type', 'start', 'end', 'allDay', 'place', 'notes', 'vis', 'with', 'remind', 'count', 'out', 'anp', 'source', 'remSent', 'created', 'updated', 'noc', 'all', 'cases', 'rep', 'repEnd'],
+    events: ['id', 'ownerId', 'title', 'type', 'start', 'end', 'allDay', 'place', 'notes', 'vis', 'with', 'remind', 'count', 'out', 'anp', 'source', 'remSent', 'created', 'updated', 'noc', 'all', 'cases', 'rep', 'repEnd', 'jfKind', 'agentId'],
     todos: ['id', 'ownerId', 'text', 'q', 'due', 'done', 'created', 'updated', 'kind', 'notes', 'src'],
     goals: ['memberId', 'key', 'anp', 'updated'],
     msgs: ['id', 'to', 'from', 'kind', 'text', 'created'],
@@ -37,7 +37,7 @@ var CORE = (function () {
     personal:  {label: 'Personal', short: '', emoji: '🏠', work: 0}
   };
   var TYPE_ORDER = ['approach', 'present', 'followup', 'joinfield', 'recruit', 'meeting', 'service', 'crm', 'paperwork', 'personal'];
-  var PROSPECT = {open: 1, present: 1, followup: 1, close: 1};   // these can end in "Closed 💰"
+  var PROSPECT = {open: 1, present: 1, followup: 1, close: 1, joinfield: 1};   // these can end in "Closed 💰"
   var COLORS = ['#E8505B', '#2E86DE', '#10AC84', '#F39C12', '#8E44AD', '#16A085', '#D35400', '#C0392B', '#2C3E50', '#E84393', '#00B894', '#6C5CE7', '#FDCB6E', '#0984E3', '#B33771', '#3B3B98'];
   var ID_CHARS = 'abcdefghijkmnpqrstuvwxyz23456789';
   var MODES = {M: 'Monthly', Q: 'Quarterly', HY: 'Half-yearly', Y: 'Yearly'};
@@ -181,18 +181,23 @@ var CORE = (function () {
   }
   /* Counts only what the agent CONFIRMED happened (Done / Closed). Past work events not yet confirmed are shown as
      "unconfirmed" instead of being guessed. ANP is never guessed: a close without ANP counts as a case, not as RM. */
+  /* Join field (陪访): a leader goes along to an AGENT's client meeting. The meeting is a presentation or a follow-up
+     (jfKind) and every number from it (O, P, F, closed cases, ANP) belongs to the agent (agentId), never to the leader. */
+  function creditId(e) { var t = e.type || e.t, ag = e.agentId || e.ag; return t === 'joinfield' && ag ? ag : e.ownerId; }
+  function jfKindOf(e) { return e.jfKind || e.jk || ''; }
   function stats(events, fromMs, toMs, nowMs) {
     var by = {};
     events.forEach(function (e) {
-      var t = e.type || e.t; if (e.occ || !TYPES[t] || !TYPES[t].work) return;
+      var t0 = e.type || e.t; if (e.occ || !TYPES[t0] || !TYPES[t0].work) return;
       var s = startMs(e); if (!(s >= fromMs && s < toMs)) return;
-      var o = by[e.ownerId] || (by[e.ownerId] = blankStats());
+      var t = t0 === 'joinfield' ? jfKindOf(e) : t0, who = creditId(e);
+      var o = by[who] || (by[who] = blankStats());
       o.events++;
       if (t === 'present') o.O++;   // setting a presentation = an appointment (O +1), done or not; P +1 only when it happened
       if (e.out === 'cancel') { o.cancelled++; return; }
       if (e.out !== 'done' && e.out !== 'closed') { if (endMs(e) <= nowMs) o.unconfirmed++; return; }
       var n = t === 'approach' ? Math.max(1, Math.min(999, Math.floor(+e.count) || 1)) : 1;
-      o[t] += n;
+      o[t0] += n;
       if (t === 'approach') o.A += n; if (t === 'open') o.O++; if (t === 'present') o.P++; if (t === 'followup') o.F++;
       // one meeting can close several cases (NOC); ANP is the total for those cases, so avg case size = ANP / NOC
       if (e.out === 'closed') {
@@ -280,13 +285,14 @@ var CORE = (function () {
       // Grey "Busy" block. Hidden WORK events still count in the activity numbers, so type + result go along (no title,
       // place, notes or client). Hidden PERSONAL events reveal nothing but the time.
       var b = {id: e.id, ownerId: e.ownerId, start: e.start, end: e.end, allDay: e.allDay === 'true', busy: 1, rep: e.rep || '', repEnd: e.repEnd || ''};
-      if (work) { b.t = e.type; b.out = e.out; b.count = +e.count || 0; if (e.out === 'closed') { b.noc = nocOf(e); b.anp = +e.anp || 0; b.cases = casesOf(e) || []; } }   // closed cases are shared with the team (plan, ANP, mode; never the client)
+      if (work) { b.t = e.type; b.out = e.out; if (e.type === 'joinfield') { b.jk = e.jfKind || ''; b.ag = e.agentId || ''; } b.count = +e.count || 0; if (e.out === 'closed') { b.noc = nocOf(e); b.anp = +e.anp || 0; b.cases = casesOf(e) || []; } }   // closed cases are shared with the team (plan, ANP, mode; never the client)
       return b;
     }
     var mine = e.ownerId === me.id;
     return {id: e.id, ownerId: e.ownerId, title: e.title, type: e.type, start: e.start, end: e.end, allDay: e.allDay === 'true',
       place: e.place, notes: e.notes, vis: e.vis, with: withList(e), all: isAll(e), remind: mine ? e.remind : '', count: +e.count || 0, out: e.out, noc: e.out === 'closed' ? nocOf(e) : 0, cases: e.out === 'closed' ? (casesOf(e) || []) : [],
-      rep: e.rep || '', repEnd: e.repEnd || '', anp: +e.anp || 0, source: mine ? e.source : '', created: e.created, updated: e.updated};
+      rep: e.rep || '', repEnd: e.repEnd || '', anp: +e.anp || 0, source: mine ? e.source : '', created: e.created, updated: e.updated,
+      jfKind: e.type === 'joinfield' ? e.jfKind || '' : '', agentId: e.type === 'joinfield' ? e.agentId || '' : ''};
   }
   function canSeeMsg(m, visibleEv) { return m.to.indexOf('ev:') === 0 && !!visibleEv[m.to.slice(3)]; }   // comments only (no chat)
 
@@ -342,6 +348,15 @@ var CORE = (function () {
     var ids = {}; members.forEach(function (m) { if (String(m.active) !== 'false') ids[m.id] = 1; });
     e.with = (Array.isArray(src.with) ? src.with : String(src.with || '').split(',')).map(function (x) { return str(x, 12); })
       .filter(function (x, i, a) { return ids[x] && x !== me.id && a.indexOf(x) === i; }).slice(0, 20).join(',');
+    e.jfKind = ''; e.agentId = '';
+    if (e.type === 'joinfield') {
+      e.jfKind = src.jfKind === 'followup' || src.jfKind === 'present' ? src.jfKind : /\b(follow|fu|sign|clos)|跟进|签|成交/i.test(e.title) ? 'followup' : 'present';
+      var byId = {}; members.forEach(function (m) { byId[m.id] = m; });
+      var people = [me.id].concat(e.with ? e.with.split(',') : []), ag = str(src.agentId, 12);
+      if (ag && ag !== me.id && ids[ag] && people.indexOf(ag) < 0) { e.with = e.with ? e.with + ',' + ag : ag; people.push(ag); }   // the agent is always on the event
+      if (people.indexOf(ag) < 0) ag = me.role !== 'leader' ? me.id : (people.filter(function (id) { return byId[id] && byId[id].role !== 'leader'; })[0] || me.id);
+      e.agentId = ag;
+    }
     e.remind = src.remind == null ? (allDay ? '' : '30') : REMIND.indexOf(String(src.remind)) >= 0 ? String(src.remind) : '30';   // default: 30 min before
     e.count = e.type === 'approach' ? String(Math.max(1, Math.min(999, Math.floor(+src.count) || 1))) : '';
     e.source = ['manual', 'photo', 'ics', 'voice', 'voiceok'].indexOf(src.source) >= 0 ? src.source : 'manual';
@@ -374,6 +389,14 @@ var CORE = (function () {
     }
     store.save('events', rows); store.version(true);
     var added = withList(old).filter(function (x) { return before.indexOf(x) < 0; });
+    if (old.type === 'joinfield' && old.agentId && old.agentId !== old.ownerId) {
+      var agA = answers(old.id, store.load('msgs'))[old.agentId];
+      if (agA !== 'yes') addMsg(store, {id: newId(store, 10), to: 'ev:' + old.id, from: old.agentId, kind: 'rsvp', text: 'yes', created: now});
+      if (added.indexOf(old.agentId) >= 0) {
+        added = added.filter(function (x) { return x !== old.agentId; });
+        store.push([old.agentId], {title: '🤝 ' + me.name + ' is coming along (join field)', body: old.title + ' · ' + whenText(old) + ' · It counts as your ' + (old.jfKind === 'followup' ? 'follow-up' : 'presentation'), tag: 'ev-' + old.id, url: '#/e/' + old.id});
+      }
+    }
     if (isAll(old) && !wasAll) added = activeIds(members).filter(function (x) { return x !== me.id; });   // new team-wide event: tell everyone
     if (added.length) store.push(added, {title: me.name + (isAll(old) ? ' 📣 Team event' : ' invited you 📩'), body: old.title + ' · ' + whenText(old) + (isAll(old) ? ' · Going? Tap to answer' : ' · Accept or reject?'), tag: 'ev-' + old.id, url: '#/e/' + old.id});
     return {event: viewEvent(old, me, true)};
@@ -390,7 +413,7 @@ var CORE = (function () {
      e.g. a presentation marked Done today, then Closed next week. A new close pops up a 🎉 to the team. */
   function postpone(q, store, me) {
     var rows = store.load('events'), e = rows.filter(function (x) { return x.id === q.id; })[0];
-    if (!e) fail('not_found'); if (e.ownerId !== me.id) fail('not_yours'); if (e.rep) fail('bad_request');
+    if (!e) fail('not_found'); if (e.ownerId !== me.id && creditId(e) !== me.id) fail('not_yours'); if (e.rep) fail('bad_request');
     if (e.out === 'done' || e.out === 'closed') fail('already_done');
     var date = str(q.date, 10), time = str(q.time, 5), allDay = e.allDay === 'true' || e.allDay === true;
     if (!isDate(date) || (!allDay && !/^\d{2}:\d{2}$/.test(time))) fail('bad_date');
@@ -408,7 +431,7 @@ var CORE = (function () {
   }
   function outcome(q, store, me) {
     var rows = store.load('events'), e = rows.filter(function (x) { return x.id === q.id; })[0];
-    if (!e) fail('not_found'); if (e.ownerId !== me.id) fail('not_yours');
+    if (!e) fail('not_found'); if (e.ownerId !== me.id && creditId(e) !== me.id) fail('not_yours');   // join field: the agent (or the leader who set it) records it; it counts for the agent
     var out = String(q.out || ''); if (['', 'done', 'closed', 'cancel'].indexOf(out) < 0) fail('bad_request');
     if (out === 'closed' && !PROSPECT[e.type]) fail('cannot_close');
     if (out && startMs(e) > store.now().getTime() + 60e3) fail('not_yet');
@@ -425,8 +448,8 @@ var CORE = (function () {
     e.out = out; e.anp = anp; e.noc = noc; e.cases = cases; if (q.count != null && e.type === 'approach') e.count = String(Math.max(1, Math.min(999, Math.floor(+q.count) || 1)));
     e.updated = nowIso(store); store.save('events', rows);
     if (out === 'closed' && !wasClosed) {
-      store.push(activeIds(store.load('members')).filter(function (x) { return x !== me.id; }),
-        {title: '🎉 ' + me.name + ' closed ' + (+noc > 1 ? noc + ' cases' : 'a case') + '!', body: 'Tap to cheer them on 👏', tag: 'win-' + e.id, url: '#/e/' + e.id});
+      store.push(activeIds(store.load('members')).filter(function (x) { return x !== creditId(e); }),
+        {title: '🎉 ' + memberName(store, creditId(e)) + ' closed ' + (+noc > 1 ? noc + ' cases' : 'a case') + '!', body: 'Tap to cheer them on 👏', tag: 'win-' + e.id, url: '#/e/' + e.id});
     }
     store.version(true);
     return {event: viewEvent(e, me, true)};
@@ -840,7 +863,7 @@ var CORE = (function () {
       'Return ONLY a JSON object:',
       '{"events":[{"title":"short title in the language they used, e.g. Present medical plan to Mr Lim","type":"approach|present|followup|joinfield|recruit|meeting|service|crm|paperwork|personal|",',
       '   "date":"YYYY-MM-DD or empty","start":"HH:MM 24h or empty","end":"HH:MM or empty","allDay":false,"place":"or empty","notes":"or empty",',
-      '   "people":["team members to invite, only names from the list"],"repeat":"w|m|y|","unclear":"what was not said or not clear for THIS one"}],',
+      '   "people":["team members to invite, only names from the list"],"repeat":"w|m|y|","jf":"present|followup (only for joinfield: is the client meeting a presentation or a follow-up?)","unclear":"what was not said or not clear for THIS one"}],',
       ' "clean":"the whole voice note rewritten clearly in English","unclear":"anything you could not understand"}',
       'One item in "events" for EACH appointment, in the order said (at most 10). If the same thing happens on several dates',
       '("Mon and Wed 8pm training", "15, 16 and 17 Dec roadshow"), make one item per date. A detail said once for a group',
@@ -876,12 +899,12 @@ var CORE = (function () {
     var missing = [];
     if (!title) missing.push('what'); if (!date) missing.push('date'); if (!start && !allDay) missing.push('time');
     return {missing: missing, complete: !missing.length, unclear: str(j.unclear, 200),
-      event: {title: title, type: type || 'meeting', date: date, start: start, end: end, allDay: allDay, place: str(j.place, 120), notes: str(j.notes, 500), with: ids, rep: /^[wmy]$/.test(j.repeat) ? j.repeat : ''}};
+      event: {jfKind: type === 'joinfield' ? (j.jf === 'followup' ? 'followup' : j.jf === 'present' ? 'present' : '') : '', title: title, type: type || 'meeting', date: date, start: start, end: end, allDay: allDay, place: str(j.place, 120), notes: str(j.notes, 500), with: ids, rep: /^[wmy]$/.test(j.repeat) ? j.repeat : ''}};
   }
   /* Voice note -> calendar entry, saved straight away (the agent checks it later). Nothing said is never invented:
      no date said = today, no time said = all day, and the note says what was missing. */
   function voiceToEvent(v, nowMs, one, of) {
-    one = one || v; var x = one.event, date = x.date || mytDay(nowMs), ev = {title: x.title || ('🎤 ' + v.heard.slice(0, 80)), type: x.type || 'meeting', place: x.place, with: x.with, rep: x.rep, vis: 'team', source: 'voice'};
+    one = one || v; var x = one.event, date = x.date || mytDay(nowMs), ev = {title: x.title || ('🎤 ' + v.heard.slice(0, 80)), type: x.type || 'meeting', jfKind: x.jfKind || '', place: x.place, with: x.with, rep: x.rep, vis: 'team', source: 'voice'};
     if (x.start) {
       var st = Date.parse(date + 'T' + x.start + ':00+08:00'), en = x.end ? Date.parse(date + 'T' + x.end + ':00+08:00') : st + 3600e3;
       if (!(en > st)) en = st + 3600e3;
@@ -1148,7 +1171,7 @@ var CORE = (function () {
     var now = store.now().getTime(), day = mytDay(now), n = 0;
     store.load('members').forEach(function (m) {
       if (String(m.active) === 'false') return;
-      var open = store.load('events').filter(function (e) { return e.ownerId === m.id && TYPES[e.type] && TYPES[e.type].work && !e.out && endMs(e) <= now && now - endMs(e) < 7 * 864e5; });
+      var open = store.load('events').filter(function (e) { return creditId(e) === m.id && TYPES[e.type] && TYPES[e.type].work && !e.out && endMs(e) <= now && now - endMs(e) < 7 * 864e5; });
       if (!open.length) return;
       var today = open.filter(function (e) { return mytDay(startMs(e)) === day; }).length;
       store.push([m.id], {title: '✅ Confirm ' + open.length + ' activit' + (open.length > 1 ? 'ies' : 'y'), body: (today ? today + ' from today. ' : '') + 'Tap Done / Closed so your numbers count.', tag: 'confirm', url: '#/confirm'}); n++;
@@ -1223,6 +1246,6 @@ var CORE = (function () {
 
   return {TABLES: TABLES, TYPES: TYPES, TYPE_ORDER: TYPE_ORDER, PROSPECT: PROSPECT, COLORS: COLORS, REMIND: REMIND,
     handle: handle, voiceToEvent: voiceToEvent, feedIcs: feedIcs, parseVoice: parseVoice, voicePrompt: voicePrompt, parseThemeAI: parseThemeAI, isOwner: isOwner, OCCASIONS: OCCASIONS, ANIMS: ANIMS, tick: tick, occurrences: occurrences, holidaysOn: holidaysOn, schoolHoliday: schoolHoliday, HOLIDAYS: HOLIDAYS, defaultShort: defaultShort, answers: answers, attendance: attendance, TEAM_REMIND: TEAM_REMIND, cents: cents, MODES: MODES, casesOf: casesOf, commentTargets: commentTargets, isAll: isAll, MAX_NOC: MAX_NOC, morning: morning, evening: evening, detectType: detectType, stats: stats, addStats: addStats,
-    ratios: ratios, parseRead: parseRead, parseICS: parseICS, similarTitle: similarTitle, textPrompt: textPrompt, readPrompt: readPrompt, startMs: startMs, endMs: endMs, myt: myt, whenText: whenText};
+    ratios: ratios, parseRead: parseRead, parseICS: parseICS, similarTitle: similarTitle, textPrompt: textPrompt, creditId: creditId, jfKindOf: jfKindOf, readPrompt: readPrompt, startMs: startMs, endMs: endMs, myt: myt, whenText: whenText};
 })();
 if (typeof module !== 'undefined') module.exports = CORE;
