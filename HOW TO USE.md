@@ -88,6 +88,7 @@ You stay signed in on that phone for good, like WhatsApp. Only two things sign y
   - **Needs a check-in** lists agents with no confirmed selling activity in 5 days.
   - **📋 Copy WhatsApp report** pastes straight into your group. **⬇ CSV** opens in Excel.
 - **Me → Manage members:** make someone a leader, or remove someone who has left. Removing signs them out everywhere, and their events stay.
+- **Units (GM / UM):** the GM sets each person under **Me → Manage members → Unit**: ⭐ GM, ⭐ UM (leads a unit), or *Agent in <UM> unit* / *GM direct*. Anyone with no unit counts as GM direct. With nothing set, the owner is the GM.
 - **🔎 Best time for a team activity:**
   1. Go to Calendar → Upcoming team events → **Find the time most people are free**.
   2. Pick how long, when (weekday nights / weekends / daytime / any) and how far ahead.
@@ -98,6 +99,8 @@ You stay signed in on that phone for good, like WhatsApp. Only two things sign y
 - **Forgot PIN:** Me → Manage members → **🔑 Reset PIN** on that person. Tell them the 6-digit temporary PIN (shown once). They sign in with it and must choose their own PIN straight away. Their other phones stay signed in.
 
 **Everyone** sees the team totals at the top of the board (total activities, NOC, ANP, average case), each agent's **NOC and ANP**, and a **Team total** row. Ratios (O/A, P/O, F/P, NOC/P), average case per agent, unconfirmed counts and last seen are for leaders only.
+
+**Unit view (Activity tab):** a **UM** sees **My unit** with the full numbers (ratios, average case, unconfirmed, last seen, check-in list, CSV and WhatsApp copy) for their own unit only, and **Whole team** with the same basic board as agents. The **GM** sees **Whole group**, **My unit** (GM direct) and every UM's unit, all in full. The close case list follows the unit you pick.
 
 **Close case list** (bottom of the Activity tab, for everyone): one line per policy in date order, then the total, in your WhatsApp format. Tap **📋 Copy** and paste it into the group. It follows the period you picked (this week / last week / this month / last month). Example:
 

@@ -7,7 +7,7 @@
   var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   var MONTH = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   var DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  var APP_VERSION = '61';
+  var APP_VERSION = '62';
   var H8 = 8 * 3600e3, DAY = 864e5, SELLING = {approach: 1, open: 1, present: 1, followup: 1, close: 1, joinfield: 1, recruit: 1};
 
   /* ---------- storage (each phone) ---------- */
@@ -49,6 +49,26 @@
   function mem(id) { var l = members(); if (memIdx.list !== l) { memIdx = {list: l, map: {}}; l.forEach(function (m) { memIdx.map[m.id] = m; }); } return memIdx.map[id] || {id: id, name: 'Former member', color: '#999'}; }
   function me() { return (S.data && S.data.me) || {}; }
   function isLeader() { return !!me().leader; }
+  /* Units: GM sees the whole group and every unit; a UM sees their own unit in full; agents see the team board only. */
+  function myRank() { return me().rank || ''; }
+  function heads() { return members().filter(function (m) { return m.active !== false && (m.rank === 'gm' || m.rank === 'um'); }).sort(function (a, b) { return (a.rank === 'gm' ? 0 : 1) - (b.rank === 'gm' ? 0 : 1) || shortName(a).localeCompare(shortName(b)); }); }
+  function unitOf(m) {
+    if (m.rank === 'gm' || m.rank === 'um') return m.id;
+    var hs = heads(), h = m.unit && hs.filter(function (x) { return x.id === m.unit; })[0]; if (h) return h.id;
+    var g = hs.filter(function (x) { return x.rank === 'gm'; })[0]; return g ? g.id : '';   // unit not set yet = GM direct
+  }
+  function statsScopes() {
+    var r = myRank(), my = me().id;
+    if (r === 'gm') return [['all', 'Whole group']].concat(heads().map(function (h) { return ['u:' + h.id, h.id === my ? 'My unit' : shortName(h) + ' unit']; }));
+    if (r === 'um') return [['u:' + my, 'My unit'], ['all', 'Whole team']];
+    return null;
+  }
+  function statsScope() { var o = statsScopes(); if (!o) return 'all'; var s = S.statsScope || LS.get('statsScope', ''); return o.some(function (x) { return x[0] === s; }) ? s : o[0][0]; }
+  function scopeName(sc) { var o = statsScopes(); var x = o && o.filter(function (y) { return y[0] === sc; })[0]; return x ? x[1] : 'Team board'; }
+  function inScope(m, sc) { return sc === 'all' || unitOf(m) === sc.slice(2); }
+  function seeDetail(sc) { var r = myRank(); if (r === 'gm') return true; if (r === 'um') return sc === 'u:' + me().id; return isLeader(); }
+  function totLabel(sc) { return sc !== 'all' ? 'Unit total' : myRank() === 'gm' ? 'Group total' : 'Team total'; }
+  function unitTitle(sc) { return shortName(mem(sc.slice(2))) + ' unit'; }
   function shortName(m) { return (m && (m.short || C.defaultShort(m.name))) || '?'; }
   function initials(n) { return String(n || '?').split(/\s+/).map(function (w) { return w[0]; }).join('').slice(0, 2).toUpperCase(); }
   /* 成功宝典 Color System: green = sales (prospecting, fact-find, presentation, follow-up, closing);
@@ -225,6 +245,12 @@
         if (cs.length) { e.cases = cs; e.noc = cs.length; e.anp = cs.reduce(function (t, c) { return t + (+c.anp || 0); }, 0); } else { e.noc = +q.noc || 1; e.anp = +q.anp || 0; e.cases = []; }
       } else { e.cases = []; e.noc = 0; e.anp = 0; }
       if (q.count != null && e.type === 'approach') e.count = +q.count;
+    };
+    if (op === 'member' && (q.rank != null || q.unit != null)) return function (d) {
+      (d.members || []).forEach(function (m) {
+        if (m.id === q.id) { if (q.rank != null) { m.rank = q.rank; if (q.rank) m.unit = ''; } if (q.unit != null) m.unit = q.unit; }
+        else if (q.rank === '' && m.unit === q.id) m.unit = '';
+      });
     };
     if (op === 'rsvp') return function (d) {
       d.msgs = d.msgs.filter(function (m) { return !(m.to === 'ev:' + q.id && m.from === my && m.kind === 'rsvp'); });
@@ -1618,7 +1644,7 @@
     return {r: r, events: null};
   }
   function statsScreen() {
-    var p = S.statsPeriod, d = statsData(p), my = me().id, lead = isLeader();
+    var p = S.statsPeriod, d = statsData(p), my = me().id, sc = statsScope(), lead = seeDetail(sc), scopes = statsScopes();
     var seg = '<div class="seg">' + [['week', 'This week'], ['lastweek', 'Last week'], ['month', 'This month'], ['lastmonth', 'Last month']].map(function (x) { return '<button class="' + (p === x[0] ? 'on' : '') + '" data-act="period" data-p="' + x[0] + '">' + x[1] + '</button>'; }).join('') + '</div>';
     if (!d.events) return topbar('Activity') + '<main>' + seg + '<p class="empty">Loading…</p></main>' + tabs('stats');
     var by = C.stats(d.events, d.r.from, d.r.to, Date.now()), mine = by[my] || C.addStats([]), r = C.ratios(mine);
@@ -1630,27 +1656,28 @@
       '<p class="anp">ANP <b>' + rm(mine.anp) + '</b> from ' + mine.C + ' case' + (mine.C === 1 ? '' : 's') + (mine.C > mine.anpCases ? ' <span class="warn-t">(' + (mine.C - mine.anpCases) + ' without ANP yet)</span>' : '') + '</p>' +
       '<p class="others">🤝 Join field ' + (mine.joinfield || 0) + ' · 🌱 Recruit ' + mine.recruit + ' · 👥 Meetings ' + mine.meeting + ' · 🛠️ Service ' + mine.service + ' · 🎁 CRM ' + mine.crm + ' · 📝 Paperwork ' + mine.paperwork + '</p>' +
       (mine.unconfirmed ? '<a class="confirm-bar" href="#/confirm">⚠️ ' + mine.unconfirmed + ' past activit' + (mine.unconfirmed > 1 ? 'ies are' : 'y is') + ' not confirmed, so not counted <span>›</span></a>' : '') + '</div>';
-    var ms = members().filter(function (m) { return m.active !== false; });
+    var ms = members().filter(function (m) { return m.active !== false && inScope(m, sc); });
     var rows = ms.map(function (m) { return {m: m, s: by[m.id] || C.addStats([])}; });
     rows.sort(function (a, b) { return (b.s.anp - a.s.anp) || (b.s.P + b.s.C * 2 + b.s.O + b.s.F) - (a.s.P + a.s.C * 2 + a.s.O + a.s.F) || b.s.A - a.s.A; });
     var tot = C.addStats(rows.map(function (x) { return x.s; }));
     var tq = C.ratios(tot);
-    html += '<div class="card"><h4>Team board · ' + esc(d.r.label) + '</h4>' +
+    html += '<div class="card"><h4>' + esc(scopeName(sc)) + ' · ' + esc(d.r.label) + '</h4>' +
+      (scopes ? '<div class="seg scope">' + scopes.map(function (x) { return '<button class="' + (sc === x[0] ? 'on' : '') + '" data-act="scope" data-s="' + esc(x[0]) + '">' + esc(x[1]) + '</button>'; }).join('') + '</div>' : '') +
       '<div class="teamtot">' + kpi('Activities', actTotal(tot), 'A+O+P+F+R') + kpi('NOC', tot.C, 'cases closed') + kpi('ANP', rm(tot.anp), 'closed') + kpi('Avg case', tq.M == null ? '–' : rm(tq.M), 'ANP ÷ NOC') + '</div>' +
-      '<p class="tiny muted">Confirmed activities only. ' + (lead ? 'You are a leader: you also see every agent ratios.' : 'Ratios of each agent stay private (leaders only).') + '</p><div class="tablewrap"><table class="board"><thead><tr><th>#</th><th class="l">Agent</th><th>A</th><th>O</th><th>P</th><th>F</th><th>R</th><th class="sum">Total</th><th>NOC</th><th>ANP</th>' +
+      '<p class="tiny muted">Confirmed activities only. ' + (lead ? (sc !== 'all' ? 'Everyone in this unit, with their ratios.' : 'You see every agent\'s ratios.') : 'Ratios of each agent stay private (their manager sees them).') + '</p><div class="tablewrap"><table class="board"><thead><tr><th>#</th><th class="l">Agent</th><th>A</th><th>O</th><th>P</th><th>F</th><th>R</th><th class="sum">Total</th><th>NOC</th><th>ANP</th>' +
       (lead ? '<th>Avg case</th><th>NOC/P</th><th>O/A</th><th>P/O</th><th>F/P</th><th>Not conf.</th><th>Last seen</th>' : '') + '</tr></thead><tbody>' +
       rows.map(function (x, i) {
         var s = x.s, q = C.ratios(s), you = x.m.id === my;
         return '<tr class="' + (you ? 'you' : '') + '"><td>' + (i + 1) + '</td><td class="l">' + avatar(x.m, 'xs') + ' ' + esc(you ? 'Me' : shortName(x.m)) + '</td><td>' + s.A + '</td><td>' + s.O + '</td><td>' + s.P + '</td><td>' + s.F + '</td><td>' + s.recruit + '</td><td class="sum">' + actTotal(s) + '</td><td>' + s.C + '</td><td class="anpc">' + (s.anp ? money(s.anp) : '–') + '</td>' +
           (lead ? '<td>' + (q.M == null ? '–' : rm(q.M)) + '</td><td>' + pct(q.CP) + '</td><td>' + pct(q.OA) + '</td><td>' + pct(q.PO) + '</td><td>' + pct(q.FP) + '</td><td class="' + (s.unconfirmed > 3 ? 'warn-t' : '') + '">' + s.unconfirmed + '</td><td class="tiny">' + (x.m.seen ? ago(x.m.seen) : 'never') + '</td>' : '') + '</tr>';
       }).join('');
-    html += '<tr class="tot"><td></td><td class="l">Team total</td><td>' + tot.A + '</td><td>' + tot.O + '</td><td>' + tot.P + '</td><td>' + tot.F + '</td><td>' + tot.recruit + '</td><td class="sum">' + actTotal(tot) + '</td><td>' + tot.C + '</td><td class="anpc">' + money(tot.anp) + '</td>' + (lead ? '<td>' + (tq.M == null ? '–' : rm(tq.M)) + '</td><td>' + pct(tq.CP) + '</td><td>' + pct(tq.OA) + '</td><td>' + pct(tq.PO) + '</td><td>' + pct(tq.FP) + '</td><td>' + tot.unconfirmed + '</td><td></td>' : '') + '</tr>';
+    html += '<tr class="tot"><td></td><td class="l">' + totLabel(sc) + '</td><td>' + tot.A + '</td><td>' + tot.O + '</td><td>' + tot.P + '</td><td>' + tot.F + '</td><td>' + tot.recruit + '</td><td class="sum">' + actTotal(tot) + '</td><td>' + tot.C + '</td><td class="anpc">' + money(tot.anp) + '</td>' + (lead ? '<td>' + (tq.M == null ? '–' : rm(tq.M)) + '</td><td>' + pct(tq.CP) + '</td><td>' + pct(tq.OA) + '</td><td>' + pct(tq.PO) + '</td><td>' + pct(tq.FP) + '</td><td>' + tot.unconfirmed + '</td><td></td>' : '') + '</tr>';
     html += '</tbody></table></div>' + (lead ? '<button class="btn wa" data-act="report">📋 Copy for WhatsApp</button>' : '') + '</div>';
-    var cl = closeList(d.events, d.r);
+    var cl = closeList(d.events, d.r, sc);
     html += '<div class="card"><div class="row between"><h4>Close case list</h4>' + '</div>' +
       (cl.lines.length ? '<pre class="closelist">' + esc(cl.text) + '</pre><button class="btn wa" data-act="copy-close">📋 Copy for WhatsApp</button>' : '<p class="empty small">No closed cases yet in ' + esc(d.r.label.toLowerCase()) + '.</p>') + '</div>';
     if (lead) {
-      var quiet = rows.filter(function (x) { return x.m.role !== 'leader' && !d.events.some(function (e) { return e.ownerId === x.m.id && SELLING[e.type || e.t] && (e.out === 'done' || e.out === 'closed') && Date.now() - sMs(e) < 5 * DAY; }); });
+      var quiet = rows.filter(function (x) { return x.m.role !== 'leader' && x.m.id !== my && !d.events.some(function (e) { return e.ownerId === x.m.id && SELLING[e.type || e.t] && (e.out === 'done' || e.out === 'closed') && Date.now() - sMs(e) < 5 * DAY; }); });
       html += '<div class="card"><h4>Needs a check-in</h4><p class="tiny muted">No confirmed approach, open, present, follow-up, close or recruitment in the last 5 days.</p>' + (quiet.length ? quiet.map(function (x) { return '<div class="thread small">' + avatar(x.m, 'sm') + '<span class="tb"><b>' + esc(x.m.name) + '</b><small>' + x.s.unconfirmed + ' not confirmed</small></span></div>'; }).join('') : '<p class="empty small">Everyone is active 👍</p>') +
         '<div class="row"><button class="btn ghost" data-act="csv">⬇ Download CSV (Excel)</button></div></div>';
     }
@@ -1669,8 +1696,8 @@
   }
   /* Close case list, ready for WhatsApp:  "1. 1/11 Rex GMS 1198/M" ... "Total ANP: 23,705.65"
      One line per policy, in date order. Name = the agent's first name. ANP not entered yet shows as "ANP?". */
-  function closeList(evs, r) {
-    var list = evs.filter(function (e) { return e.out === 'closed' && sMs(e) >= r.from && sMs(e) < r.to && members().some(function (m) { return m.id === C.creditId(e) && m.active !== false; }); })
+  function closeList(evs, r, sc) {
+    var list = evs.filter(function (e) { return e.out === 'closed' && sMs(e) >= r.from && sMs(e) < r.to && members().some(function (m) { return m.id === C.creditId(e) && m.active !== false && inScope(m, sc || 'all'); }); })
       .sort(function (x, y) { return sMs(x) - sMs(y); }), lines = [], total = 0;
     list.forEach(function (e) {
       var p = P(sMs(e)), who = shortName(mem(C.creditId(e))), cs = e.cases && e.cases.length ? e.cases : [{plan: '(plan not entered)', anp: e.anp || '', mode: '?'}];
@@ -1746,24 +1773,25 @@
   function reportRows() {
     var d = statsData(S.statsPeriod); if (!d.events) return null;
     var by = C.stats(d.events, d.r.from, d.r.to, Date.now());
-    return {d: d, rows: members().filter(function (m) { return m.active !== false; }).map(function (m) { return {m: m, s: by[m.id] || C.addStats([])}; }).sort(function (a, b) { return b.s.anp - a.s.anp || b.s.P - a.s.P; })};
+    var sc = statsScope();
+    return {d: d, sc: sc, rows: members().filter(function (m) { return m.active !== false && inScope(m, sc); }).map(function (m) { return {m: m, s: by[m.id] || C.addStats([])}; }).sort(function (a, b) { return b.s.anp - a.s.anp || b.s.P - a.s.P; })};
   }
   function copyReport() {
     var x = reportRows(); if (!x) return;
     var tot = C.addStats(x.rows.map(function (r) { return r.s; })), tq = C.ratios(tot);
     var line = function (s) { return 'A' + s.A + ' O' + s.O + ' P' + s.P + ' F' + s.F + ' R' + s.recruit + ' = ' + actTotal(s) + ' · NOC ' + s.C + ' · ' + (s.anp ? rm(s.anp) : 'RM0'); };
     var rows = x.rows.slice().sort(function (p, q) { return actTotal(q.s) - actTotal(p.s) || q.s.anp - p.s.anp; });
-    var lines = ['📊 *REDEFINE Team Board · ' + x.d.r.label + '*', 'Activities ' + actTotal(tot) + ' · NOC ' + tot.C + ' · ANP ' + rm(tot.anp) + ' · Avg case ' + (tq.M == null ? '–' : rm(tq.M)), ''];
+    var lines = ['📊 *REDEFINE ' + (x.sc === 'all' ? 'Team Board' : unitTitle(x.sc)) + ' · ' + x.d.r.label + '*', 'Activities ' + actTotal(tot) + ' · NOC ' + tot.C + ' · ANP ' + rm(tot.anp) + ' · Avg case ' + (tq.M == null ? '–' : rm(tq.M)), ''];
     rows.forEach(function (r, n) { lines.push((n + 1) + '. ' + shortName(r.m) + ': ' + line(r.s) + (r.s.unconfirmed ? ' · ⚠️' + r.s.unconfirmed + ' unconfirmed' : '')); });
-    lines.push('', '*Team total: ' + line(tot) + '*', '', 'A approach · O open · P present · F follow-up · R recruit', 'Confirmed activities only. Keep your calendar updated 💪');
+    lines.push('', '*' + totLabel(x.sc) + ': ' + line(tot) + '*', '', 'A approach · O open · P present · F follow-up · R recruit', 'Confirmed activities only. Keep your calendar updated 💪');
     copyText(lines.join('\n'));
   }
   function downloadCsv() {
     var x = reportRows(); if (!x) return;
     var head = ['Agent', 'Approach', 'Appointment (O)', 'Present', 'Follow-up', 'Recruit', 'Total activities', 'NOC', 'ANP', 'Avg case', 'O/A', 'P/O', 'F/P', 'NOC/P', 'Meeting', 'Service', 'CRM', 'Paperwork', 'Not confirmed'];
-    var all = {m: {name: 'TEAM TOTAL'}, s: C.addStats(x.rows.map(function (r) { return r.s; }))};
+    var all = {m: {name: totLabel(x.sc).toUpperCase()}, s: C.addStats(x.rows.map(function (r) { return r.s; }))};
     var lines = [head.join(',')].concat(x.rows.concat([all]).map(function (r) { var s = r.s, q = C.ratios(s); return ['"' + r.m.name.replace(/"/g, '""') + '"', s.A, s.O, s.P, s.F, s.recruit, actTotal(s), s.C, s.anp, q.M == null ? '' : Math.round(q.M), pct(q.OA), pct(q.PO), pct(q.FP), pct(q.CP), s.meeting, s.service, s.crm, s.paperwork, s.unconfirmed].join(','); }));
-    var a = document.createElement('a'); a.href = URL.createObjectURL(new Blob(['﻿' + lines.join('\n')], {type: 'text/csv'})); a.download = 'REDEFINE activity ' + x.d.r.label + '.csv'; a.click();
+    var a = document.createElement('a'); a.href = URL.createObjectURL(new Blob(['﻿' + lines.join('\n')], {type: 'text/csv'})); a.download = 'REDEFINE activity ' + (x.sc === 'all' ? '' : unitTitle(x.sc) + ' ') + x.d.r.label + '.csv'; a.click();
   }
 
   /* ---------- me ---------- */
@@ -1780,7 +1808,7 @@
       : perm === 'granted' && !CFG.firebase ? '<p class="muted">Banners and sound work while the app is open. Pop-ups when closed will work once your leader finishes the Firebase setup.</p>'
       : perm === 'denied' ? '<p class="warn-t">Notifications are blocked for this app. Turn them on in your phone Settings → Notifications.</p>'
       : '<p class="muted">Get a WhatsApp-style pop-up for comments on your events, cheers, team wins and event reminders.</p><button class="btn primary" data-act="push">🔔 Turn on notifications</button>';
-    return topbar('Me') + '<main class="me"><div class="card who">' + avatar(m, 'lg') + '<div><h3>' + esc(m.name) + '</h3><p class="muted">' + (m.leader ? '⭐ Leader' : 'Agent') + ' · REDEFINE</p></div></div>' +
+    return topbar('Me') + '<main class="me"><div class="card who">' + avatar(m, 'lg') + '<div><h3>' + esc(m.name) + '</h3><p class="muted">' + (myRank() === 'gm' ? '⭐ Group Manager' : myRank() === 'um' ? '⭐ Unit Manager' : m.leader ? '⭐ Leader' : 'Agent') + ' · REDEFINE</p></div></div>' +
       '<div class="card"><h4>My short name</h4><p class="tiny muted">What the team sees on chips, Team day, attendance and the close case list. Avoid surnames, e.g. KJ, MJ, Rex.</p><div class="row"><input id="shortin" maxlength="12" value="' + esc(me().short || '') + '" placeholder="e.g. KJ" style="flex:1;min-width:120px"><button class="btn primary" data-act="short">Save</button></div>' + (!me().shortSet ? '<p class="tiny warn-t">Suggested from your name. Change it if you like, then tap Save.</p>' : '') + '</div>' +
       '<div class="card who-photo"><h4>My photo</h4>' + avatar(m, 'xl') + '<p class="tiny muted">Your face shows on the calendar, Team day and the board so everyone knows it’s you.</p><label class="btn primary file">📷 ' + (m.photoV ? 'Change photo' : 'Upload my photo') + '<input type="file" accept="image/*" data-act="pick-photo" hidden></label></div>' +
       '<div class="card"><h4>Notifications</h4>' + push + '</div>' +
@@ -1798,12 +1826,21 @@
   }
   function membersScreen() {
     if (!isLeader()) return topbar('Members', {back: '#/me'}) + '<main><p class="empty">Leaders only.</p></main>';
+    var gm = myRank() === 'gm' || !!me().owner, hs = heads();
+    var unset = members().filter(function (m) { return m.active !== false && !m.rank && !(m.unit && hs.some(function (h) { return h.id === m.unit; })); }).length;
+    var place = function (m) {
+      var v = m.rank ? 'r:' + m.rank : 'u:' + (hs.some(function (h) { return h.id === m.unit; }) ? m.unit : '');
+      var o = [['r:gm', '⭐ GM (Group Manager)'], ['r:um', '⭐ UM (leads a unit)']].concat(hs.filter(function (h) { return h.id !== m.id; }).map(function (h) { return ['u:' + h.id, 'Agent in ' + shortName(h) + (h.rank === 'gm' ? ' (GM direct)' : ' unit')]; })).concat([['u:', 'Agent · unit not set (counts as GM direct)']]);
+      return '<label class="mplace">Unit <select data-act="place" data-id="' + m.id + '">' + o.map(function (x) { return '<option value="' + esc(x[0]) + '"' + (x[0] === v ? ' selected' : '') + '>' + esc(x[1]) + '</option>'; }).join('') + '</select></label>';
+    };
+    var placeTxt = function (m) { return m.rank === 'gm' ? ' · GM' : m.rank === 'um' ? ' · UM' : ' · ' + (hs.some(function (h) { return h.id === m.unit; }) ? (mem(m.unit).rank === 'gm' ? 'GM direct' : shortName(mem(m.unit)) + ' unit') : 'unit not set'); };
     return topbar('Members', {back: '#/me'}) + '<main><p class="muted">Members join by signing in with the team code. Removing someone signs them out everywhere; their events stay.</p>' +
+      (gm ? '<div class="card"><h4>Units</h4><p class="tiny muted">Set each person\'s unit below. In Activity, a UM sees the full numbers (ratios, last seen) of their own unit only; the GM sees the whole group and each unit.' + (unset ? ' <b>' + unset + ' member' + (unset > 1 ? 's have' : ' has') + ' no unit yet</b> (counted as GM direct).' : '') + '</p></div>' : '') +
       members().map(function (m) {
         var you = m.id === me().id;
-        return '<div class="card mrow' + (m.active === false ? ' off' : '') + '">' + avatar(m, 'sm') + '<div class="grow"><b>' + esc(m.name) + '</b><small class="muted">' + (m.role === 'leader' ? '⭐ Leader' : 'Agent') + (m.active === false ? ' · removed' : '') + ' · last seen ' + (m.seen ? ago(m.seen) : 'never') + '</small></div>' +
+        return '<div class="card mrow' + (m.active === false ? ' off' : '') + '">' + avatar(m, 'sm') + '<div class="grow"><b>' + esc(m.name) + '</b><small class="muted">' + (m.role === 'leader' ? '⭐ Leader' : 'Agent') + placeTxt(m) + (m.active === false ? ' · removed' : '') + ' · last seen ' + (m.seen ? ago(m.seen) : 'never') + '</small></div>' +
           (you ? '<small class="muted">you</small>' : '<div class="mbtns">' + (m.active === false ? '<button class="btn tiny ghost" data-act="mem" data-id="' + m.id + '" data-do="back">Bring back</button>'
-            : '<button class="btn tiny ghost" data-act="mem" data-id="' + m.id + '" data-do="' + (m.role === 'leader' ? 'agent' : 'leader') + '">' + (m.role === 'leader' ? 'Make agent' : 'Make leader') + '</button><button class="btn tiny danger ghost" data-act="mem" data-id="' + m.id + '" data-do="remove">Remove</button><button class="btn tiny ghost" data-act="mem" data-id="' + m.id + '" data-do="reset">🔑 Reset PIN</button>') + '</div>') + '</div>';
+            : '<button class="btn tiny ghost" data-act="mem" data-id="' + m.id + '" data-do="' + (m.role === 'leader' ? 'agent' : 'leader') + '">' + (m.role === 'leader' ? 'Make agent' : 'Make leader') + '</button><button class="btn tiny danger ghost" data-act="mem" data-id="' + m.id + '" data-do="remove">Remove</button><button class="btn tiny ghost" data-act="mem" data-id="' + m.id + '" data-do="reset">🔑 Reset PIN</button>') + (gm && m.active !== false ? place(m) : '') + '</div>') + '</div>';
       }).join('') + '</main>';
   }
 
@@ -2109,10 +2146,11 @@
     if (a === 'wa-send') { closeModal(); var ws = events().filter(function (x) { return x.id === b.dataset.id; })[0]; if (ws) waSend(teamShareText(ws)); return; }
     if (a === 'wa-team') { var we = events().filter(function (x) { return x.id === b.dataset.id; })[0]; if (we) copyText(teamShareText(we)); return; }
     if (a === 'rsvp') return send('rsvp', {id: b.dataset.id, answer: b.dataset.v}, b.dataset.v === 'yes' ? '✅ See you there!' : b.dataset.v === 'no' ? 'Noted: can\'t go' : 'Answer cleared');
+    if (a === 'scope') { S.statsScope = b.dataset.s; LS.set('statsScope', S.statsScope); return render(); }
     if (a === 'period') { S.statsPeriod = b.dataset.p; LS.set('statsPeriod', S.statsPeriod); return render(); }
     if (a === 'report') return copyReport();
     if (a === 'csv') return downloadCsv();
-    if (a === 'copy-close') { var dd = statsData(S.statsPeriod); if (!dd.events) return; return copyText(closeList(dd.events, dd.r).text); }
+    if (a === 'copy-close') { var dd = statsData(S.statsPeriod); if (!dd.events) return; return copyText(closeList(dd.events, dd.r, statsScope()).text); }
     if (a === 'push') return enablePush();
     if (a === 'pushfix') return repairPush(true).then(render);
     if (a === 'pushtest15') { toast('Lock your phone now. A pop-up should arrive in about 15 seconds.'); return api('pushtest', {delay: 15}).catch(function () {}); }
@@ -2146,6 +2184,12 @@
   });
   document.addEventListener('change', function (ev) {
     var t = ev.target;
+    if (t.dataset.act === 'place') {
+      var pv = t.value, pm = mem(t.dataset.id), body = pv.indexOf('r:') === 0 ? {id: pm.id, rank: pv.slice(2)} : {id: pm.id, rank: '', unit: pv.slice(2)};
+      var msg = body.rank === 'gm' ? shortName(pm) + ' is now a GM' : body.rank === 'um' ? shortName(pm) + ' now leads a unit' : body.unit ? shortName(pm) + ' is in ' + shortName(mem(body.unit)) + (mem(body.unit).rank === 'gm' ? ' (GM direct)' : ' unit') : 'Unit cleared for ' + shortName(pm);
+      if (pm.rank === 'um' && !body.rank && members().some(function (x) { return x.unit === pm.id; })) return confirmBox('Stop ' + pm.name + ' leading a unit?', 'Their agents will show "unit not set" until you give them a unit again.', 'Yes').then(function (y) { if (y) send('member', body, msg); else render(); });
+      return send('member', body, msg);
+    }
     if (t.dataset.act === 'pick-photo') { if (t.files[0]) uploadPhoto(t.files[0]); t.value = ''; return; }
     if (t.dataset.act === 'pick-photos') { readPhotos(t.files); t.value = ''; return; }
     if (t.dataset.act === 'pick-ics') { if (t.files[0]) readIcs(t.files[0]); t.value = ''; return; }

@@ -745,6 +745,30 @@ function fresh() {
 }
 
 /* the app checks docs/version.json to update itself: it must match APP_VERSION in docs/app.js */
+/* ---------- units: GM sees the group, a UM sees their own unit ---------- */
+{
+  const {s, h, join} = fresh();
+  const kj = join('Group Boss', true), mj = join('Unit Head One', true), jh = join('Unit Head Two'), a1 = join('Agent One'), a2 = join('Agent Two');
+  ok(h({op: 'sync', token: kj.token}).me.rank === 'gm', 'owner (first leader) counts as GM with no rank set');
+  ok(h({op: 'sync', token: mj.token}).me.rank === '', 'other leaders have no rank until set');
+  throws(() => h({op: 'member', token: mj.token, id: jh.me.id, rank: 'um'}), 'gm_only', 'only the GM sets units');
+  throws(() => h({op: 'member', token: a1.token, id: jh.me.id, rank: 'um'}), 'leader_only', 'agents cannot set units');
+  h({op: 'member', token: kj.token, id: mj.me.id, rank: 'um'});
+  h({op: 'member', token: kj.token, id: jh.me.id, rank: 'um'});
+  h({op: 'member', token: kj.token, id: a1.me.id, rank: '', unit: mj.me.id});
+  throws(() => h({op: 'member', token: kj.token, id: a2.me.id, unit: a1.me.id}), 'bad_request', 'unit must be a UM or GM');
+  h({op: 'member', token: kj.token, id: a2.me.id, unit: kj.me.id});
+  const sj = h({op: 'sync', token: jh.token}), sm = h({op: 'sync', token: mj.token}), sa = h({op: 'sync', token: a2.token});
+  const by = (r, id) => r.members.filter(m => m.id === id)[0];
+  ok(sj.me.rank === 'um' && by(sj, a1.me.id).unit === mj.me.id && by(sj, kj.me.id).rank === 'gm', 'everyone gets rank and unit');
+  h({op: 'member', token: kj.token, id: a2.me.id, unit: jh.me.id}); const sj2 = h({op: 'sync', token: jh.token});
+  ok('seen' in by(sj2, a2.me.id) && !('seen' in by(sj2, a1.me.id)), 'a UM (agent role) sees last-seen of their own unit only');
+  ok('seen' in by(sm, a1.me.id), 'a UM with the leader role still sees last-seen (Members screen)');
+  ok(!('seen' in by(sa, a1.me.id)), 'agents see no last-seen');
+  h({op: 'member', token: kj.token, id: mj.me.id, rank: ''});
+  ok(by(h({op: 'sync', token: kj.token}), a1.me.id).unit === '', 'no longer a UM: their agents go back to unit not set');
+}
+
 { const fs = require('fs'), v = JSON.parse(fs.readFileSync(__dirname + '/docs/version.json', 'utf8')).v, m = /APP_VERSION = '([0-9]+)'/.exec(fs.readFileSync(__dirname + '/docs/app.js', 'utf8'));
   ok(m && m[1] === v, 'docs/version.json (' + v + ') matches APP_VERSION (' + (m && m[1]) + ')'); }
 

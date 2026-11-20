@@ -7,7 +7,7 @@
    transcribe(audioBase64, mime, hint) -> text, putFile(id, mime, base64) / getFile(id) -> {mime, data} / delFile(id). */
 var CORE = (function () {
   var TABLES = {
-    members: ['id', 'name', 'pin', 'role', 'color', 'created', 'active', 'partner', 'partnerReq', 'short', 'photoV', 'bday', 'pinTemp', 'feed', 'merges', 'chipOrder'],
+    members: ['id', 'name', 'pin', 'role', 'color', 'created', 'active', 'partner', 'partnerReq', 'short', 'photoV', 'bday', 'pinTemp', 'feed', 'merges', 'chipOrder', 'rank', 'unit'],
     photos: ['memberId', 'data', 'updated'],
     sessions: ['token', 'memberId', 'created', 'lastSeen', 'device'],
     events: ['id', 'ownerId', 'title', 'type', 'start', 'end', 'allDay', 'place', 'notes', 'vis', 'with', 'remind', 'count', 'out', 'anp', 'source', 'remSent', 'created', 'updated', 'noc', 'all', 'cases', 'rep', 'repEnd', 'jfKind', 'agentId', 'skip'],
@@ -309,18 +309,19 @@ var CORE = (function () {
       var v = viewEvent(e, me, leader); if (!v.busy) visibleEv[e.id] = 1; return v;
     });
     var evc = store.load('msgs').filter(function (m) { return canSeeMsg(m, visibleEv); });
-    var seen = {};
-    if (leader) store.load('sessions').forEach(function (s) { if (!seen[s.memberId] || s.lastSeen > seen[s.memberId]) seen[s.memberId] = s.lastSeen; });
+    var seen = {}, oid = ownerIdOf(store), myRank = rankOf(me, oid);
+    var seeSeen = function (m) { return leader || (myRank === 'um' && (m.id === me.id || m.unit === me.id)); };
+    if (leader || myRank) store.load('sessions').forEach(function (s) { if (!seen[s.memberId] || s.lastSeen > seen[s.memberId]) seen[s.memberId] = s.lastSeen; });
     var myDevices = store.load('devices').filter(function (d) { return d.memberId === me.id; }).length;
     return {
       ver: ver, now: nowIso(store),
       todos: store.load('todos').filter(function (t) { return t.ownerId === me.id; }).slice(-1000),
       goals: store.load('goals').filter(function (g) { return g.memberId === me.id; }),
       themesOn: themesOn(store), themes: liveThemes(store),
-      me: {id: me.id, name: me.name, owner: isOwner(me, store), merges: str(me.merges, 400), chipOrder: str(me.chipOrder, 1500), short: shortOf(me), bday: me.bday || '', mustChange: me.pinTemp === 'true', shortSet: !!me.short, photoV: me.photoV || '', role: me.role, color: me.color, leader: leader, devices: myDevices, partner: me.partner || '', partnerReq: me.partnerReq || '',
+      me: {id: me.id, name: me.name, owner: isOwner(me, store), merges: str(me.merges, 400), chipOrder: str(me.chipOrder, 1500), short: shortOf(me), bday: me.bday || '', mustChange: me.pinTemp === 'true', shortSet: !!me.short, photoV: me.photoV || '', role: me.role, rank: myRank, unit: me.unit || '', color: me.color, leader: leader, devices: myDevices, partner: me.partner || '', partnerReq: me.partnerReq || '',
         partnerAsks: members.filter(function (m) { return m.partnerReq === me.id && String(m.active) !== 'false'; }).map(function (m) { return m.id; })},
       members: members.filter(function (m) { return String(m.active) !== 'false' || leader; }).map(function (m) {
-        var o = {id: m.id, name: m.name, short: shortOf(m), role: m.role, color: m.color, active: String(m.active) !== 'false', partner: m.partner || '', photoV: m.photoV || '', bday: m.bday || ''}; if (leader) o.seen = seen[m.id] || ''; return o;
+        var o = {id: m.id, name: m.name, short: shortOf(m), role: m.role, color: m.color, active: String(m.active) !== 'false', partner: m.partner || '', photoV: m.photoV || '', bday: m.bday || '', rank: rankOf(m, oid), unit: m.unit || ''}; if (seeSeen(m)) o.seen = seen[m.id] || ''; return o;
       }),
       events: events, msgs: evc.map(function (m) { return {id: m.id, to: m.to, from: m.from, kind: m.kind, text: m.text, created: m.created}; })
     };
@@ -673,13 +674,23 @@ var CORE = (function () {
     if (!leader) fail('leader_only');
     var rows = store.load('members'), m = rows.filter(function (x) { return x.id === q.id; })[0]; if (!m) fail('not_found');
     if (m.id === me.id) fail('not_yourself');
+    if (q.rank != null || q.unit != null) {
+      var oid = ownerIdOf(store); if (me.id !== oid && rankOf(me, oid) !== 'gm') fail('gm_only');
+      if (q.rank != null) { if (['gm', 'um', ''].indexOf(q.rank) < 0) fail('bad_request'); m.rank = q.rank; if (q.rank) m.unit = ''; }
+      if (q.rank === '') rows.forEach(function (x) { if (x.unit === m.id) x.unit = ''; });   // no longer a UM: their agents go back to "not set"
+      if (q.unit != null) {
+        var head = rows.filter(function (x) { return x.id === q.unit; })[0];
+        if (q.unit && (!head || !rankOf(head, oid))) fail('bad_request');
+        m.unit = q.unit ? head.id : '';
+      }
+    }
     if (q.active === false) { rows.forEach(function (x) { if (x.partner === m.id) x.partner = ''; if (x.partnerReq === m.id) x.partnerReq = ''; }); m.partner = ''; m.partnerReq = ''; m.active = 'false'; store.save('sessions', store.load('sessions').filter(function (s) { return s.memberId !== m.id; })); store.save('devices', store.load('devices').filter(function (d) { return d.memberId !== m.id; })); }
     if (q.active === true) m.active = 'true';
     if (q.role === 'leader' || q.role === 'agent') m.role = q.role;
     var temp = '';
     if (q.reset) { for (var i = 0; i < 6; i++) temp += String(Math.floor(store.random() * 10)); m.pin = store.hash('rcal|' + temp + '|' + normName(m.name)); m.pinTemp = 'true'; }
-    store.save('members', rows); store.version(true); log(store, me.id, 'member', m.name + ' ' + JSON.stringify({active: q.active, role: q.role}));
-    return {member: {id: m.id, name: m.name, role: m.role, active: m.active !== 'false'}, tempPin: temp};
+    store.save('members', rows); store.version(true); log(store, me.id, 'member', m.name + ' ' + JSON.stringify({active: q.active, role: q.role, rank: q.rank, unit: q.unit}));
+    return {member: {id: m.id, name: m.name, role: m.role, rank: m.rank || '', unit: m.unit || '', active: m.active !== 'false'}, tempPin: temp};
   }
   /* Short name: what the team sees on chips, Team day, attendance and the close case list (e.g. KJ, MJ, Rex). */
   function defaultShort(name) {
@@ -956,6 +967,15 @@ var CORE = (function () {
     var first = store.load('members').filter(function (m) { return m.role === 'leader' && String(m.active) !== 'false'; }).sort(function (a, b) { return String(a.created).localeCompare(String(b.created)); })[0];
     return !!first && first.id === me.id;
   }
+  /* Units (Activity): rank 'gm' = group manager, 'um' = unit manager, '' = agent. unit = the id of the UM / GM whose
+     unit an agent is in. With no rank set, the owner counts as the GM. A UM leads their own unit. */
+  function ownerIdOf(store) {
+    var on = normName(store.prop('OWNER_NAME')), ms = store.load('members');
+    if (on) { var o = ms.filter(function (m) { return normName(m.name) === on; })[0]; return o ? o.id : ''; }
+    var first = ms.filter(function (m) { return m.role === 'leader' && String(m.active) !== 'false'; }).sort(function (x, y) { return String(x.created).localeCompare(String(y.created)); })[0];
+    return first ? first.id : '';
+  }
+  function rankOf(m, ownerId) { return m.rank === 'gm' || m.rank === 'um' ? m.rank : m.id === ownerId ? 'gm' : ''; }
   function ownerOnly(me, store) { if (!isOwner(me, store)) fail('owner_only'); }
   function themesOn(store) { var r = store.load('settings').filter(function (x) { return x.key === 'themesOn'; })[0]; return !!r && r.value === 'true'; }
   var OCCASIONS = ['cny', 'raya', 'deepavali', 'christmas', 'newyear', 'thaipusam', 'wesak', 'qingming', 'valentine', 'womens', 'mothers', 'fathers', 'merdeka', 'malaysiaday', 'birthday', 'school', 'holiday', 'other'];
@@ -1271,7 +1291,7 @@ var CORE = (function () {
   }
 
   return {TABLES: TABLES, TYPES: TYPES, TYPE_ORDER: TYPE_ORDER, PROSPECT: PROSPECT, COLORS: COLORS, REMIND: REMIND,
-    handle: handle, voiceToEvent: voiceToEvent, feedIcs: feedIcs, parseVoice: parseVoice, voicePrompt: voicePrompt, parseThemeAI: parseThemeAI, isOwner: isOwner, OCCASIONS: OCCASIONS, ANIMS: ANIMS, tick: tick, occurrences: occurrences, holidaysOn: holidaysOn, schoolHoliday: schoolHoliday, HOLIDAYS: HOLIDAYS, defaultShort: defaultShort, answers: answers, attendance: attendance, TEAM_REMIND: TEAM_REMIND, cents: cents, MODES: MODES, casesOf: casesOf, commentTargets: commentTargets, isAll: isAll, MAX_NOC: MAX_NOC, morning: morning, evening: evening, detectType: detectType, stats: stats, addStats: addStats,
+    handle: handle, voiceToEvent: voiceToEvent, feedIcs: feedIcs, parseVoice: parseVoice, voicePrompt: voicePrompt, parseThemeAI: parseThemeAI, isOwner: isOwner, rankOf: rankOf, OCCASIONS: OCCASIONS, ANIMS: ANIMS, tick: tick, occurrences: occurrences, holidaysOn: holidaysOn, schoolHoliday: schoolHoliday, HOLIDAYS: HOLIDAYS, defaultShort: defaultShort, answers: answers, attendance: attendance, TEAM_REMIND: TEAM_REMIND, cents: cents, MODES: MODES, casesOf: casesOf, commentTargets: commentTargets, isAll: isAll, MAX_NOC: MAX_NOC, morning: morning, evening: evening, detectType: detectType, stats: stats, addStats: addStats,
     ratios: ratios, parseRead: parseRead, parseICS: parseICS, similarTitle: similarTitle, textPrompt: textPrompt, creditId: creditId, jfKindOf: jfKindOf, readPrompt: readPrompt, startMs: startMs, endMs: endMs, myt: myt, whenText: whenText};
 })();
 if (typeof module !== 'undefined') module.exports = CORE;
