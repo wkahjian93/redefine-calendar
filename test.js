@@ -718,6 +718,23 @@ function fresh() {
   ok(view && view.busy ? (view.ag === mj.me.id && view.jk === 'present') : view.agentId === mj.me.id, 'other members can count it for the agent too');
 }
 
+/* ---------- repeating event: change or delete ONE date only ---------- */
+{
+  const {s, h, join} = fresh(); const a = join('Repeat Tester'), b = join('Other Person');
+  const base = h({op: 'save', token: a.token, event: {title: 'Calling @ office', type: 'approach', start: '2026-12-01T02:00:00.000Z', end: '2026-12-01T03:00:00.000Z', rep: 'w'}}).event;
+  const occ = () => CORE.occurrences(s.load('events').find(e => e.id === base.id), Date.parse('2026-12-01T00:00:00+08:00'), Date.parse('2026-12-29T00:00:00+08:00')).map(o => new Date(o.s + 8 * H).toISOString().slice(0, 10));
+  ok(occ().join() === '2026-12-01,2026-12-08,2026-12-15,2026-12-22', 'weekly series before');
+  const r = h({op: 'repone', token: a.token, id: base.id, date: '2026-12-08', event: {title: 'Calling @ Gurney', type: 'approach', start: '2026-12-08T06:00:00.000Z', end: '2026-12-08T07:00:00.000Z', rep: 'w'}});
+  ok(occ().join() === '2026-12-01,2026-12-15,2026-12-22' && r.event.title === 'Calling @ Gurney' && !r.event.rep && r.event.start === '2026-12-08T06:00:00.000Z', 'only 8 Dec changed: it is its own event now, the rest of the series untouched');
+  h({op: 'repone', token: a.token, id: base.id, date: '2026-12-15'});
+  ok(occ().join() === '2026-12-01,2026-12-22', 'only 15 Dec deleted');
+  throws(() => h({op: 'repone', token: a.token, id: base.id, date: '2026-12-09'}), 'not_found', 'a date that is not in the series is refused');
+  throws(() => h({op: 'repone', token: b.token, id: base.id, date: '2026-12-22'}), 'not_yours', 'only the owner can change it');
+  ok(h({op: 'sync', token: b.token, force: true}).events.find(e => e.id === base.id).skip === '2026-12-08,2026-12-15', 'others get the skipped dates too, so their calendar matches');
+  const fd = h({op: 'feed', token: a.token}).feed;
+  ok(/EXDATE:20261208T020000Z/.test(CORE.feedIcs(fd, s).replace(/\r\n /g, '')), 'calendar subscription leaves the changed date out of the series');
+}
+
 /* ---------- sample team sanity ---------- */
 {
   const s = memStore(); seed(s, NOW);

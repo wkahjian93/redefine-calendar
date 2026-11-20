@@ -10,10 +10,10 @@
    transcribe(audioBase64, mime, hint) -> text, putFile(id, mime, base64) / getFile(id) -> {mime, data} / delFile(id). */
 var CORE = (function () {
   var TABLES = {
-    members: ['id', 'name', 'pin', 'role', 'color', 'created', 'active', 'partner', 'partnerReq', 'short', 'photoV', 'bday', 'pinTemp', 'feed', 'merges'],
+    members: ['id', 'name', 'pin', 'role', 'color', 'created', 'active', 'partner', 'partnerReq', 'short', 'photoV', 'bday', 'pinTemp', 'feed', 'merges', 'chipOrder'],
     photos: ['memberId', 'data', 'updated'],
     sessions: ['token', 'memberId', 'created', 'lastSeen', 'device'],
-    events: ['id', 'ownerId', 'title', 'type', 'start', 'end', 'allDay', 'place', 'notes', 'vis', 'with', 'remind', 'count', 'out', 'anp', 'source', 'remSent', 'created', 'updated', 'noc', 'all', 'cases', 'rep', 'repEnd', 'jfKind', 'agentId'],
+    events: ['id', 'ownerId', 'title', 'type', 'start', 'end', 'allDay', 'place', 'notes', 'vis', 'with', 'remind', 'count', 'out', 'anp', 'source', 'remSent', 'created', 'updated', 'noc', 'all', 'cases', 'rep', 'repEnd', 'jfKind', 'agentId', 'skip'],
     todos: ['id', 'ownerId', 'text', 'q', 'due', 'done', 'created', 'updated', 'kind', 'notes', 'src'],
     goals: ['memberId', 'key', 'anp', 'updated'],
     msgs: ['id', 'to', 'from', 'kind', 'text', 'created'],
@@ -140,7 +140,7 @@ var CORE = (function () {
     if (!e.rep) { if (s0 < toMs && s0 + dur > fromMs) out.push({s: s0, e: s0 + dur, n: 0}); return out; }
     var end = e.repEnd ? Date.parse(String(e.repEnd).slice(0, 10) + 'T00:00:00+08:00') + 864e5 : Infinity;
     var d0 = new Date(s0 + 8 * 3600e3), y = d0.getUTCFullYear(), mo = d0.getUTCMonth(), da = d0.getUTCDate(), tod = s0 + 8 * 3600e3 - Date.UTC(y, mo, da);
-    var start = 0;
+    var start = 0, skip = e.skip ? String(e.skip).split(',') : null;
     if (e.rep === 'w' && fromMs - dur > s0) start = Math.floor((fromMs - dur - s0) / (7 * 864e5));
     for (var n = start; n < start + 800; n++) {
       var t;
@@ -149,6 +149,7 @@ var CORE = (function () {
       else if (e.rep === 'y') { var dy = new Date(Date.UTC(y + n, mo, da)); if (dy.getUTCMonth() !== mo) continue; t = dy.getTime() + tod - 8 * 3600e3; }
       else break;
       if (t >= toMs || t >= end) break;
+      if (skip && skip.indexOf(mytDay(t)) >= 0) continue;   // this date was changed or deleted on its own
       if (t + dur > fromMs) out.push({s: t, e: t + dur, n: n});
     }
     return out;
@@ -287,14 +288,14 @@ var CORE = (function () {
     if (!canSeeDetails(e, me)) {
       // Grey "Busy" block. Hidden WORK events still count in the activity numbers, so type + result go along (no title,
       // place, notes or client). Hidden PERSONAL events reveal nothing but the time.
-      var b = {id: e.id, ownerId: e.ownerId, start: e.start, end: e.end, allDay: e.allDay === 'true', busy: 1, rep: e.rep || '', repEnd: e.repEnd || ''};
+      var b = {id: e.id, ownerId: e.ownerId, start: e.start, end: e.end, allDay: e.allDay === 'true', busy: 1, rep: e.rep || '', repEnd: e.repEnd || '', skip: e.skip || ''};
       if (work) { b.t = e.type; b.out = e.out; if (e.type === 'joinfield') { b.jk = e.jfKind || ''; b.ag = e.agentId || ''; } b.count = +e.count || 0; if (e.out === 'closed') { b.noc = nocOf(e); b.anp = +e.anp || 0; b.cases = casesOf(e) || []; } }   // closed cases are shared with the team (plan, ANP, mode; never the client)
       return b;
     }
     var mine = e.ownerId === me.id;
     return {id: e.id, ownerId: e.ownerId, title: e.title, type: e.type, start: e.start, end: e.end, allDay: e.allDay === 'true',
       place: e.place, notes: e.notes, vis: e.vis, with: withList(e), all: isAll(e), remind: mine ? e.remind : '', count: +e.count || 0, out: e.out, noc: e.out === 'closed' ? nocOf(e) : 0, cases: e.out === 'closed' ? (casesOf(e) || []) : [],
-      rep: e.rep || '', repEnd: e.repEnd || '', anp: +e.anp || 0, source: mine ? e.source : '', created: e.created, updated: e.updated,
+      rep: e.rep || '', repEnd: e.repEnd || '', skip: e.skip || '', anp: +e.anp || 0, source: mine ? e.source : '', created: e.created, updated: e.updated,
       jfKind: e.type === 'joinfield' ? e.jfKind || '' : '', agentId: e.type === 'joinfield' ? e.agentId || '' : ''};
   }
   function canSeeMsg(m, visibleEv) { return m.to.indexOf('ev:') === 0 && !!visibleEv[m.to.slice(3)]; }   // comments only (no chat)
@@ -319,7 +320,7 @@ var CORE = (function () {
       todos: store.load('todos').filter(function (t) { return t.ownerId === me.id; }).slice(-1000),
       goals: store.load('goals').filter(function (g) { return g.memberId === me.id; }),
       themesOn: themesOn(store), themes: liveThemes(store),
-      me: {id: me.id, name: me.name, owner: isOwner(me, store), merges: str(me.merges, 400), short: shortOf(me), bday: me.bday || '', mustChange: me.pinTemp === 'true', shortSet: !!me.short, photoV: me.photoV || '', role: me.role, color: me.color, leader: leader, devices: myDevices, partner: me.partner || '', partnerReq: me.partnerReq || '',
+      me: {id: me.id, name: me.name, owner: isOwner(me, store), merges: str(me.merges, 400), chipOrder: str(me.chipOrder, 1500), short: shortOf(me), bday: me.bday || '', mustChange: me.pinTemp === 'true', shortSet: !!me.short, photoV: me.photoV || '', role: me.role, color: me.color, leader: leader, devices: myDevices, partner: me.partner || '', partnerReq: me.partnerReq || '',
         partnerAsks: members.filter(function (m) { return m.partnerReq === me.id && String(m.active) !== 'false'; }).map(function (m) { return m.id; })},
       members: members.filter(function (m) { return String(m.active) !== 'false' || leader; }).map(function (m) {
         var o = {id: m.id, name: m.name, short: shortOf(m), role: m.role, color: m.color, active: String(m.active) !== 'false', partner: m.partner || '', photoV: m.photoV || '', bday: m.bday || ''}; if (leader) o.seen = seen[m.id] || ''; return o;
@@ -403,6 +404,26 @@ var CORE = (function () {
     if (isAll(old) && !wasAll) added = activeIds(members).filter(function (x) { return x !== me.id; });   // new team-wide event: tell everyone
     if (added.length) store.push(added, {title: me.name + (isAll(old) ? ' 📣 Team event' : ' invited you 📩'), body: old.title + ' · ' + whenText(old) + (isAll(old) ? ' · Going? Tap to answer' : ' · Accept or reject?'), tag: 'ev-' + old.id, url: '#/e/' + old.id});
     return {event: viewEvent(old, me, true)};
+  }
+  /* Repeating event: change or delete ONE date only. That date is taken out of the series (skip) and, when changed,
+     becomes its own event with the new details. Every other date stays as it is. */
+  function repOne(q, store, me) {
+    var members = store.load('members'), rows = store.load('events'), b = rows.filter(function (x) { return x.id === q.id; })[0], now = nowIso(store);
+    if (!b) fail('not_found'); if (b.ownerId !== me.id) fail('not_yours'); if (!b.rep) fail('bad_request');
+    var day = str(q.date, 10); if (!isDate(day)) fail('bad_date');
+    var d0 = Date.parse(day + 'T00:00:00+08:00');
+    if (!occurrences(b, d0, d0 + 864e5).some(function (o) { return mytDay(o.s) === day; })) fail('not_found');
+    var sk = b.skip ? String(b.skip).split(',') : []; if (sk.indexOf(day) < 0) sk.push(day);
+    b.skip = sk.slice(-300).join(','); b.updated = now;
+    var made = null;
+    if (q.event) {
+      made = cleanEvent(Object.assign({}, q.event, {rep: '', repEnd: ''}), me, members);
+      made.id = newId(store, 10); made.ownerId = me.id; made.out = ''; made.anp = ''; made.noc = ''; made.cases = ''; made.remSent = ''; made.created = now; made.updated = now; made.skip = '';
+      rows.push(made);
+    }
+    store.save('events', rows); store.version(true);
+    log(store, me.id, 'repone', b.id + ' ' + day + (made ? ' -> ' + made.id : ' deleted'));
+    return {base: viewEvent(b, me, true), event: made ? viewEvent(made, me, true) : null};
   }
   function delEvent(q, store, me) {
     var rows = store.load('events'), e = rows.filter(function (x) { return x.id === q.id; })[0];
@@ -692,7 +713,8 @@ var CORE = (function () {
   function profile(q, store, me) {
     var rows = store.load('members'), my = rows.filter(function (m) { return m.id === me.id; })[0], out = {};
     if (q.bday != null) { var bd = str(q.bday, 5); if (bd && !(/^\d{2}-\d{2}$/.test(bd) && isDate('2024-' + bd))) fail('bad_date'); my.bday = bd; out.bday = bd; }
-    if (q.merges != null) { var mg = str(q.merges, 400); if (mg && !/^[a-z0-9]+(,[a-z0-9]+)*$/.test(mg)) fail('bad_request'); my.merges = mg; out.merges = mg; }
+    if (q.merges != null) { var mg = str(q.merges, 400); if (mg && !/^[a-z0-9]+(\.[a-z0-9]+)*(,[a-z0-9]+(\.[a-z0-9]+)*)*$/.test(mg)) fail('bad_request'); my.merges = mg; out.merges = mg; }   // kept chips; "a.b" = me + several people
+    if (q.chipOrder != null) { var co = str(q.chipOrder, 1500); if (co && !/^[a-z0-9]+(,[a-z0-9]+)*$/.test(co)) fail('bad_request'); my.chipOrder = co; out.chipOrder = co; }   // my order of the people chips
     if (q.color != null) { var c = str(q.color, 7); if (!/^#[0-9A-Fa-f]{6}$/.test(c)) fail('bad_request'); my.color = c; out.color = c; }
     if (q.short != null) {
       var sh = str(q.short, 12).replace(/\s+/g, ' ');
@@ -841,6 +863,10 @@ var CORE = (function () {
       if (allDay) { var sk = String(e.start).slice(0, 10), ek = String(e.end || e.start).slice(0, 10); L.push('DTSTART;VALUE=DATE:' + icsDay(sk), 'DTEND;VALUE=DATE:' + icsDay(addDay(ek < sk ? sk : ek, 1))); }
       else L.push('DTSTART:' + icsStamp(startMs(e)), 'DTEND:' + icsStamp(endMs(e)));
       if (e.rep) L.push('RRULE:FREQ=' + ({w: 'WEEKLY', m: 'MONTHLY', y: 'YEARLY'})[e.rep] + (e.repEnd ? ';UNTIL=' + icsDay(e.repEnd) + 'T155959Z' : ''));
+      if (e.rep && e.skip) String(e.skip).split(',').filter(isDate).forEach(function (dk) {
+        if (allDay) L.push('EXDATE;VALUE=DATE:' + icsDay(dk));
+        else L.push('EXDATE:' + icsStamp(Date.parse(dk + 'T00:00:00+08:00') + (startMs(e) + 8 * 3600e3) % 864e5));
+      });
       L.push('SUMMARY:' + icsText((pending ? '❔ ' : '') + t.emoji + ' ' + e.title));
       if (e.place) L.push('LOCATION:' + icsText(e.place));
       if (desc.length) L.push('DESCRIPTION:' + icsText(desc.join('\n\n')));
@@ -1183,7 +1209,7 @@ var CORE = (function () {
   }
 
   var READ_ONLY = {sync: 1, teamtotals: 1, photos: 1, progress: 1, file: 1, themes: 1, besttime: 1};
-  var OPS = {sync: sync, save: saveEvent, del: delEvent, outcome: outcome, import: importEvents, send: send, delmsg: delMsg,
+  var OPS = {sync: sync, save: saveEvent, del: delEvent, repone: repOne, outcome: outcome, import: importEvents, send: send, delmsg: delMsg,
     pushreg: pushReg, pushoff: pushOff, pushtest: pushTest, teamtotals: teamTotals, rsvp: rsvp, member: member, partner: partner, profile: profile, todo: todo, tododel: todoDel, goal: goal, changepin: changePin, progress: progress, feed: feedOp, checked: checkedOp, postpone: postpone, besttime: bestTime, themes: themesList, theme: themeSave, themedel: themeDel, themeson: themesSwitch, file: getFile, photo: setPhoto, photos: getPhotos, signout: signOut};
   function handle(q, store) {
     if (!q || typeof q !== 'object') fail('bad_request');

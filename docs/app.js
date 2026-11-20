@@ -7,7 +7,7 @@
   var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   var MONTH = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   var DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  var APP_VERSION = '59';
+  var APP_VERSION = '61';
   var H8 = 8 * 3600e3, DAY = 864e5, SELLING = {approach: 1, open: 1, present: 1, followup: 1, close: 1, joinfield: 1, recruit: 1};
 
   /* ---------- storage (each phone) ---------- */
@@ -119,8 +119,8 @@
   }
   function filteredRaw() {
     var f = S.filter, id = me().id;
-    var pair = f.indexOf('me+') === 0 ? f.slice(3) : '';   // merged view: me + one teammate (e.g. husband & wife)
-    return events().filter(function (e) { return f === 'all' || (f === 'me' ? involves(e, id) : pair ? involves(e, id) || involves(e, pair) : involves(e, f)); });
+    var group = f.indexOf('me+') === 0 ? f.slice(3).split('.') : null;   // merged view: me + one or several teammates
+    return events().filter(function (e) { return f === 'all' || (f === 'me' ? involves(e, id) : group ? involves(e, id) || group.some(function (g) { return involves(e, g); }) : involves(e, f)); });
   }
   var dayIdx = new WeakMap();
   function onDay(list, k) {
@@ -249,6 +249,10 @@
     if (op === 'postpone') return function (d) { (d.events || []).forEach(function (x) { if (x.id !== q.id) return; var s0 = sMs(x), dur = Math.max(0, eMs(x) - s0) || 3600e3; if (x.allDay) { x.start = q.date; x.end = q.date; } else { var ns = Date.parse(q.date + 'T' + q.time + ':00+08:00'); x.start = new Date(ns).toISOString(); x.end = new Date(ns + dur).toISOString(); } x.out = ''; }); };
     if (op === 'tododel') return function (d) { d.todos = (d.todos || []).filter(function (x) { return x.id !== q.id; }); };
     if (op === 'goal') return function (d) { d.goals = (d.goals || []).filter(function (g) { return g.key !== q.key; }); if (q.anp !== '') d.goals.push({key: q.key, anp: String(q.anp)}); };
+    if (op === 'repone') return function (d) {
+      var b = ev(d); if (!b) return; var sk = b.skip ? String(b.skip).split(',') : []; if (sk.indexOf(q.date) < 0) sk.push(q.date); b.skip = sk.join(',');
+      if (q.event) d.events.push(Object.assign({}, q.view || {}, {id: tmp, ownerId: my, rep: '', repEnd: '', skip: '', out: '', anp: 0, noc: 0, cases: []}));
+    };
     if (op === 'del') return function (d) { d.events = d.events.filter(function (x) { return x.id !== q.id; }); };
     return null;
   }
@@ -397,6 +401,15 @@
     if (onMount) onMount(root.querySelector('.sheet'));
   }
   function closeModal() { var r = document.getElementById('modal-root'); r.className = ''; r.innerHTML = ''; document.body.classList.remove('locked'); }
+  function chooseBox(title, text, a, b) {   // resolves 'a', 'b' or null (cancel)
+    return new Promise(function (ok) {
+      modal('<h3>' + esc(title) + '</h3><p class="muted">' + esc(text) + '</p><div class="choose"><button class="btn primary big" data-x="a">' + esc(a) + '</button><button class="btn big" data-x="b">' + esc(b) + '</button><button class="btn ghost" data-x="no">Cancel</button></div>', function (sh) {
+        sh.querySelector('[data-x=a]').onclick = function () { closeModal(); ok('a'); };
+        sh.querySelector('[data-x=b]').onclick = function () { closeModal(); ok('b'); };
+        sh.querySelector('[data-x=no]').onclick = function () { closeModal(); ok(null); };
+      });
+    });
+  }
   function confirmBox(title, text, yes, danger) {
     return new Promise(function (ok) {
       modal('<h3>' + esc(title) + '</h3><p class="muted">' + esc(text) + '</p><div class="row end"><button class="btn ghost" data-x="no">Cancel</button><button class="btn ' + (danger ? 'danger' : 'primary') + '" data-x="yes">' + esc(yes) + '</button></div>', function (sh) {
@@ -925,28 +938,36 @@
   }
 
   /* ---------- calendar ---------- */
+  function groupIds(g) { return String(g || '').split('.').filter(function (id) { return members().some(function (m) { return m.id === id && m.active !== false; }); }); }
+  function groupLabel(ids) { var n = ids.map(function (id) { return shortName(mem(id)); }); return 'Me + ' + (n.length > 2 ? n.slice(0, 2).join(', ') + ' +' + (n.length - 2) : n.join(', ')); }
+  function chipOrder() { var o = S.data && S.data.me && S.data.me.chipOrder; return typeof o === 'string' && o ? o.split(',') : LS.get('chipOrder', []); }
+  function setChipOrder(list) { LS.set('chipOrder', list); if (S.data && S.data.me) S.data.me.chipOrder = list.join(','); api('profile', {chipOrder: list.join(',')}).catch(function () {}); }
+  function orderedPeople() {
+    var o = chipOrder(), list = members().filter(function (m) { return m.active !== false && m.id !== me().id; });
+    return list.sort(function (x, y) { var a = o.indexOf(x.id), b = o.indexOf(y.id); return (a < 0 ? 1e4 : a) - (b < 0 ? 1e4 : b); });
+  }
   function filterChips() {
-    var my = me().id, list = members().filter(function (m) { return m.active !== false; });
     var p = me().partner, merged = S.filter.indexOf('me+') === 0 ? S.filter.slice(3) : '';
     // merged chips: partner (always), kept ones (📌, remove with ×), and the one just picked (📌 keep or × close)
-    var kept = keptMerges().filter(function (id) { return id !== p && members().some(function (m) { return m.id === id && m.active !== false; }); });
+    var kept = keptMerges().filter(function (g) { return g !== p && groupIds(g).length; });
     // chip icons are faces (photo, or initials in the person's colour until they upload one)
-    var face = function (m) { return avatar(m, 'chip'); }, pair = function (m) { return '<span class="cpair">' + face(me()) + face(m) + '</span>'; };
-    var extra = []; if (p && mem(p).active !== false) extra.push(['me+' + p, '💑 Me + ' + shortName(mem(p)), pair(mem(p))]);
-    kept.forEach(function (id) { extra.push(['me+' + id, 'Me + ' + shortName(mem(id)), pair(mem(id)), 'kept', id]); });
-    if (merged && merged !== p && kept.indexOf(merged) < 0) extra.push([S.filter, 'Me + ' + shortName(mem(merged)), pair(mem(merged)), 'temp', merged]);
+    var face = function (m) { return avatar(m, 'chip'); }, faces = function (ids) { return '<span class="cpair">' + face(me()) + ids.slice(0, 2).map(function (id) { return face(mem(id)); }).join('') + '</span>'; };
+    var extra = []; if (p && mem(p).active !== false) extra.push(['me+' + p, '💑 Me + ' + shortName(mem(p)), faces([p])]);
+    kept.forEach(function (g) { var ids = groupIds(g); extra.push(['me+' + ids.join('.'), groupLabel(ids), faces(ids), 'kept', g]); });
+    if (merged && merged !== p && kept.indexOf(merged) < 0 && groupIds(merged).length) extra.push([S.filter, groupLabel(groupIds(merged)), faces(groupIds(merged)), 'temp', merged]);
     extra.push(['pick', 'Me + …', '<span class="cpair">' + face(me()) + '<span class="av av-chip cplus">+</span></span>']);
-    var chips = [['all', 'Everyone', '<span class="av av-chip cteam"><img src="icons/team-mark.png" alt=""></span>'], ['me', 'Me', face(me())]].concat(extra, list.filter(function (m) { return m.id !== my; }).map(function (m) { return [m.id, shortName(m), face(m)]; }));
+    var chips = [['all', 'Everyone', '<span class="av av-chip cteam"><img src="icons/team-mark.png" alt=""></span>'], ['me', 'Me', face(me())]].concat(extra, orderedPeople().map(function (m) { return [m.id, shortName(m), face(m), 'person']; }));
     return '<div class="chips">' + chips.map(function (c) {
       var tools = c[3] === 'temp' ? '<span class="ctool" data-act="merge-keep" data-id="' + c[4] + '" title="Keep this chip">📌</span><span class="ctool" data-act="merge-x" data-id="' + c[4] + '" title="Close">×</span>'
         : c[3] === 'kept' ? '<span class="ctool" data-act="merge-x" data-id="' + c[4] + '" title="Remove">×</span>' : '';
-      return '<button class="chip' + (S.filter === c[0] ? ' on' : '') + (tools ? ' has-tools' : '') + '" data-act="filter" data-id="' + c[0] + '">' + c[2] + esc(c[1]) + tools + '</button>';
+      return '<button class="chip' + (S.filter === c[0] ? ' on' : '') + (tools ? ' has-tools' : '') + '" data-act="filter" data-id="' + c[0] + '"' + (c[3] === 'person' ? ' data-person="' + c[0] + '"' : '') + '>' + c[2] + esc(c[1]) + tools + '</button>';
     }).join('') + '</div>';
   }
   function pickMerge() {
-    var list = members().filter(function (m) { return m.id !== me().id && m.active !== false; });
-    modal('<h3>Merge my calendar with…</h3><p class="tiny muted">Shows your events and theirs together. Their private events still show as Busy unless you are linked partners (Me → Partner calendar).</p><div class="withpick">' +
-      list.map(function (m) { return '<button class="wp" data-act="merge" data-id="' + m.id + '">' + avatar(m, 'xs') + esc(m.name) + '</button>'; }).join('') + '</div><div class="row end"><button class="btn ghost" data-act="close-modal">Cancel</button></div>');
+    var list = orderedPeople(), cur = S.filter.indexOf('me+') === 0 ? S.filter.slice(3).split('.') : [];
+    modal('<div class="row between"><h3>Show my calendar with…</h3><button type="button" class="icon-btn" data-act="close-modal" aria-label="Close">✕</button></div><p class="tiny muted">Tick one or more people: your events and theirs show together. Their private events still show as Busy unless you are linked partners (Me → Partner calendar).</p><div class="withpick" id="mpick">' +
+      list.map(function (m) { return '<button type="button" class="wp' + (cur.indexOf(m.id) >= 0 ? ' on' : '') + '" data-id="' + m.id + '">' + avatar(m, 'xs') + esc(m.name) + '</button>'; }).join('') + '</div><div class="row end sheet-btns"><button class="btn primary big" data-act="merge-go">Show together</button></div>',
+      function (sh) { sh.querySelectorAll('#mpick .wp').forEach(function (b) { b.onclick = function () { b.classList.toggle('on'); }; }); });
   }
   /* important people: yearly all-day birthdays / anniversaries in my own calendar */
   function peopleCard() {
@@ -1033,7 +1054,7 @@
     var f = S.filter || 'all', face = function (m) { return avatar(m, 'nav'); }, who, html;
     if (f === 'all') { who = 'Everyone'; html = '<span class="av av-nav cteam"><img src="icons/team-mark.png" alt=""></span>'; }
     else if (f === 'me') { who = 'Me'; html = face(me()); }
-    else if (f.indexOf('me+') === 0) { who = 'Me + ' + shortName(mem(f.slice(3))); html = '<span class="cpair">' + face(me()) + face(mem(f.slice(3))) + '</span>'; }
+    else if (f.indexOf('me+') === 0) { var gi = groupIds(f.slice(3)); who = groupLabel(gi); html = '<span class="cpair">' + face(me()) + gi.slice(0, 2).map(function (id) { return face(mem(id)); }).join('') + '</span>'; }
     else { who = shortName(mem(f)); html = face(mem(f)); }
     return '<span class="whose" title="Showing: ' + esc(who) + '" aria-label="Showing ' + esc(who) + '’s calendar">' + html + '</span>';
   }
@@ -1175,13 +1196,14 @@
     } else if (!mine && e.out) {
       out = (e.out === 'closed' ? caseList(e) : '') + '<p class="result">' + (e.out === 'closed' ? '💰 Closed ' + (e.noc || 1) + ' case' + ((e.noc || 1) > 1 ? 's' : '') + (e.anp ? ' · ANP ' + rm(e.anp) : '') : e.out === 'done' ? '✓ Done' : 'Didn\'t happen') + '</p>';
     }
-    return topbar(esc(T(e.type).label), {back: '#/', right: mine ? '<button class="edit-top" data-act="edit" data-id="' + e.id + '">✏️ Edit</button>' : ''}) +
+    return topbar(esc(T(e.type).label), {back: '#/', right: mine ? '<button class="edit-top" data-act="edit" data-id="' + esc(id) + '">✏️ Edit</button>' : ''}) +
       '<main><div class="card evhead' + (e.all ? ' team' : '') + '" style="' + evStyle(e) + '"><h2>' + (e.all ? '<img class="tlogo" src="icons/team-mark.png" alt="">' + esc(e.title) : esc(T(e.type).emoji + ' ' + e.title)) + '</h2>' +
       '<p>' + esc(dayLabel(dayKey(sMs(e)), true)) + (e.allDay && e.end !== e.start ? ' → ' + esc(dayLabel(String(e.end).slice(0, 10), true)) : '') + '<br>' + esc(evTime(e)) + '</p>' +
       (e.place ? '<p>📍 ' + esc(e.place) + '</p>' : '') +
       '<p>' + avatar(o, 'sm') + ' ' + esc(o.name) + ((e.with || []).length ? ' <span class="muted">with</span> ' + e.with.map(function (id) { return avatar(mem(id), 'sm') + ' ' + esc(shortName(mem(id))); }).join(' ') : '') + '</p>' + jfLine +
       (e.notes ? '<p class="notes">' + esc(e.notes) + '</p>' : '') +
       (mine && e.source === 'voice' ? '<div class="card vnote">🎤 Added from your voice note. Is it right?<div class="row"><button class="btn primary tiny" data-act="vcheck" data-id="' + e.id + '">✓ Correct</button><button class="btn tiny" data-act="edit" data-id="' + e.id + '">✏️ Edit</button></div></div>' : '') + repNote + '<p class="muted tiny">' + (e.all ? '👥 Whole-team event: on everyone\'s calendar.' : e.vis === 'private' ? '🔒 Only ' + (mine ? 'you' : shortName(o)) + (e.with.length ? ' and the people tagged' : '') + ' can see this. Others see "Busy".' + (isWork(e) ? ' It still counts in the activity numbers.' : '') : '👥 The whole team can see this.') + (e.type === 'approach' ? ' · ' + (e.count || 1) + ' new friend(s)' : '') + '</p></div>' +
+      '<div class="row dup-row"><button class="btn ghost" data-act="dup" data-id="' + esc(id) + '">📄 Duplicate</button><span class="tiny muted">Same details, then just change the date or time</span></div>' +
       out + (e.all ? attendCard(e) : (e.with || []).length ? inviteCard(e) : '') +
       '<div class="cheers"><button class="cheer' + (iCheered ? ' on' : '') + '" data-act="cheer" data-id="' + e.id + '">👏 ' + (cheers.length || 'Cheer') + '</button><span class="muted tiny">' + esc(cheers.map(function (m) { return shortName(mem(m.from)); }).join(', ')) + '</span>' +
       '</div>' +
@@ -1367,8 +1389,13 @@
       e = {all: false, title: String(pre.title || '').slice(0, 120), type: '', start: new Date(st0).toISOString(), end: new Date(st0 + 3600e3).toISOString(), allDay: false, place: '', notes: String(pre.notes || '').slice(0, 1500), vis: 'team', with: [], remind: '30', count: 1};
     }
     if (isNew && pre && pre.ev) Object.assign(e, pre.ev);
-    var picked = !isNew;
-    var html = '<form id="ed" class="editor"><div class="row between"><h3>' + (isNew ? 'New event' : 'Edit event') + '</h3><button type="button" class="icon-btn" data-act="close-modal" aria-label="Close">✕</button></div>' +
+    var picked = !isNew || !!(pre && pre.dup);
+    var occDate = !isNew && e.rep && pre && pre.occ ? pre.occ : '';
+    if (occDate) {   // show the date that was opened, not the first date of the series
+      var shift = keyMs(occDate) - keyMs(dayKey(sMs(e)));
+      e = Object.assign({}, e, e.allDay ? {start: addDays(String(e.start).slice(0, 10), Math.round(shift / DAY)), end: addDays(String(e.end || e.start).slice(0, 10), Math.round(shift / DAY))} : {start: new Date(sMs(e) + shift).toISOString(), end: new Date(eMs(e) + shift).toISOString()});
+    }
+    var html = '<form id="ed" class="editor"><div class="row between"><h3>' + (isNew ? (pre && pre.dup ? 'Duplicate event' : 'New event') : 'Edit event') + '</h3><button type="button" class="icon-btn" data-act="close-modal" aria-label="Close">✕</button></div>' +
       '<input name="title" class="title-in" maxlength="120" placeholder="What? e.g. Present Mr Lim medical card" value="' + esc(e.title) + '" required>' +
       '<p class="detect tiny muted" id="detect"></p>' +
       '<div class="types">' + C.TYPE_ORDER.map(function (t) { return '<button type="button" class="tp' + (e.type === t ? ' on' : '') + '" data-t="' + t + '">' + T(t).emoji + ' ' + esc(T(t).label.replace(/ \(.*\)/, '')) + '</button>'; }).join('') + '</div>' +
@@ -1430,6 +1457,11 @@
       paint(); if (isNew) setTimeout(function () { f.title.focus(); if (f.title.value) f.title.dispatchEvent(new Event('input')); }, 50);   // a pre-filled title still picks its type
       var del = sh.querySelector('[data-x=del]');
       if (del) del.onclick = function () {
+        if (occDate) return chooseBox('Delete which?', '"' + e.title + '" repeats. Delete only ' + dayLabel(occDate) + ', or every repeat?', 'Only ' + dayLabel(occDate), 'Every repeat').then(function (w) {
+          if (!w) return;
+          if (w === 'a') { location.hash = '#/'; return send('repone', {id: e.id, date: occDate}, 'Deleted ' + dayLabel(occDate)); }
+          confirmBox('Delete every repeat?', '"' + e.title + '" and its comments will be removed for everyone. This cannot be undone.', 'Delete all', true).then(function (y) { if (y) { location.hash = '#/'; send('del', {id: e.id}, 'Deleted'); } });
+        });
         confirmBox('Delete this event?', '"' + e.title + '" and its comments will be removed for everyone. This cannot be undone.', 'Delete', true).then(function (y) {
           if (!y) return editor(e);
           location.hash = '#/'; send('del', {id: e.id}, 'Deleted');
@@ -1453,13 +1485,32 @@
           var en = f.et.value ? Date.parse(d + 'T' + f.et.value + ':00+08:00') : 0; if (!en || en <= Date.parse(ev2.start)) en = Date.parse(ev2.start) + 3600e3;
           ev2.end = new Date(en).toISOString();
         }
-        var tmpId = isNew ? 'tmp' + Date.now() : e.id;
-        var view = {id: tmpId, ownerId: isNew ? me().id : e.ownerId, title: ev2.title.trim(), type: type, start: ev2.start, end: ev2.end, allDay: ad, place: ev2.place, notes: ev2.notes, vis: vis, all: !!ev2.all, with: withIds.slice(), remind: ev2.remind, count: type === 'approach' ? (+ev2.count || 1) : 0, out: isNew ? '' : e.out, anp: isNew ? 0 : e.anp, noc: isNew ? 0 : e.noc, cases: isNew ? [] : (e.cases || []), source: ev2.source, rep: ev2.rep, repEnd: ev2.repEnd, jfKind: ev2.jfKind, agentId: ev2.agentId};
-        closeModal(); S.sel = dayKey(sMs(view));
-        if (!isNew) location.hash = '#/e/' + e.id;
-        optimistic(function (d) { if (isNew) d.events.push(view); else d.events = d.events.map(function (x) { return x.id === e.id ? Object.assign({}, x, view) : x; }); }, 'save', {event: ev2}, isNew ? 'Added 📅' : 'Saved',
-          function (j) { S.data.events = S.data.events.map(function (x) { return x.id === tmpId ? j.event : x; }); if (location.hash === '#/e/' + tmpId) location.hash = '#/e/' + j.event.id; if (isNew && j.event && j.event.all) askWhatsApp(j.event); })
-          .catch(function () { editor(Object.assign({}, view, {id: isNew ? undefined : e.id})); });
+        function saveIt() {
+          var tmpId = isNew ? 'tmp' + Date.now() : e.id;
+          var view = {id: tmpId, ownerId: isNew ? me().id : e.ownerId, title: ev2.title.trim(), type: type, start: ev2.start, end: ev2.end, allDay: ad, place: ev2.place, notes: ev2.notes, vis: vis, all: !!ev2.all, with: withIds.slice(), remind: ev2.remind, count: type === 'approach' ? (+ev2.count || 1) : 0, out: isNew ? '' : e.out, anp: isNew ? 0 : e.anp, noc: isNew ? 0 : e.noc, cases: isNew ? [] : (e.cases || []), source: ev2.source, rep: ev2.rep, repEnd: ev2.repEnd, jfKind: ev2.jfKind, agentId: ev2.agentId};
+          closeModal(); S.sel = dayKey(sMs(view));
+          if (!isNew) location.hash = '#/e/' + e.id;
+          optimistic(function (d) { if (isNew) d.events.push(view); else d.events = d.events.map(function (x) { return x.id === e.id ? Object.assign({}, x, view) : x; }); }, 'save', {event: ev2}, isNew ? 'Added 📅' : 'Saved',
+            function (j) { S.data.events = S.data.events.map(function (x) { return x.id === tmpId ? j.event : x; }); if (location.hash === '#/e/' + tmpId) location.hash = '#/e/' + j.event.id; if (isNew && j.event && j.event.all) askWhatsApp(j.event); })
+            .catch(function () { editor(Object.assign({}, view, {id: isNew ? undefined : e.id})); });
+        }
+        if (occDate && f.rep.value) {   // a repeating event opened on one date: change only that date, or every repeat?
+          var raw = rawEvents().filter(function (x) { return x.id === e.id; })[0] || e;
+          return chooseBox('Change which?', '"' + ev2.title + '" repeats. Change only ' + dayLabel(occDate) + ', or every repeat?', 'Only ' + dayLabel(occDate), 'Every repeat').then(function (w) {
+            if (!w) return editor(raw, {occ: occDate});
+            if (w === 'a') {
+              var one = Object.assign({}, ev2, {id: undefined, rep: '', repEnd: ''});
+              S.sel = dayKey(Date.parse(one.start) || keyMs(one.start)); location.hash = '#/';
+              return send('repone', {id: e.id, date: occDate, event: one, view: {title: one.title.trim(), type: type, start: one.start, end: one.end, allDay: ad, place: one.place, notes: one.notes, vis: vis, all: !!one.all, with: withIds.slice(), remind: one.remind, count: +one.count || 0, jfKind: one.jfKind, agentId: one.agentId}}, '✅ Changed ' + dayLabel(occDate) + ' only');
+            }
+            // every repeat: the series moves by as many days as this date was moved, and takes the new times
+            var dd = Math.round((keyMs(d) - keyMs(occDate)) / DAY), bd = addDays(dayKey(sMs(raw)), dd);
+            if (ad) { var span = Math.max(0, Math.round((keyMs(ev2.end) - keyMs(ev2.start)) / DAY)); ev2.start = bd; ev2.end = addDays(bd, span); }
+            else { var len = Date.parse(ev2.end) - Date.parse(ev2.start); ev2.start = new Date(bd + 'T' + f.st.value + ':00+08:00').toISOString(); ev2.end = new Date(Date.parse(ev2.start) + len).toISOString(); }
+            saveIt();
+          });
+        }
+        saveIt();
       };
     });
   }
@@ -1946,7 +1997,7 @@
     if (/^new(\?|$)/.test(parts[0] || '')) {
       var qs = new URLSearchParams(r.split('?')[1] || '');
       history.replaceState(null, '', location.pathname + location.search + '#/');
-      lastRoute = '/'; $app.innerHTML = calendarScreen(); markMicBusy();
+      var chX = ($app.querySelector('.chips') || {}).scrollLeft || 0; lastRoute = '/'; $app.innerHTML = calendarScreen(); if (chX && $app.querySelector('.chips')) $app.querySelector('.chips').scrollLeft = chX; markMicBusy();
       setTimeout(function () { editor(null, {title: qs.get('t'), date: qs.get('d'), time: qs.get('s'), notes: qs.get('n')}); }, 30);
       return;
     }
@@ -1966,7 +2017,9 @@
     else if (parts[0] === 'report') html = reportScreen(parts[1]);
     else html = calendarScreen();
     var y = r === lastRoute ? $scroll.scrollTop : 0;   // only #scroll scrolls; the frame (body) never moves
+    var chipsEl = $app.querySelector('.chips'), chipsX = chipsEl ? chipsEl.scrollLeft : 0;
     $app.innerHTML = html; lastRoute = r;
+    if (chipsX) { var ch2 = $app.querySelector('.chips'); if (ch2) ch2.scrollLeft = chipsX; }
     $scroll.scrollTop = y; markMicBusy();
     if (parts[0] === 'e' && parts[2] === 'c' && y === 0) { var cm = $app.querySelector('.comments'); if (cm) setTimeout(function () { cm.scrollIntoView({block: 'start'}); }, 30); }
   }
@@ -2012,10 +2065,12 @@
     if (a === 'bdayclear') return send('profile', {bday: ''}, 'Removed');
     if (a === 'person-del') return confirmBox('Remove this?', 'It will no longer repeat every year.', 'Remove', true).then(function (y) { if (y) send('del', {id: b.dataset.id}, 'Removed'); });
     if (a === 'filter' && b.dataset.id === 'pick') return pickMerge();
+    if (a === 'filter' && Date.now() - CHIPDRAG.ended < 500) return;   // the end of a press-and-hold move is not a tap
     if (a === 'filter') { S.filter = b.dataset.id; LS.set('filter', S.filter); return render(); }
     if (a === 'merge-keep') { var mk = keptMerges(); if (mk.indexOf(b.dataset.id) < 0) mk.push(b.dataset.id); setKept(mk); toast('Kept. It stays on your chips.', 'good'); return render(); }
     if (a === 'merge-x') { setKept(keptMerges().filter(function (x) { return x !== b.dataset.id; })); if (S.filter === 'me+' + b.dataset.id) { S.filter = 'me'; LS.set('filter', 'me'); } return render(); }
     if (a === 'merge') { closeModal(); S.filter = 'me+' + b.dataset.id; LS.set('filter', S.filter); return render(); }
+    if (a === 'merge-go') { var picked = Array.prototype.map.call(document.querySelectorAll('#mpick .wp.on'), function (x) { return x.dataset.id; }); if (!picked.length) return toast('Tick at least one person.', 'bad'); closeModal(); S.filter = 'me+' + picked.join('.'); LS.set('filter', S.filter); return render(); }
     if (a === 'partner') {
       var pa = b.dataset.do, pid = b.dataset.id || (document.getElementById('ptn') || {}).value;
       if (pa === 'request' && !pid) return toast('Pick your partner first.', 'bad');
@@ -2033,7 +2088,17 @@
     if (a === 'new') return editor(null);
     if (a === 'ag-new') { closeModal(); S.sel = b.dataset.k; return editor(null); }
     if ((a === 'edit' || a === 'out' || a === 'cheer' || a === 'invite' || a === 'rsvp') && /^tmp/.test(b.dataset.id || '')) return toast('Still saving… one moment.');
-    if (a === 'edit') { var eid = String(b.dataset.id || '').split('~')[0]; return editor(rawEvents().filter(function (e) { return e.id === eid; })[0]); }
+    if (a === 'edit') {
+      var eid = String(b.dataset.id || '').split('~')[0], occ = String(b.dataset.id || '').split('~')[1] || '', base = rawEvents().filter(function (e) { return e.id === eid; })[0];
+      if (base && base.rep) return editor(base, {occ: occ || dayKey(sMs(base))});
+      return editor(base);
+    }
+    if (a === 'dup') {   // same details as a NEW event: change the date / time and tap Add
+      var src = events().filter(function (x) { return x.id === b.dataset.id; })[0]; if (!src || src.busy) return;
+      var mineSrc = src.ownerId === me().id;
+      return editor(null, {date: dayKey(sMs(src)), ev: {title: src.title, type: src.type, allDay: !!src.allDay, start: src.start, end: src.end, place: src.place || '', notes: String(src.notes || '').replace(/\n?🎤 You said:[\s\S]*$/, '').slice(0, 1500), vis: src.vis, all: mineSrc && !!src.all,
+        with: mineSrc ? (src.with || []).slice() : [], remind: src.remind || '30', count: src.count || 1, jfKind: src.jfKind || '', agentId: mineSrc ? src.agentId || '' : ''}, dup: true});
+    }
     if (a === 'out') return setOutcome(b.dataset.id, b.dataset.v);
     if (a === 'postpone') { var pe = events().filter(function (x) { return x.id === b.dataset.id; })[0]; if (pe) postponeBox(pe, false); return; }
     if (a === 'cheer') return send('send', {to: 'ev:' + b.dataset.id, kind: 'cheer'});
@@ -2128,6 +2193,34 @@
   document.addEventListener('contextmenu', function (ev) { var m = ev.target.closest && ev.target.closest('.cmt.mine'); if (m) { ev.preventDefault(); delMsg(m.dataset.mid); } });
   function delMsg(id) { confirmBox('Delete this comment?', 'It will be removed for everyone.', 'Delete', true).then(function (y) { if (y) send('delmsg', {id: id}); }); }
 
+  var CHIPDRAG = {t: 0, el: null, on: false, x0: 0, y0: 0, ended: 0};
+  function chipDragStart(el, x, y) {
+    clearTimeout(CHIPDRAG.t); CHIPDRAG = {t: 0, el: el, on: false, x0: x, y0: y, ended: CHIPDRAG.ended};
+    CHIPDRAG.t = setTimeout(function () { if (!CHIPDRAG.el) return; CHIPDRAG.on = true; el.classList.add('dragging'); try { navigator.vibrate && navigator.vibrate(20); } catch (x) {} toast('Slide left or right, then let go', ''); }, 450);
+  }
+  function chipDragMove(x, y, ev) {
+    if (!CHIPDRAG.el) return;
+    if (!CHIPDRAG.on) { if (Math.abs(x - CHIPDRAG.x0) > 8 || Math.abs(y - CHIPDRAG.y0) > 8) { clearTimeout(CHIPDRAG.t); CHIPDRAG.el = null; } return; }   // moved first = scrolling the row
+    if (ev && ev.cancelable) ev.preventDefault();
+    CHIPDRAG.el.style.transform = 'translateX(' + (x - CHIPDRAG.x0) + 'px) scale(1.08)'; CHIPDRAG.lastX = x;
+    var row = CHIPDRAG.el.parentNode, r = row.getBoundingClientRect();   // near the edge: scroll the row along
+    if (x < r.left + 30) row.scrollLeft -= 8; else if (x > r.right - 30) row.scrollLeft += 8;
+  }
+  function chipDragEnd() {
+    clearTimeout(CHIPDRAG.t); var d = CHIPDRAG; CHIPDRAG = {t: 0, el: null, on: false, ended: d.ended};
+    if (!d.el || !d.on) return;
+    CHIPDRAG.ended = Date.now();
+    var x = d.lastX == null ? d.x0 : d.lastX, others = Array.prototype.filter.call(d.el.parentNode.querySelectorAll('[data-person]'), function (b) { return b !== d.el; });
+    var ids = others.map(function (b) { return b.dataset.person; }), at = others.filter(function (b) { var r = b.getBoundingClientRect(); return r.left + r.width / 2 < x; }).length;
+    ids.splice(at, 0, d.el.dataset.person); d.el.style.transform = ''; d.el.classList.remove('dragging');
+    setChipOrder(ids); render(); toast('Order saved', 'good');
+  }
+  document.addEventListener('touchstart', function (ev) { var el = ev.target.closest && ev.target.closest('.chip[data-person]'); if (el && ev.touches.length === 1) chipDragStart(el, ev.touches[0].clientX, ev.touches[0].clientY); }, {passive: true});
+  document.addEventListener('touchmove', function (ev) { if (CHIPDRAG.el) chipDragMove(ev.touches[0].clientX, ev.touches[0].clientY, ev); }, {passive: false});
+  document.addEventListener('touchend', chipDragEnd, {passive: true}); document.addEventListener('touchcancel', chipDragEnd, {passive: true});
+  document.addEventListener('mousedown', function (ev) { var el = ev.target.closest && ev.target.closest('.chip[data-person]'); if (el) chipDragStart(el, ev.clientX, ev.clientY); });
+  document.addEventListener('mousemove', function (ev) { if (CHIPDRAG.el) chipDragMove(ev.clientX, ev.clientY, ev); });
+  document.addEventListener('mouseup', chipDragEnd);
   var sw0 = null;
   document.addEventListener('touchstart', function (ev) {
     sw0 = null;
