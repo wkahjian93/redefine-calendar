@@ -36,7 +36,8 @@ You stay signed in on that phone for good, like WhatsApp. Only two things sign y
 - **🔔 Comments tab:** every comment and cheer meant for you, newest first, with an unread count.
 
 ## Planning tools (app version 28)
-- **🔁 Repeat:** in a new event, choose Every week / month / year and an optional *Until* date. Editing changes every repeat. ✓ Done / 💰 Closed are marked on the first one only; repeat copies never count in your numbers.
+- **🔁 Repeat:** in a new event, choose Every week / month / year and an optional *Until* date. To change or delete a repeating event, open it on the date you want and tap ✏️ Edit (or Delete): the app asks **Only this date** or **Every repeat**. Only this date leaves every other date as it was. ✓ Done / 💰 Closed are marked on the first one only; repeat copies never count in your numbers (a date you changed on its own becomes a normal event that counts).
+- **📄 Duplicate:** open any event and tap **📄 Duplicate**. A new event opens with the same title, type, place, notes, people and time; just change the date or time and tap Add.
 - **Holidays:** Malaysia + Penang public holidays (red date), festivals, and school holidays (light blue days) show on the calendar. You get a pop-up the day before and on the day.
 - **🎂 Birthdays:** Me → **My birthday** (day + month only) puts it on everyone's calendar with a pop-up that morning. Me → **Important people** adds yearly birthdays and anniversaries for family or clients (🔒 only you by default).
 - **✅ To-do tab:** 4 boxes: 🔴 urgent & important, 🟠 urgent, 🔵 important, ⚪ neither. **Tap a box** to add a to-do straight into it (with optional details and a date). **Hold a box’s 🎤** and speak: what you say is written down and saved in that box. **Tap a to-do** to edit it, add details, change its date or move it to another box, or delete it. Everything is on one list; finished ones stay for a week (tap *Show older finished ones* for the rest).
@@ -73,7 +74,8 @@ You stay signed in on that phone for good, like WhatsApp. Only two things sign y
 - **Me → Partner calendar** → choose your partner → **Send request**. Your partner opens **Me** and taps **Accept**. Nothing is shared until both agree.
 - Once linked: a **💑 Me + partner** chip on the calendar shows both calendars together, and you each see the other's **private** events in full. Everyone else (leaders included) still sees Busy. Each person's activity numbers stay their own.
 - **Unlink** any time in the same card.
-- Just want to plan around a teammate? Tap the **Me + …** chip and pick anyone: their events show next to yours (their private events stay Busy). On that chip tap **📌** to keep it for next time, or **×** to close it.
+- **See one or several people with you:** tap the **Me + …** chip, tick one or more people and tap **Show together**: your events and theirs show on one calendar (their private events stay Busy). On that chip tap **📌** to keep it for next time, or **×** to close it.
+- **Your own order of people:** press and hold a person's chip, slide it left or right, and let go. The order is saved on all your devices. After you tap a chip, the row stays where you scrolled it.
 
 ## Team events (meeting, training, roadshow)
 - Create the event with **👥 Everyone's in it** switched on. It appears on everyone's calendar and everyone gets a pop-up asking **Going?**
