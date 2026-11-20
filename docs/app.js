@@ -7,7 +7,7 @@
   var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   var MONTH = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   var DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  var APP_VERSION = '58';
+  var APP_VERSION = '59';
   var H8 = 8 * 3600e3, DAY = 864e5, SELLING = {approach: 1, open: 1, present: 1, followup: 1, close: 1, joinfield: 1, recruit: 1};
 
   /* ---------- storage (each phone) ---------- */
@@ -786,6 +786,16 @@
     el.innerHTML = h.slide ? '🗑️ Let go to cancel' : '<i class="recdot"></i><b>0:' + ('0' + Math.min(59, sec)).slice(-2) + '</b><span>' + (h.rec ? '‹ slide left to cancel' : 'Getting the microphone…') + '</span>';
     if (h.btn) h.btn.classList.add('rec');
   }
+  /* iPhone home-screen apps ask "Allow microphone?" every time the microphone is switched on again. So it stays on between
+     recordings (nothing is recorded unless the 🎤 is held) and is switched off when the app goes to the background
+     or after 5 minutes without a recording. Result: at most one question each time the app is opened. */
+  var MIC = {stream: null, timer: 0};
+  function micLive() { return MIC.stream && MIC.stream.getAudioTracks().some(function (t) { return t.readyState === 'live'; }) ? MIC.stream : null; }
+  function getMic() { var s = micLive(); if (s) return Promise.resolve(s); return navigator.mediaDevices.getUserMedia({audio: true}).then(function (st) { MIC.stream = st; return st; }); }
+  function micRelease() { clearTimeout(MIC.timer); if (MIC.stream) MIC.stream.getTracks().forEach(function (t) { t.stop(); }); MIC.stream = null; }
+  function micIdle() { clearTimeout(MIC.timer); MIC.timer = setTimeout(function () { if (!HOLD) micRelease(); }, 5 * 60e3); }
+  document.addEventListener('visibilitychange', function () { if (document.hidden && !HOLD) micRelease(); });
+  window.addEventListener('pagehide', micRelease);
   function micDown(ev) {
     var btn = ev.target.closest && ev.target.closest('.fab.mic, .mic-hold'); if (!btn || HOLD) return;
     ev.preventDefault();
@@ -794,9 +804,10 @@
     var h = HOLD = {x0: ev.clientX, t0: Date.now(), btn: btn, up: false, cancel: false, slide: false, music: MUS.on};
     if (MUS.on) musicStop();   // background music off while recording, back on after
     holdUI(h);
-    navigator.mediaDevices.getUserMedia({audio: true}).then(function (stream) {
+    clearTimeout(MIC.timer);
+    getMic().then(function (stream) {
       if (h.up) {   // let go before the microphone was ready (e.g. the first-time "allow microphone" question)
-        stream.getTracks().forEach(function (t) { t.stop(); });
+        micIdle();
         if (Date.now() - h.t0 > 1500) toast('🎤 Microphone ready. Now hold 🎤, speak, then let go.', 'good');
         return;
       }
@@ -805,7 +816,7 @@
       h.rec = rec; h.tStart = Date.now();
       rec.ondataavailable = function (e) { if (e.data && e.data.size) chunks.push(e.data); };
       rec.onstop = function () {
-        stream.getTracks().forEach(function (t) { t.stop(); }); clearInterval(h.tm);
+        micIdle(); clearInterval(h.tm);   // the microphone stays ready for the next recording
         if (h.cancel) return toast('Cancelled', '');
         if (Date.now() - h.tStart < 900) return toast('Hold the 🎤 button while you speak, then let go.', 'bad');
         queueVoice(new Blob(chunks, {type: String(rec.mimeType || mime || 'audio/webm').split(';')[0]}), btn.classList.contains('mic-hold') ? {kind: btn.dataset.kind === 'note' ? 'note' : '', q: btn.dataset.q || ''} : null);
