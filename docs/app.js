@@ -7,7 +7,7 @@
   var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   var MONTH = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   var DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  var APP_VERSION = '63';
+  var APP_VERSION = '64';
   var H8 = 8 * 3600e3, DAY = 864e5, SELLING = {approach: 1, open: 1, present: 1, followup: 1, close: 1, joinfield: 1, recruit: 1};
 
   /* ---------- storage (each phone) ---------- */
@@ -1349,12 +1349,12 @@
       '<label>What to do<input name="t" maxlength="300" autocomplete="off" value="' + esc(x.text) + '"></label>' +
       '<label>Details (optional)<textarea name="n" rows="3" maxlength="2000" placeholder="Anything to remember">' + esc(x.notes || '') + '</textarea></label>' +
       '<p class="lbl">Box</p><div class="qpick4">' + QUAD.map(function (o) { return '<label class="qopt q' + o[0] + '"><input type="radio" name="q" value="' + o[0] + '"' + (String(x.q) === o[0] ? ' checked' : '') + '><span>' + o[1] + ' ' + o[2] + '</span></label>'; }).join('') + '</div>' +
-      '<label class="chk daily-chk"><input type="checkbox" name="daily"' + (x.daily ? ' checked' : '') + '> 🔁 Daily routine (comes back every day, no need to add it again)</label>' +
+      '<label class="chk daily-chk"><input type="checkbox" name="daily"' + (x.daily ? ' checked' : '') + '><span><b>🔁 Daily routine</b><small>Comes back every day. No need to add it again.</small></span></label>' +
       '<div class="row td-when"><label class="grow td-date"' + (x.daily ? ' style="display:none"' : '') + '>Date (shows on your calendar)<input type="date" name="due" value="' + esc(x.due || '') + '"></label><label class="grow">Time (pop-up)<input type="time" name="at" value="' + esc(x.at || '') + '"></label></div>' +
-      '<p class="tiny muted">Leave the date empty to keep it off the calendar.</p>' +
+      '<p class="tiny muted td-date-hint"' + (x.daily ? ' style="display:none"' : '') + '>Leave the date empty to keep it off the calendar.</p>' +
       '<div class="row sheet-btns"><button class="btn primary big">Save</button>' + (isNew ? '' : '<button type="button" class="btn danger" data-act="todo-del" data-id="' + esc(x.id) + '">🗑️ Delete</button>') + '</div></form>',
       function (sh) {
-        var dc = sh.querySelector('[name=daily]'); if (dc) dc.onchange = function () { sh.querySelector('.td-date').style.display = dc.checked ? 'none' : ''; };
+        var dc = sh.querySelector('[name=daily]'); if (dc) dc.onchange = function () { sh.querySelector('.td-date').style.display = sh.querySelector('.td-date-hint').style.display = dc.checked ? 'none' : ''; };
         if (isNew) setTimeout(function () { var i = sh.querySelector('[name=t]'); if (i) i.focus(); }, 60);
       });
   }
