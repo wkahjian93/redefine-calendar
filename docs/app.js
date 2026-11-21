@@ -7,7 +7,7 @@
   var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   var MONTH = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   var DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  var APP_VERSION = '64';
+  var APP_VERSION = '65';
   var H8 = 8 * 3600e3, DAY = 864e5, SELLING = {approach: 1, open: 1, present: 1, followup: 1, close: 1, joinfield: 1, recruit: 1};
 
   /* ---------- storage (each phone) ---------- */
@@ -166,6 +166,8 @@
     document.getElementById('toasts').appendChild(t); setTimeout(function () { t.classList.add('out'); }, 2800); setTimeout(function () { t.remove(); }, 3300);
   }
   var ERR = {
+    pr_bad_code: 'That Prospecting code is not valid (it may have been replaced). Make a new one in Prospecting → Me → Connected apps.',
+    pr_unreachable: 'Could not reach REDEFINE Prospecting. Try again in a minute.',
     already_done: 'It already happened (Done / Closed), so it can’t be postponed.', same_time: 'Pick a different date or time.',
     not_an_appointment: 'That didn’t sound like an appointment. Say what, which day and what time.',
     bad_audio: 'That recording couldn’t be used. Try again (up to 60 seconds).', nothing_heard: 'Nothing was heard. Hold the phone closer and try again.', owner_only: 'Only the owner can change celebration themes.', bad_theme: 'Please pick the colours again.', bad_music: 'Use an MP3 or M4A file up to 5 MB.',
@@ -214,6 +216,8 @@
       setTimeout(loadPhotos, 0);
       if (j.me.mustChange) setTimeout(askNewPin, 300);
       if (pushOn() && j.me.devices === 0 && !S.repairTried) { S.repairTried = true; repairPush(false); }   // server lost this phone: reconnect quietly
+      if (LS.get('prlink', '')) setTimeout(function () { linkPr(LS.get('prlink', '')); }, 0);
+      else if (j.me.prLinked && !S.prPulled) { S.prPulled = true; api('prpull').then(function (x) { if (x.changed) quietSync(true); }, function () {}); }   // REDEFINE Prospecting: collect new calls / appointments now
       render();
       return true;
     }, function (e) { syncing = null; if (e.code === 'network') render(); throw e; });
@@ -1843,6 +1847,7 @@
       '<div class="card"><h4>🎂 My birthday</h4><p class="tiny muted">The team sees it on the calendar and gets a reminder on the day. Only the day and month are shared.</p><div class="row"><input id="bdayin" type="date" value="' + (m.bday ? '2000-' + m.bday : '') + '" style="flex:1;min-width:150px"><button class="btn primary" data-act="bdaysave">Save</button>' + (m.bday ? '<button class="btn ghost" data-act="bdayclear">Remove</button>' : '') + '</div></div>' +
       peopleCard() +
       partnerCard() +
+      prospectingCard() +
       '<div class="card"><h4>Move my calendar here</h4><p class="muted">Google Calendar, TimeTree, iPhone, or a paper diary: snap photos or screenshots and the AI copies them in. You check every row first.</p><a class="btn primary" href="#/import">⤓ Import calendar</a></div>' +
       (!standalone() ? '<div class="card"><h4>Install</h4><p class="muted">Add REDEFINE Calendar to your home screen so it opens like an app.</p><button class="btn ghost" data-act="install">How?</button></div>' : '') +
       (m.leader ? '<div class="card"><h4>Leader</h4><a class="btn ghost" href="#/members">👥 Manage members</a></div>' : '') +
@@ -2043,7 +2048,29 @@
   /* ---------- router + render ---------- */
   function route() { return (location.hash || '#/').slice(1); }
   var lastRoute = '';
+  /* ---------- REDEFINE Prospecting link: #/link-prospecting?code=... (from Prospecting → Me → Connected apps) ---------- */
+  function catchPrLink() {
+    var m = /^#\/?link-prospecting\?(.*)$/.exec(location.hash); if (!m) return;
+    var code = (new URLSearchParams(m[1]).get('code') || '').replace(/[^a-z0-9]/gi, '').slice(0, 60);
+    if (code) LS.set('prlink', code);
+    history.replaceState(null, '', location.pathname + location.search + '#/me');
+  }
+  function linkPr(code) {
+    LS.del('prlink');
+    return api('prlink', {code: code}).then(function (r) {
+      toast('✅ Connected to REDEFINE Prospecting' + (r.changed ? ' · ' + r.changed + ' event(s) added' : '') + '. Calls and appointments now come in by themselves.', 'good');
+      return quietSync(true);
+    }, function (e) { toast(errText(e), 'bad'); });
+  }
+  function prospectingCard() {
+    var on = me().prLinked;
+    return '<div class="card"><h4>📒 REDEFINE Prospecting</h4>' + (on
+      ? '<p class="ok-t">✅ Connected. 📞 Called, 📅 Set appointment and ☕ Appointment done from Prospecting come in by themselves as private events (they count on the board).</p><div class="row"><button class="btn ghost" data-act="prpull">Update now</button><button class="btn ghost" data-act="prunlink">Disconnect</button></div>'
+      : '<p class="tiny muted">In Prospecting → Me → Connected apps → Connect REDEFINE Calendar. It opens here and connects itself. Or paste the code:</p><div class="row"><input id="prcodein" placeholder="Paste the code" style="flex:1;min-width:150px;font-family:monospace"><button class="btn primary" data-act="prconnect">Connect</button></div>') + '</div>';
+  }
+
   function render() {
+    catchPrLink();
     if (HOLD || (PG && PG.drag)) { S.renderLater = true; return; }   // never swap the screen while someone is holding 🎤 (their finger would lose the button)
     if (!S.token) { $app.innerHTML = signInScreen(); return; }
     if (!S.data) { $app.innerHTML = topbar('REDEFINE Calendar') + '<main><p class="empty">Loading your team…</p></main>'; return; }
@@ -2186,6 +2213,9 @@
     if (a === 'copy-close') { var dd = statsData(S.statsPeriod); if (!dd.events) return; return copyText(closeList(dd.events, dd.r, statsScope()).text); }
     if (a === 'push') return enablePush();
     if (a === 'pushfix') return repairPush(true).then(render);
+    if (a === 'prconnect') { var pc = (($app.querySelector('#prcodein') || {}).value || '').replace(/[^a-z0-9]/gi, ''); if (!pc) return toast('Paste the code from Prospecting first', 'bad'); return linkPr(pc); }
+    if (a === 'prpull') return api('prpull').then(function (x) { toast(x.changed ? x.changed + ' event(s) updated from Prospecting' : 'Up to date with Prospecting', 'good'); return quietSync(true); }, function (e) { toast(errText(e), 'bad'); });
+    if (a === 'prunlink') return confirmBox('Disconnect REDEFINE Prospecting?', 'New calls and appointments will stop coming in. Events already here stay.', 'Disconnect').then(function (y) { if (y) return api('prunlink').then(function () { toast('Disconnected'); return quietSync(true); }); });
     if (a === 'pushtest15') { toast('Lock your phone now. A pop-up should arrive in about 15 seconds.'); return api('pushtest', {delay: 15}).catch(function () {}); }
     if (a === 'pushtest') return api('pushtest').then(function () { toast('Sent. It should pop up in a few seconds.'); }, function (e) { toast(errText(e), 'bad'); });
     if (a === 'pushoff') return api('pushoff', {pushToken: LS.get('pushToken', '')}).then(function () { LS.del('pushToken'); toast('Pop-ups off for this phone'); render(); });

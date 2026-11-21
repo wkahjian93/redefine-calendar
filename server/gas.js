@@ -216,6 +216,7 @@ var GAS = (function () {
     fails: function (add) { var c = CacheService.getScriptCache(), n = +(c.get('fails') || 0); if (add) { c.put('fails', String(n + add), 900); Utilities.sleep(800); } return n; },
     now: function () { return new Date(); },
     sleep: function (ms) { Utilities.sleep(ms); },
+    fetchJson: function (url, body) { var r = UrlFetchApp.fetch(url, {method: 'post', contentType: 'text/plain', payload: JSON.stringify(body), muteHttpExceptions: true, followRedirects: true}); try { return JSON.parse(r.getContentText()); } catch (e) { return null; } },
     random: Math.random,
     hash: function (t) { return Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, t, Utilities.Charset.UTF_8).map(function (b) { return ('0' + (b & 255).toString(16)).slice(-2); }).join(''); },
     version: function (bump) { var v = +(P.getProperty('VER') || 1); if (bump) { v++; P.setProperty('VER', String(v)); } return v; }
@@ -223,7 +224,7 @@ var GAS = (function () {
 })();
 
 /* Timed jobs, installed by setup(). */
-function reminderTick() { GAS.withLock(function () { CORE.tick(GAS); }); GAS.flushPush(); }
+function reminderTick() { GAS.withLock(function () { CORE.tick(GAS); }); GAS.flushPush(); try { var r = CORE.prCollectAll(GAS); if (r.changed) console.log('Prospecting: ' + r.changed + ' event change(s) for ' + r.members + ' connected agent(s)'); } catch (e) { console.warn('Prospecting collect failed: ' + e); } }
 function morningDigest() { GAS.withLock(function () { CORE.morning(GAS); }); GAS.flushPush(); }
 function eveningConfirm() { GAS.withLock(function () { CORE.evening(GAS); }); GAS.flushPush(); }
 

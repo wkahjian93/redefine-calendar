@@ -10,7 +10,7 @@
    transcribe(audioBase64, mime, hint) -> text, putFile(id, mime, base64) / getFile(id) -> {mime, data} / delFile(id). */
 var CORE = (function () {
   var TABLES = {
-    members: ['id', 'name', 'pin', 'role', 'color', 'created', 'active', 'partner', 'partnerReq', 'short', 'photoV', 'bday', 'pinTemp', 'feed', 'merges', 'chipOrder', 'rank', 'unit'],
+    members: ['id', 'name', 'pin', 'role', 'color', 'created', 'active', 'partner', 'partnerReq', 'short', 'photoV', 'bday', 'pinTemp', 'feed', 'merges', 'chipOrder', 'rank', 'unit', 'prCode', 'prSince'],
     photos: ['memberId', 'data', 'updated'],
     sessions: ['token', 'memberId', 'created', 'lastSeen', 'device'],
     events: ['id', 'ownerId', 'title', 'type', 'start', 'end', 'allDay', 'place', 'notes', 'vis', 'with', 'remind', 'count', 'out', 'anp', 'source', 'remSent', 'created', 'updated', 'noc', 'all', 'cases', 'rep', 'repEnd', 'jfKind', 'agentId', 'skip'],
@@ -321,7 +321,7 @@ var CORE = (function () {
       todos: store.load('todos').filter(function (t) { return t.ownerId === me.id; }).slice(-1000),
       goals: store.load('goals').filter(function (g) { return g.memberId === me.id; }),
       themesOn: themesOn(store), themes: liveThemes(store),
-      me: {id: me.id, name: me.name, owner: isOwner(me, store), merges: str(me.merges, 400), chipOrder: str(me.chipOrder, 1500), short: shortOf(me), bday: me.bday || '', mustChange: me.pinTemp === 'true', shortSet: !!me.short, photoV: me.photoV || '', role: me.role, rank: myRank, unit: me.unit || '', color: me.color, leader: leader, devices: myDevices, partner: me.partner || '', partnerReq: me.partnerReq || '',
+      me: {id: me.id, name: me.name, prLinked: !!me.prCode, prSince: me.prSince || '', owner: isOwner(me, store), merges: str(me.merges, 400), chipOrder: str(me.chipOrder, 1500), short: shortOf(me), bday: me.bday || '', mustChange: me.pinTemp === 'true', shortSet: !!me.short, photoV: me.photoV || '', role: me.role, rank: myRank, unit: me.unit || '', color: me.color, leader: leader, devices: myDevices, partner: me.partner || '', partnerReq: me.partnerReq || '',
         partnerAsks: members.filter(function (m) { return m.partnerReq === me.id && String(m.active) !== 'false'; }).map(function (m) { return m.id; })},
       members: members.filter(function (m) { return String(m.active) !== 'false' || leader; }).map(function (m) {
         var o = {id: m.id, name: m.name, short: shortOf(m), role: m.role, color: m.color, active: String(m.active) !== 'false', partner: m.partner || '', photoV: m.photoV || '', bday: m.bday || '', rank: rankOf(m, oid), unit: m.unit || ''}; if (seeSeen(m)) o.seen = seen[m.id] || ''; return o;
@@ -387,7 +387,9 @@ var CORE = (function () {
     if (old) {
       if (old.start !== e.start || old.remind !== e.remind) old.remSent = '';
       if (old.type !== e.type && !(PROSPECT[e.type] || e.type === 'approach')) { if (old.out === 'closed') { old.out = 'done'; old.anp = ''; old.noc = ''; old.cases = ''; } }
+      var keepSrc = /^pr:/.test(old.source || '') ? old.source : '';
       Object.keys(e).forEach(function (k) { old[k] = e[k]; }); old.updated = now;
+      if (keepSrc) old.source = keepSrc;   // still linked to REDEFINE Prospecting
     } else {
       old = e; e.id = newId(store, 10); e.ownerId = me.id; e.out = ''; e.anp = ''; e.noc = ''; e.cases = ''; e.remSent = ''; e.created = now; e.updated = now;
       rows.push(e);
@@ -1313,11 +1315,80 @@ var CORE = (function () {
     return {sent: n};
   }
 
+  /* ---------- REDEFINE Prospecting link ----------
+     The agent connects once with a private code from Prospecting. The server then collects that agent's lead activity
+     (every 5 minutes and whenever the app opens) and keeps matching events, marked source "pr:<lead id>:call|appt":
+       📞 Called          -> 👋 Approach (A +1), done, at the call time
+       📅 Set appointment -> 📊 appointment at that date/time (O +1); ☕ Appointment done -> marked Done (P +1)
+     Undo in Prospecting removes / reopens it. Events are private (team sees Busy; numbers still count). An event the
+     agent already closed (💰) or cancelled here is never changed. */
+  var PROSPECTING_URL_DEFAULT = 'https://script.google.com/macros/s/AKfycbwGwiZTn-y6gTpZFRCDbvnYoyhwM3kLfvLK6yESCvMzchR0DC0mAerWhv0wk_dhWbEF/exec';
+  function prBlank(me, now) { return {id: '', ownerId: me.id, title: '', type: 'approach', start: '', end: '', allDay: 'false', place: '', notes: '', vis: 'private', with: '', remind: '', count: '', out: '', anp: '', source: '', remSent: '', created: now, updated: now, noc: '', all: '', cases: '', rep: '', repEnd: '', jfKind: '', agentId: '', skip: ''}; }
+  function prApply(store, member, items) {
+    var rows = store.load('events'), now = nowIso(store), changed = 0;
+    var find = function (src) { return rows.filter(function (e) { return e.ownerId === member.id && e.source === src; })[0]; };
+    var drop = function (src) { var e = find(src); if (e && e.out !== 'closed') { rows = rows.filter(function (x) { return x !== e; }); changed++; } };
+    var put = function (src, f) {
+      var e = find(src);
+      if (e && (e.out === 'closed' || e.out === 'cancel')) return;   // the agent finished it here: leave it alone
+      if (!e) { e = prBlank(member, now); e.id = newId(store, 10); e.source = src; rows.push(e); }
+      var before = JSON.stringify([e.title, e.type, e.start, e.end, e.out, e.count, e.notes]);
+      Object.keys(f).forEach(function (k) { e[k] = f[k]; });
+      if (JSON.stringify([e.title, e.type, e.start, e.end, e.out, e.count, e.notes]) !== before) { e.updated = now; changed++; }
+    };
+    (items || []).forEach(function (it) {
+      var id = str(it.id, 20); if (!id) return;
+      var name = str(it.name, 60) || 'Lead', tag = it.source === 'roadshow' ? 'roadshow' : 'referral', gone = it.status === 'rejected';
+      var callAt = Date.parse(it.calledAt), planAt = Date.parse(it.planAt), metAt = Date.parse(it.apptAt), met = it.appt === 'pending' || it.appt === 'approved';
+      if (!gone && isFinite(callAt)) put('pr:' + id + ':call', {title: '📞 Call ' + name + ' (' + tag + ')', type: 'approach', count: '1', out: 'done', start: new Date(callAt).toISOString(), end: new Date(callAt + 15 * 60e3).toISOString(), notes: 'From REDEFINE Prospecting'});
+      else drop('pr:' + id + ':call');
+      var at = isFinite(planAt) ? planAt : met && isFinite(metAt) ? metAt : NaN;
+      if (!gone && isFinite(at)) put('pr:' + id + ':appt', {title: '☕ Appointment: ' + name + ' (' + tag + ')', type: 'present', count: '', out: met ? 'done' : '', start: new Date(at).toISOString(), end: new Date(at + 3600e3).toISOString(), remind: '30', notes: 'From REDEFINE Prospecting'});
+      else drop('pr:' + id + ':appt');
+    });
+    if (changed) { store.save('events', rows); store.version(true); }
+    return changed;
+  }
+  function prUrl(store) { return store.prop('PROSPECTING_URL') || PROSPECTING_URL_DEFAULT; }
+  /* the network part: ask Prospecting for this agent's activity since the last collect (outside the lock) */
+  function prFetch(store, code, since) {
+    if (!store.fetchJson) fail('no_fetch');
+    var r = store.fetchJson(prUrl(store), {op: 'feed', code: code, since: since || ''});
+    if (!r || r.error) fail(r && r.error === 'bad_link' ? 'pr_bad_code' : 'pr_unreachable');
+    return r;
+  }
+  function prSave(store, memberId, code, res) {   // under the lock
+    var members = store.load('members'), m = members.filter(function (x) { return x.id === memberId; })[0];
+    if (!m) return 0;
+    if (code !== undefined) m.prCode = code;
+    var n = prApply(store, m, res.items);
+    m.prSince = res.now || m.prSince; store.save('members', members);
+    return n;
+  }
+  /* every 5 minutes (gas reminderTick): collect for every connected agent */
+  function prCollectAll(store) {
+    var list = store.load('members').filter(function (m) { return m.prCode && String(m.active) !== 'false'; }), n = 0;
+    list.forEach(function (m) {
+      try { var res = prFetch(store, m.prCode, m.prSince); n += store.withLock(function () { return prSave(store, m.id, undefined, res); }); }
+      catch (e) { if (e.appCode === 'pr_bad_code') store.withLock(function () { var ms = store.load('members'), x = ms.filter(function (y) { return y.id === m.id; })[0]; if (x) { x.prCode = ''; store.save('members', ms); } }); }
+    });
+    return {members: list.length, changed: n};
+  }
+
   var READ_ONLY = {sync: 1, teamtotals: 1, photos: 1, progress: 1, file: 1, themes: 1, besttime: 1};
   var OPS = {sync: sync, save: saveEvent, del: delEvent, repone: repOne, outcome: outcome, import: importEvents, send: send, delmsg: delMsg,
     pushreg: pushReg, pushoff: pushOff, pushtest: pushTest, teamtotals: teamTotals, rsvp: rsvp, member: member, partner: partner, profile: profile, todo: todo, tododel: todoDel, goal: goal, changepin: changePin, progress: progress, feed: feedOp, checked: checkedOp, postpone: postpone, besttime: bestTime, themes: themesList, theme: themeSave, themedel: themeDel, themeson: themesSwitch, file: getFile, photo: setPhoto, photos: getPhotos, signout: signOut};
   function handle(q, store) {
     if (!q || typeof q !== 'object') fail('bad_request');
+    if (q.op === 'prlink' || q.op === 'prpull') {   // REDEFINE Prospecting: fetch outside the lock, save inside
+      var pm = store.withLock(function () { return who(q, store).me; });
+      var code = q.op === 'prlink' ? str(q.code, 60) : pm.prCode;
+      if (!code) { if (q.op === 'prpull') return {ok: true, linked: false}; fail('pr_bad_code'); }
+      var res = prFetch(store, code, q.op === 'prlink' ? '' : pm.prSince);
+      var n = store.withLock(function () { return prSave(store, pm.id, q.op === 'prlink' ? code : undefined, res); });
+      return {ok: true, linked: true, changed: n, agent: res.agent && res.agent.name};
+    }
+    if (q.op === 'prunlink') return store.withLock(function () { var me1 = who(q, store).me, ms = store.load('members'), x = ms.filter(function (y) { return y.id === me1.id; })[0]; x.prCode = ''; x.prSince = ''; store.save('members', ms); return {ok: true, linked: false}; });
     if (q.op === 'signin') {
       return store.withLock(function () {
         var r = signIn(q, store);
@@ -1379,7 +1450,7 @@ var CORE = (function () {
   }
 
   return {TABLES: TABLES, TYPES: TYPES, TYPE_ORDER: TYPE_ORDER, PROSPECT: PROSPECT, COLORS: COLORS, REMIND: REMIND,
-    handle: handle, voiceToEvent: voiceToEvent, feedIcs: feedIcs, parseVoice: parseVoice, voicePrompt: voicePrompt, parseThemeAI: parseThemeAI, isOwner: isOwner, rankOf: rankOf, todoWhen: todoWhen, salesKind: salesKind, ONFIELD_URL: ONFIELD_URL, prospectReminders: prospectReminders, OCCASIONS: OCCASIONS, ANIMS: ANIMS, tick: tick, occurrences: occurrences, holidaysOn: holidaysOn, schoolHoliday: schoolHoliday, HOLIDAYS: HOLIDAYS, defaultShort: defaultShort, answers: answers, attendance: attendance, TEAM_REMIND: TEAM_REMIND, cents: cents, MODES: MODES, casesOf: casesOf, commentTargets: commentTargets, isAll: isAll, MAX_NOC: MAX_NOC, morning: morning, evening: evening, detectType: detectType, stats: stats, addStats: addStats,
+    handle: handle, prApply: prApply, prCollectAll: prCollectAll, voiceToEvent: voiceToEvent, feedIcs: feedIcs, parseVoice: parseVoice, voicePrompt: voicePrompt, parseThemeAI: parseThemeAI, isOwner: isOwner, rankOf: rankOf, todoWhen: todoWhen, salesKind: salesKind, ONFIELD_URL: ONFIELD_URL, prospectReminders: prospectReminders, OCCASIONS: OCCASIONS, ANIMS: ANIMS, tick: tick, occurrences: occurrences, holidaysOn: holidaysOn, schoolHoliday: schoolHoliday, HOLIDAYS: HOLIDAYS, defaultShort: defaultShort, answers: answers, attendance: attendance, TEAM_REMIND: TEAM_REMIND, cents: cents, MODES: MODES, casesOf: casesOf, commentTargets: commentTargets, isAll: isAll, MAX_NOC: MAX_NOC, morning: morning, evening: evening, detectType: detectType, stats: stats, addStats: addStats,
     ratios: ratios, parseRead: parseRead, parseICS: parseICS, similarTitle: similarTitle, textPrompt: textPrompt, creditId: creditId, jfKindOf: jfKindOf, readPrompt: readPrompt, startMs: startMs, endMs: endMs, myt: myt, whenText: whenText};
 })();
 
@@ -1602,6 +1673,7 @@ var GAS = (function () {
     fails: function (add) { var c = CacheService.getScriptCache(), n = +(c.get('fails') || 0); if (add) { c.put('fails', String(n + add), 900); Utilities.sleep(800); } return n; },
     now: function () { return new Date(); },
     sleep: function (ms) { Utilities.sleep(ms); },
+    fetchJson: function (url, body) { var r = UrlFetchApp.fetch(url, {method: 'post', contentType: 'text/plain', payload: JSON.stringify(body), muteHttpExceptions: true, followRedirects: true}); try { return JSON.parse(r.getContentText()); } catch (e) { return null; } },
     random: Math.random,
     hash: function (t) { return Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, t, Utilities.Charset.UTF_8).map(function (b) { return ('0' + (b & 255).toString(16)).slice(-2); }).join(''); },
     version: function (bump) { var v = +(P.getProperty('VER') || 1); if (bump) { v++; P.setProperty('VER', String(v)); } return v; }
@@ -1609,7 +1681,7 @@ var GAS = (function () {
 })();
 
 /* Timed jobs, installed by setup(). */
-function reminderTick() { GAS.withLock(function () { CORE.tick(GAS); }); GAS.flushPush(); }
+function reminderTick() { GAS.withLock(function () { CORE.tick(GAS); }); GAS.flushPush(); try { var r = CORE.prCollectAll(GAS); if (r.changed) console.log('Prospecting: ' + r.changed + ' event change(s) for ' + r.members + ' connected agent(s)'); } catch (e) { console.warn('Prospecting collect failed: ' + e); } }
 function morningDigest() { GAS.withLock(function () { CORE.morning(GAS); }); GAS.flushPush(); }
 function eveningConfirm() { GAS.withLock(function () { CORE.evening(GAS); }); GAS.flushPush(); }
 
