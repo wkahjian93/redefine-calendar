@@ -7,7 +7,7 @@
   var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   var MONTH = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   var DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  var APP_VERSION = '62';
+  var APP_VERSION = '63';
   var H8 = 8 * 3600e3, DAY = 864e5, SELLING = {approach: 1, open: 1, present: 1, followup: 1, close: 1, joinfield: 1, recruit: 1};
 
   /* ---------- storage (each phone) ---------- */
@@ -110,7 +110,7 @@
   /* Repeating events are expanded into their dates; team birthdays (Me → My birthday) appear for everyone. Cached per data version. */
   var expCache = {k: null, src: null, v: []};
   function events() {
-    var src = rawEvents(), ms = members(), k = S.ver + '|' + mutSeq + '|' + src.length + '|' + (S.range ? S.range.from + S.range.to : '') + '|' + ms.map(function (m) { return m.bday || ''; }).join(',');
+    var src = rawEvents(), ms = members(), k = S.ver + '|' + mutSeq + '|' + src.length + '|' + (S.range ? S.range.from + S.range.to : '') + '|' + ms.map(function (m) { return m.bday || ''; }).join(',') + '|' + todos().map(function (x) { return x.id + x.due + (x.at || '') + (x.done ? 1 : 0) + x.text; }).join(',');
     if (expCache.src === src && expCache.k === k) return expCache.v;
     var A = S.range ? Date.parse(S.range.from) : Date.now() - 60 * DAY, B = S.range ? Date.parse(S.range.to) : Date.now() + 120 * DAY, out = [];
     src.forEach(function (e) {
@@ -126,6 +126,12 @@
     ms.forEach(function (m) {
       if (!m.bday || m.active === false) return;
       for (var y = y0; y <= y1; y++) { var kk = y + '-' + m.bday; if (keyMs(kk) >= A - DAY && keyMs(kk) < B) out.push({id: 'bd-' + m.id + '-' + y, ownerId: m.id, title: '🎂 ' + shortName(m) + '’s birthday', type: 'personal', allDay: true, start: kk, end: kk, vis: 'team', with: [], out: '', bday: true}); }
+    });
+    var my = me().id;   // my to-dos with a date: on my calendar (only I see them)
+    todos().forEach(function (x) {
+      if (isNote(x) || x.daily || !x.due) return;
+      var s0 = x.at ? Date.parse(x.due + 'T' + x.at + ':00+08:00') : keyMs(x.due); if (s0 < A - DAY || s0 >= B) return;
+      out.push({id: 'td-' + x.id, ownerId: my, title: (x.done ? '✅ ' : '☑️ ') + x.text, type: 'personal', allDay: !x.at, start: x.at ? new Date(s0).toISOString() : x.due, end: x.at ? new Date(s0 + 30 * 60e3).toISOString() : x.due, vis: 'private', with: [], out: '', todo: x.id, place: '', notes: x.notes || ''});
     });
     expCache = {k: k, src: src, v: out};
     return out;
@@ -268,8 +274,9 @@
     if (op === 'profile') return function (d) { [d.me].concat(d.members.filter(function (m) { return m.id === my; })).forEach(function (m) { if (q.color) m.color = q.color; if (q.short) { m.short = q.short; d.me.shortSet = true; } }); };
     if (op === 'todo') return function (d) {
       var it = q.item; d.todos = d.todos || []; var ex = d.todos.filter(function (x) { return x.id === it.id; })[0], note = ex ? ex.kind === 'note' : it.kind === 'note';
-      if (ex) { ex.text = it.text; ex.updated = now; if (!note) { ex.q = String(it.q || '1'); ex.due = it.due || ''; ex.done = it.done ? (ex.done || now) : ''; if (it.notes != null) ex.notes = it.notes; } }
-      else d.todos.push({id: it.id || tmp, kind: note ? 'note' : '', text: it.text, q: note ? '' : String(it.q || '1'), due: note ? '' : (it.due || ''), notes: it.notes || '', done: '', created: now, updated: now});
+      var dl = !note && !!it.daily, at = note ? '' : it.at || '', due = note || dl ? '' : (it.due || (at ? dayKey(Date.now()) : ''));
+      if (ex) { ex.text = it.text; ex.updated = now; if (!note) { ex.q = String(it.q || '1'); ex.due = due; ex.at = at; ex.daily = dl ? '1' : ''; ex.done = !it.done ? '' : dl ? (ex.done && dayKey(Date.parse(ex.done)) === dayKey(Date.now()) ? ex.done : now) : (ex.done || now); if (it.notes != null) ex.notes = it.notes; } }
+      else d.todos.push({id: it.id || tmp, kind: note ? 'note' : '', text: it.text, q: note ? '' : String(it.q || '1'), due: due, at: at, daily: dl ? '1' : '', notes: it.notes || '', done: '', created: now, updated: now});
     };
     if (op === 'checked') return function (d) { (d.events || []).forEach(function (x) { if (x.id === q.id) x.source = 'voiceok'; }); };
     if (op === 'postpone') return function (d) { (d.events || []).forEach(function (x) { if (x.id !== q.id) return; var s0 = sMs(x), dur = Math.max(0, eMs(x) - s0) || 3600e3; if (x.allDay) { x.start = q.date; x.end = q.date; } else { var ns = Date.parse(q.date + 'T' + q.time + ':00+08:00'); x.start = new Date(ns).toISOString(); x.end = new Date(ns + dur).toISOString(); } x.out = ''; }); };
@@ -1200,6 +1207,12 @@
   }
   function eventScreen(id) {
     if (/^bd-/.test(id)) return birthdayScreen(id);
+    if (/^td-/.test(id)) {   // a to-do on the calendar: open it in To-do
+      var tdx = todos().filter(function (x) { return x.id === id.slice(3); })[0];
+      try { history.replaceState(null, '', '#/todo'); } catch (z) {}
+      if (tdx) setTimeout(function () { todoSheet(tdx); }, 30);
+      return todoScreen();
+    }
     var e = events().filter(function (x) { return x.id === id; })[0];
     if (e && e.base) e = Object.assign({}, e, {id: e.base});   // a repeat: everything below acts on the real event
     if (!e) return topbar('Event', {back: '#/'}) + '<main><p class="empty">This event is not in the dates loaded, or it was deleted.</p></main>' + tabs('cal');
@@ -1218,7 +1231,8 @@
         (e.type === 'present' && e.out !== 'done' && e.out !== 'closed' ? '<button class="btn postpone-btn" data-act="postpone" data-id="' + e.id + '">📅 Postpone to a new date</button>' : '') +
         (e.out === 'closed' ? caseList(e) + '<p class="muted">NOC: <b>' + (e.noc || 1) + ' case' + ((e.noc || 1) > 1 ? 's' : '') + '</b> · Total ANP: <b>' + (e.anp ? rm(e.anp) : 'not entered') + '</b> <button class="link" data-act="out" data-id="' + e.id + '" data-v="closed">edit</button></p>' : (C.PROSPECT[e.type] ? '<p class="tiny muted">Not sure yet? Tap ✓ Done now. If the client signs later, come back and tap 💰 Closed.</p>' : '')) +
         (e.type === 'approach' && (e.out === 'done') ? '<p class="muted">New friends approached: <b>' + (e.count || 1) + '</b> <button class="link" data-act="out" data-id="' + e.id + '" data-v="done">edit</button></p>' : '') +
-        (e.out ? '<button class="link" data-act="out" data-id="' + e.id + '" data-v="">Undo</button>' : '') + '</div>';
+        (e.out ? '<button class="link" data-act="out" data-id="' + e.id + '" data-v="">Undo</button>' : '') + '</div>' +
+        (e.out === 'done' && C.salesKind(e) === 'present' && C.creditId(e) === me().id ? wowCard() : '');
     } else if (!mine && e.out) {
       out = (e.out === 'closed' ? caseList(e) : '') + '<p class="result">' + (e.out === 'closed' ? '💰 Closed ' + (e.noc || 1) + ' case' + ((e.noc || 1) > 1 ? 's' : '') + (e.anp ? ' · ANP ' + rm(e.anp) : '') : e.out === 'done' ? '✓ Done' : 'Didn\'t happen') + '</p>';
     }
@@ -1298,8 +1312,10 @@
   /* ---------- To-do: Urgent & important / Urgent, not important / Important, not urgent / Not urgent, not important ---------- */
   var QUAD = [['1', '🔴', 'Urgent & important', 'Do it now'], ['2', '🟠', 'Urgent, not important', 'Quick / delegate'], ['3', '🔵', 'Important, not urgent', 'Plan a time'], ['4', '⚪', 'Not urgent, not important', 'Later or drop']];
   function todos() { return (S.data && S.data.todos) || []; }
-  function todoDue() { var t = dayKey(Date.now()); return todos().filter(function (x) { return !x.done && x.due && x.due <= t; }).length; }
+  function todoDue() { var t = dayKey(Date.now()); return todos().filter(function (x) { return !isNote(x) && !tdDone(x) && (x.daily || (x.due && x.due <= t)); }).length; }
   function isNote(x) { return x.kind === 'note'; }
+  function tdDone(x) { return x.daily ? !!x.done && dayKey(Date.parse(x.done)) === dayKey(Date.now()) : !!x.done; }   // a daily routine is done for today only
+  function tdWhen(x, t) { return x.daily ? '🔁 Daily' + (x.at ? ' ' + x.at : '') : x.due ? (x.due === t ? 'Today' : dayLabel(x.due)) + (x.at ? ' ' + x.at : '') : ''; }
   function todoScreen() {
     var tab = S.todoTab === 'notes' ? 'notes' : 'todo', t = dayKey(Date.now()), all = todos();
     var html = topbar('To-do') + '<main class="todo"><div class="seg"><button class="' + (tab === 'todo' ? 'on' : '') + '" data-act="todotab" data-v="todo">✅ To-do</button><button class="' + (tab === 'notes' ? 'on' : '') + '" data-act="todotab" data-v="notes">📝 Notes</button></div>';
@@ -1314,27 +1330,33 @@
         }).join('') : '<p class="empty">No notes yet.</p>') + '</main>' + tabs('todo');
     }
     var weekAgo = Date.now() - 7 * DAY, todo = all.filter(function (x) { return !isNote(x); });
-    var older = todo.filter(function (x) { return x.done && Date.parse(x.done) < weekAgo; }).length;
-    var list = todo.filter(function (x) { return !x.done || S.showDone || Date.parse(x.done) >= weekAgo; });
-    html += '<p class="tiny muted">Tap a box to add a to-do there, or hold its 🎤 and speak. Tap a to-do to edit it or move it to another box.</p><div class="quads">' + QUAD.map(function (q) {
-      var items = list.filter(function (x) { return x.q === q[0]; }).sort(function (x, y) { return (x.done ? 1 : 0) - (y.done ? 1 : 0) || String(x.due || '9').localeCompare(String(y.due || '9')) || String(x.created).localeCompare(String(y.created)); });
+    var older = todo.filter(function (x) { return !x.daily && x.done && Date.parse(x.done) < weekAgo; }).length;
+    var list = todo.filter(function (x) { return x.daily || !x.done || S.showDone || Date.parse(x.done) >= weekAgo; });
+    html += '<p class="tiny muted">Tap a box to add a to-do there, or hold its 🎤 and speak (say the day and time, e.g. “tomorrow 3pm call Ali”). To-dos with a date show on your calendar; with a time you also get a pop-up. Tick when done, then ✕ to delete. 🔁 Daily routines come back every day.</p><div class="quads">' + QUAD.map(function (q) {
+      var items = list.filter(function (x) { return x.q === q[0]; }).sort(function (x, y) { return (tdDone(x) ? 1 : 0) - (tdDone(y) ? 1 : 0) || (y.daily ? 1 : 0) - (x.daily ? 1 : 0) || String(x.due || '9').localeCompare(String(y.due || '9')) || String(x.created).localeCompare(String(y.created)); });
       return '<section class="quad q' + q[0] + '" data-act="todo-new" data-q="' + q[0] + '"><div class="qhead"><h4>' + q[1] + ' ' + q[2] + '<small>' + q[3] + '</small></h4><button class="mic-hold qmic" data-act="noop" data-kind="todo" data-q="' + q[0] + '" aria-label="Hold to record a to-do in ' + q[2] + '">🎤</button></div>' +
         items.map(function (x) {
-          var late = !x.done && x.due && x.due < t;
-          return '<div class="td' + (x.done ? ' done' : '') + '"><button class="tick-btn" data-act="todotick" data-id="' + x.id + '" aria-label="Done">' + (x.done ? '✅' : '⬜') + '</button><button class="tt" data-act="todo-edit" data-id="' + x.id + '">' + (x.src === 'voice' ? '🎤 ' : '') + esc(x.text) + (x.notes ? ' <i class="hasnote">📝</i>' : '') + (x.due ? '<small class="' + (late ? 'late' : '') + '">' + (x.due === t ? 'Today' : esc(dayLabel(x.due))) + '</small>' : '') + '</button></div>';
+          var dn = tdDone(x), late = !dn && !x.daily && x.due && x.due < t, wn = tdWhen(x, t);
+          return '<div class="td' + (dn ? ' done' : '') + (x.daily ? ' daily' : '') + '"><button class="tick-btn" data-act="todotick" data-id="' + x.id + '" aria-label="Done">' + (dn ? '✅' : '⬜') + '</button><button class="tt" data-act="todo-edit" data-id="' + x.id + '">' + (x.src === 'voice' ? '🎤 ' : '') + esc(x.text) + (x.notes ? ' <i class="hasnote">📝</i>' : '') + (wn ? '<small class="' + (late ? 'late' : '') + '">' + esc(wn) + '</small>' : '') + '</button>' +
+            (dn ? '<button class="td-x" data-act="todo-x" data-id="' + x.id + '" aria-label="Delete">✕</button>' : '') + '</div>';
         }).join('') + voicePending(function (v) { return v.to && v.to.kind !== 'note' && String(v.to.q || '1') === q[0]; }).map(function (v) { return '<div class="td pend"><span class="mini-spin"></span><span class="tt">' + pendRow(v) + '</span></div>'; }).join('') + '<div class="qadd">＋ Tap to add</div></section>';
     }).join('') + '</div>' + (older || S.showDone ? '<p class="center"><button class="link" data-act="todoshowdone">' + (S.showDone ? 'Hide older finished ones' : 'Show older finished ones (' + older + ')') + '</button></p>' : '') + '</main>';
     return html + tabs('todo');
   }
   function todoSheet(x, q) {
-    var isNew = !x; x = x || {q: q || '1', text: '', notes: '', due: ''};
+    var isNew = !x; x = x || {q: q || '1', text: '', notes: '', due: dayKey(Date.now()), at: '', daily: ''};
     modal('<form id="todoform" data-id="' + esc(x.id || '') + '"><div class="row between"><h3>' + (isNew ? 'New to-do' : 'Edit to-do') + '</h3><button type="button" class="icon-btn" data-act="close-modal" aria-label="Close">✕</button></div>' +
       '<label>What to do<input name="t" maxlength="300" autocomplete="off" value="' + esc(x.text) + '"></label>' +
       '<label>Details (optional)<textarea name="n" rows="3" maxlength="2000" placeholder="Anything to remember">' + esc(x.notes || '') + '</textarea></label>' +
       '<p class="lbl">Box</p><div class="qpick4">' + QUAD.map(function (o) { return '<label class="qopt q' + o[0] + '"><input type="radio" name="q" value="' + o[0] + '"' + (String(x.q) === o[0] ? ' checked' : '') + '><span>' + o[1] + ' ' + o[2] + '</span></label>'; }).join('') + '</div>' +
-      '<label>Date (optional)<input type="date" name="due" value="' + esc(x.due || '') + '"></label>' +
+      '<label class="chk daily-chk"><input type="checkbox" name="daily"' + (x.daily ? ' checked' : '') + '> 🔁 Daily routine (comes back every day, no need to add it again)</label>' +
+      '<div class="row td-when"><label class="grow td-date"' + (x.daily ? ' style="display:none"' : '') + '>Date (shows on your calendar)<input type="date" name="due" value="' + esc(x.due || '') + '"></label><label class="grow">Time (pop-up)<input type="time" name="at" value="' + esc(x.at || '') + '"></label></div>' +
+      '<p class="tiny muted">Leave the date empty to keep it off the calendar.</p>' +
       '<div class="row sheet-btns"><button class="btn primary big">Save</button>' + (isNew ? '' : '<button type="button" class="btn danger" data-act="todo-del" data-id="' + esc(x.id) + '">🗑️ Delete</button>') + '</div></form>',
-      function (sh) { if (isNew) setTimeout(function () { var i = sh.querySelector('[name=t]'); if (i) i.focus(); }, 60); });
+      function (sh) {
+        var dc = sh.querySelector('[name=daily]'); if (dc) dc.onchange = function () { sh.querySelector('.td-date').style.display = dc.checked ? 'none' : ''; };
+        if (isNew) setTimeout(function () { var i = sh.querySelector('[name=t]'); if (i) i.focus(); }, 60);
+      });
   }
   function noteSheet(x) {
     var isNew = !x; x = x || {text: ''};
@@ -1604,6 +1626,12 @@
       });
     }
     send('outcome', {id: id, out: v}, v === 'done' ? '✓ Counted' : v === 'cancel' ? 'Marked as didn\'t happen' : 'Undone');
+    if (v === 'done' && C.salesKind(e) === 'present' && C.creditId(e) === me().id) setTimeout(function () { wowPrompt(e); }, 350);
+  }
+  function wowCard() { return '<div class="card wow"><h4>🎁 Wow your prospect</h4><p class="tiny muted">Presentation done! Send the follow-up PDF with <b>REDEFINE On Field</b> today, while they still remember you: record the meeting, check it, and share the PDF on WhatsApp.</p><a class="btn primary" href="' + C.ONFIELD_URL + '" target="_blank" rel="noopener">Open On Field ↗</a></div>'; }
+  function wowPrompt(e) {
+    modal('<h3>🎁 Wow your prospect</h3><p><b>' + esc(e.title) + '</b> is done. Send the follow-up PDF with <b>REDEFINE On Field</b> now, while the meeting is fresh.</p><p class="tiny muted">Record or type what you discussed, check it, then share the PDF on WhatsApp.</p>' +
+      '<div class="row end wrap"><button class="btn ghost" data-act="close-modal">Later</button><a class="btn primary" href="' + C.ONFIELD_URL + '" target="_blank" rel="noopener" data-act="close-modal">Open On Field ↗</a></div>');
   }
   function send(op, body, ok) { return optimistic(applyFor(op, body), op, body, ok).catch(function () {}); }
   function confirmScreen() {
@@ -2094,7 +2122,12 @@
     if (a === 'todo-del') { var tdid = b.dataset.id; return confirmBox('Delete this?', 'It will be removed from all your devices.', 'Delete', true).then(function (y) { if (y) { closeModal(); send('tododel', {id: tdid}, 'Deleted'); } }); }
 
     if (a === 'todoshowdone') { S.showDone = !S.showDone; return render(); }
-    if (a === 'todotick') { var tx = todos().filter(function (x) { return x.id === b.dataset.id; })[0]; if (!tx) return; return send('todo', {item: {id: tx.id, text: tx.text, q: tx.q, due: tx.due, done: !tx.done}}, tx.done ? '' : '✅ Done!'); }
+    if (a === 'todotick') { var tx = todos().filter(function (x) { return x.id === b.dataset.id; })[0]; if (!tx) return; var was = tdDone(tx); return send('todo', {item: {id: tx.id, text: tx.text, q: tx.q, due: tx.due, at: tx.at || '', daily: !!tx.daily, done: !was}}, was ? '' : tx.daily ? '✅ Done for today!' : '✅ Done!'); }
+    if (a === 'todo-x') {
+      var tz = todos().filter(function (x) { return x.id === b.dataset.id; })[0]; if (!tz) return;
+      if (tz.daily) return confirmBox('Delete this routine?', '"' + tz.text + '" will stop coming back every day.', 'Delete', true).then(function (y) { if (y) send('tododel', {id: tz.id}, 'Deleted'); });
+      return send('tododel', {id: tz.id}, '🗑️ Deleted');
+    }
 
     if (a === 'goalp') { S.goalP = +b.dataset.i; return render(); }
     if (a === 'goalsave') { var gv = (document.getElementById('goalin') || {}).value || ''; if (gv !== '' && !(+gv >= 0)) return toast('Type the ANP goal in RM.', 'bad'); S.prog = null; return send('goal', {key: b.dataset.key, anp: gv === '' ? '' : Math.round(+gv)}, gv === '' ? 'Goal removed' : '🎯 Goal saved'); }
@@ -2211,7 +2244,7 @@
     if (f.id === 'todoform') {
       ev.preventDefault(); var txt = f.t.value.trim(); if (!txt) return toast('Type what to do.', 'bad');
       var tid = f.dataset.id, old = tid ? todos().filter(function (x) { return x.id === tid; })[0] : null, qv = (f.querySelector('[name=q]:checked') || {}).value || '1';
-      closeModal(); return send('todo', {item: {id: tid || undefined, text: txt, notes: f.n.value.trim(), q: qv, due: f.due.value || '', done: !!(old && old.done)}}, tid ? 'Saved' : '✅ Added');
+      closeModal(); return send('todo', {item: {id: tid || undefined, text: txt, notes: f.n.value.trim(), q: qv, due: f.daily.checked ? '' : f.due.value || '', at: f.at.value || '', daily: f.daily.checked, done: !!(old && tdDone(old))}}, tid ? 'Saved' : '✅ Added');
     }
     if (f.id === 'noteform') {
       ev.preventDefault(); var nt = f.t.value.trim(); if (!nt) return toast('Write something first.', 'bad');

@@ -503,6 +503,8 @@ function fresh() {
   // voice to-do and voice note: the words are saved as they are, in the box held
   const vt = h({op: 'voicetodo', token: mj.token, audio, mime: 'audio/webm', kind: '', q: '3'}).todo;
   ok(vt.q === '3' && vt.src === 'voice' && /Mr Lim/.test(vt.text) && !vt.kind, 'voice to-do saved in the box that was held, transcript as the text');
+  { const dn = Date.parse(vt.created), tmr = new Date(dn + 8 * 3600e3 + 864e5).toISOString().slice(0, 10);
+    ok(vt.due === tmr && vt.at === '15:00', 'voice to-do: "esok pukul 3 petang" -> tomorrow 15:00 (shows on calendar, pop-up)'); }
   const vn = h({op: 'voicetodo', token: mj.token, audio, mime: 'audio/webm', kind: 'note'}).todo;
   ok(vn.kind === 'note' && /Mr Lim/.test(vn.text) && vn.q === '' && vn.src === 'voice', 'voice note saved as a note');
   throws(() => h({op: 'voicetodo', token: mj.token, audio, mime: 'video/mp4'}), 'bad_audio', 'voice to-do: odd recording refused');
@@ -767,6 +769,56 @@ function fresh() {
   ok(!('seen' in by(sa, a1.me.id)), 'agents see no last-seen');
   h({op: 'member', token: kj.token, id: mj.me.id, rank: ''});
   ok(by(h({op: 'sync', token: kj.token}), a1.me.id).unit === '', 'no longer a UM: their agents go back to unit not set');
+}
+
+/* ---------- to-dos: time pop-up, daily routine; sales reminders; wow your prospect ---------- */
+{
+  const {s, h, join} = fresh();
+  const kj = join('Kah Jian', true), ag = join('Agent Ali');
+  // NOW = Thu 12 Nov 2026 10:00 MYT
+  const w = CORE.todoWhen;
+  ok(w('tomorrow 3pm call Ali', NOW).due === '2026-11-13' && w('tomorrow 3pm call Ali', NOW).at === '15:00', 'to-do words: tomorrow 3pm');
+  ok(w('星期五下午三点见客', NOW).due === '2026-11-13' && w('星期五下午三点见客', NOW).at === '15:00', 'to-do words: 星期五下午三点');
+  ok(w('下星期一 8点半', NOW).due === '2026-11-16' && w('下星期一 8点半', NOW).at === '08:30', 'to-do words: 下星期一 8点半');
+  ok(w('buy milk', NOW).due === '' && w('buy milk', NOW).at === '', 'to-do words: no date, no time');
+  ok(w('9am', NOW).due === '2026-11-13', 'to-do words: a time already past today means tomorrow');
+  const td = h({op: 'todo', token: ag.token, item: {text: 'Call Mr Tan (sample)', q: '1', due: '2026-11-12', at: '11:00'}}).todo;
+  ok(td.at === '11:00' && td.due === '2026-11-12', 'to-do keeps its date and time');
+  const only = h({op: 'todo', token: ag.token, item: {text: 'Time only', q: '1', at: '16:00'}}).todo;
+  ok(only.due === '2026-11-12', 'a to-do with a time and no date is for today');
+  s.setNow(NOW + 60 * 60e3); s.pushes.length = 0; CORE.tick(s);
+  ok(s.pushes.some(p => p.ids[0] === ag.me.id && /To-do: Call Mr Tan/.test(p.note.title)), 'to-do pop-up at its time');
+  s.pushes.length = 0; CORE.tick(s);
+  ok(!s.pushes.some(p => /To-do: Call Mr Tan/.test(p.note.title)), 'to-do pop-up only once');
+  // daily routine: done today only, back tomorrow, pop-up every day
+  const rt = h({op: 'todo', token: ag.token, item: {text: 'Post on Instagram', q: '3', daily: true, at: '12:00', due: '2026-11-30'}}).todo;
+  ok(rt.daily === '1' && rt.due === '', 'daily routine has no single date');
+  s.setNow(NOW + 2 * 60 * 60e3); s.pushes.length = 0; CORE.tick(s);
+  ok(s.pushes.some(p => /🔁 To-do: Post on Instagram/.test(p.note.title)), 'daily routine pop-up today');
+  const d1 = h({op: 'todo', token: ag.token, item: {id: rt.id, text: rt.text, q: '3', daily: true, at: '12:00', done: true}}).todo;
+  s.setNow(NOW + D + 2 * 60 * 60e3); s.pushes.length = 0; CORE.tick(s);
+  ok(s.pushes.some(p => /🔁 To-do: Post on Instagram/.test(p.note.title)), 'daily routine comes back the next day (pop-up again)');
+  const d2 = h({op: 'todo', token: ag.token, item: {id: rt.id, text: rt.text, q: '3', daily: true, at: '12:00', done: true}}).todo;
+  ok(d2.done !== d1.done && d2.done.slice(0, 10) === '2026-11-13', 'ticking a routine again the next day counts for that day');
+  // sales appointments: 3 days and 1 day before, remind the agent to remind the prospect
+  s.setNow(NOW);
+  const pres = h({op: 'save', token: ag.token, event: {title: 'Present Ms Wong (sample)', type: 'present', start: '2026-11-15T07:00:00Z', end: '2026-11-15T08:00:00Z'}}).event;
+  const fu = h({op: 'save', token: ag.token, event: {title: 'Follow up Mr Lee (sample)', type: 'followup', start: '2026-11-13T12:00:00Z', end: '2026-11-13T13:00:00Z'}}).event;
+  const jf = h({op: 'save', token: kj.token, event: {title: 'Join field present Ms Ng (sample)', type: 'joinfield', jfKind: 'present', agentId: ag.me.id, with: [ag.me.id], start: '2026-11-15T10:00:00Z', end: '2026-11-15T11:00:00Z'}}).event;
+  h({op: 'save', token: ag.token, event: {title: 'Team meeting', type: 'meeting', start: '2026-11-15T02:00:00Z', end: '2026-11-15T03:00:00Z'}});
+  s.setNow(Date.parse('2026-11-12T00:00:00Z')); s.pushes.length = 0; CORE.morning(s);
+  const pr = s.pushes.filter(p => /Remind your prospect/.test(p.note.title));
+  ok(pr.some(p => p.ids[0] === ag.me.id && /in 3 days/.test(p.note.title) && /Ms Wong/.test(p.note.body) && /3:00pm/.test(p.note.body)), 'presentation: reminder 3 days before');
+  ok(pr.some(p => /tomorrow/.test(p.note.title) && /Mr Lee/.test(p.note.body) && /follow-up/.test(p.note.body)), 'follow-up: reminder 1 day before');
+  ok(pr.some(p => p.ids[0] === ag.me.id && /Ms Ng/.test(p.note.body)) && !pr.some(p => p.ids.includes(kj.me.id)), 'join field: the agent is reminded, not the leader');
+  ok(!pr.some(p => /Team meeting/.test(p.note.body)) && pr.length === 3, 'only sales appointments');
+  // presentation done -> follow-up PDF nudge (pop-up when the leader marks it for the agent)
+  s.setNow(Date.parse('2026-11-15T12:00:00Z')); s.pushes.length = 0;
+  h({op: 'outcome', token: kj.token, id: jf.id, out: 'done'});
+  ok(s.pushes.some(p => p.ids[0] === ag.me.id && /Wow your prospect/.test(p.note.title) && /On Field/.test(p.note.body) && p.note.url === '#/e/' + jf.id), 'leader marks a join-field presentation done: agent gets the On Field nudge');
+  s.pushes.length = 0; h({op: 'outcome', token: ag.token, id: pres.id, out: 'done'});
+  ok(!s.pushes.some(p => /Wow/.test(p.note.title)), 'agent marking it done sees the nudge in the app instead (no pop-up)');
+  ok(CORE.salesKind({type: 'followup'}) === 'followup' && CORE.salesKind({type: 'meeting'}) === '', 'sales kinds');
 }
 
 { const fs = require('fs'), v = JSON.parse(fs.readFileSync(__dirname + '/docs/version.json', 'utf8')).v, m = /APP_VERSION = '([0-9]+)'/.exec(fs.readFileSync(__dirname + '/docs/app.js', 'utf8'));

@@ -11,7 +11,7 @@ var CORE = (function () {
     photos: ['memberId', 'data', 'updated'],
     sessions: ['token', 'memberId', 'created', 'lastSeen', 'device'],
     events: ['id', 'ownerId', 'title', 'type', 'start', 'end', 'allDay', 'place', 'notes', 'vis', 'with', 'remind', 'count', 'out', 'anp', 'source', 'remSent', 'created', 'updated', 'noc', 'all', 'cases', 'rep', 'repEnd', 'jfKind', 'agentId', 'skip'],
-    todos: ['id', 'ownerId', 'text', 'q', 'due', 'done', 'created', 'updated', 'kind', 'notes', 'src'],
+    todos: ['id', 'ownerId', 'text', 'q', 'due', 'done', 'created', 'updated', 'kind', 'notes', 'src', 'at', 'daily', 'remSent'],
     goals: ['memberId', 'key', 'anp', 'updated'],
     msgs: ['id', 'to', 'from', 'kind', 'text', 'created'],
     devices: ['token', 'memberId', 'created'],
@@ -469,6 +469,8 @@ var CORE = (function () {
     var wasClosed = e.out === 'closed';
     e.out = out; e.anp = anp; e.noc = noc; e.cases = cases; if (q.count != null && e.type === 'approach') e.count = String(Math.max(1, Math.min(999, Math.floor(+q.count) || 1)));
     e.updated = nowIso(store); store.save('events', rows);
+    if (out === 'done' && salesKind(e) === 'present' && creditId(e) !== me.id)
+      store.push([creditId(e)], {title: '🎁 Wow your prospect', body: 'Presentation done: ' + str(e.title, 60) + '. Send the follow-up PDF with REDEFINE On Field today.', tag: 'wow-' + e.id, url: '#/e/' + e.id});
     if (out === 'closed' && !wasClosed) {
       store.push(activeIds(store.load('members')).filter(function (x) { return x !== creditId(e); }),
         {title: '🎉 ' + memberName(store, creditId(e)) + ' closed ' + (+noc > 1 ? noc + ' cases' : 'a case') + '!', body: 'Tap to cheer them on 👏', tag: 'win-' + e.id, url: '#/e/' + e.id});
@@ -612,14 +614,62 @@ var CORE = (function () {
     var note = row.kind === 'note';
     row.text = note ? str(it.text, 5000) : str(it.text, 300); row.updated = now;
     if (note) { row.q = ''; row.due = ''; row.done = ''; row.notes = ''; }
-    else { row.q = qd; row.due = due; row.done = it.done ? (row.done || now) : ''; if (it.notes != null) row.notes = str(it.notes, 2000); }
+    else {
+      var at = /^([01]\d|2[0-3]):[0-5]\d$/.test(str(it.at, 5)) ? str(it.at, 5) : '', daily = it.daily ? '1' : '', today = mytDay(store.now().getTime());
+      if (daily) due = ''; else if (at && !due) due = today;   // a time needs a date: today
+      if (row.due !== due || (row.at || '') !== at || (row.daily || '') !== daily) row.remSent = '';
+      row.q = qd; row.due = due; row.at = at; row.daily = daily;
+      // a daily routine is "done" only for the day it was ticked; tomorrow it comes back
+      row.done = !it.done ? '' : daily ? (row.done && mytDay(Date.parse(row.done)) === today ? row.done : now) : (row.done || now);
+      if (it.notes != null) row.notes = str(it.notes, 2000);
+    }
     store.save('todos', rows); store.version(true);
     return {todo: row};
   }
   /* hold 🎤 on a to-do box or on Notes: the words are written down and saved as they are (no AI guessing). The recording is not kept. */
   function voiceTodo(heard, q, store, me) {
     var note = q.kind === 'note', text = note ? heard : heard.slice(0, 300);
-    return todo({item: {text: text, kind: note ? 'note' : '', q: q.q, notes: !note && heard.length > 300 ? heard : '', src: 'voice'}}, store, me);
+    var w = note ? {} : todoWhen(heard, store.now().getTime());
+    return todo({item: {text: text, kind: note ? 'note' : '', q: q.q, notes: !note && heard.length > 300 ? heard : '', src: 'voice', due: w.due || (note ? '' : mytDay(store.now().getTime())), at: w.at || ''}}, store, me);
+  }
+  /* A date and time said in a to-do ("tomorrow 3pm call Ali", "星期五下午三点", "esok pukul 2"). Returns {due, at}; empty when none. */
+  var WDAY = {sun: 0, sunday: 0, mon: 1, monday: 1, tue: 2, tues: 2, tuesday: 2, wed: 3, wednesday: 3, thu: 4, thur: 4, thurs: 4, thursday: 4, fri: 5, friday: 5, sat: 6, saturday: 6, ahad: 0, isnin: 1, selasa: 2, rabu: 3, khamis: 4, jumaat: 5, sabtu: 6};
+  var CNUM = {'一': 1, '二': 2, '两': 2, '三': 3, '四': 4, '五': 5, '六': 6, '七': 7, '八': 8, '九': 9, '十': 10, '十一': 11, '十二': 12};
+  function todoWhen(text, nowMs) {
+    var s = String(text || '').toLowerCase(), today = mytDay(nowMs), noon = Date.parse(today + 'T12:00:00+08:00'), due = '', at = '';
+    var plus = function (n) { return mytDay(noon + n * 864e5); }, cur = new Date(noon + 8 * 3600e3).getUTCDay();
+    if (/day after tomorrow|后天|lusa/.test(s)) due = plus(2);
+    else if (/tomorrow|\btmr\b|\btmrw\b|明天|明日|\besok\b/.test(s)) due = plus(1);
+    else if (/today|tonight|今天|今晚|今日|hari ini|malam ini/.test(s)) due = today;
+    else {
+      var m = /\b(next\s+)?(sun(?:day)?|mon(?:day)?|tue(?:s|sday)?|wed(?:nesday)?|thu(?:rs?|rsday)?|fri(?:day)?|sat(?:urday)?|ahad|isnin|selasa|rabu|khamis|jumaat|sabtu)\b/.exec(s);
+      var c = /(下个?|这个?)?(?:星期|礼拜|周)([一二三四五六日天])/.exec(s);
+      var wd = m ? WDAY[m[2]] : c ? '日一二三四五六天'.indexOf(c[2]) % 7 : -1;
+      if (wd >= 0) {
+        if (c && /下/.test(c[1] || '')) due = plus(7 - (cur + 6) % 7 + (wd + 6) % 7);   // 下星期X: in next week (Mon-Sun)
+        else due = plus((wd - cur + 7) % 7 || 7);                                     // the coming one
+      } else {
+        var dm = /\b(\d{1,2})\/(\d{1,2})\b/.exec(s);
+        if (dm && +dm[2] >= 1 && +dm[2] <= 12 && +dm[1] >= 1 && +dm[1] <= 31) {
+          var y = +today.slice(0, 4), k = y + '-' + ('0' + dm[2]).slice(-2) + '-' + ('0' + dm[1]).slice(-2);
+          due = isDate(k) ? (k < today ? (y + 1) + k.slice(4) : k) : '';
+        }
+      }
+    }
+    var h = -1, mi = 0, pm = null, t;
+    if ((t = /\b(\d{1,2})(?:[:.](\d{2}))?\s*(am|pm|a\.m\.|p\.m\.)/.exec(s))) { h = +t[1]; mi = +(t[2] || 0); pm = t[3].charAt(0) === 'p'; }
+    else if ((t = /(早上|上午|中午|下午|晚上|傍晚|凌晨)?\s*(\d{1,2}|十[一二]?|[一二两三四五六七八九十])\s*[点點](半|(\d{1,2})\s*分?)?/.exec(s))) {
+      h = /\d/.test(t[2]) ? +t[2] : CNUM[t[2]]; mi = t[3] === '半' ? 30 : +(t[4] || 0);
+      pm = /下午|晚上|傍晚/.test(t[1] || '') ? true : /早上|上午|凌晨/.test(t[1] || '') ? false : t[1] === '中午' ? h < 6 : null;
+    }
+    else if ((t = /\bpukul\s*(\d{1,2})(?:[:.](\d{2}))?\s*(pagi|tengah hari|petang|malam)?/.exec(s))) { h = +t[1]; mi = +(t[2] || 0); pm = t[3] ? t[3] !== 'pagi' && !(t[3] === 'tengah hari' && h >= 11) : null; }
+    else if ((t = /\b([01]?\d|2[0-3]):([0-5]\d)\b/.exec(s))) { h = +t[1]; mi = +t[2]; pm = h >= 12 ? null : h < 8 ? true : null; }
+    if (h >= 0 && h <= 23 && mi < 60) {
+      if (pm === true && h < 12) h += 12; else if (pm === false && h === 12) h = 0; else if (pm === null && h >= 1 && h < 8) h += 12;   // "3点" = 3pm (work hours)
+      at = ('0' + h).slice(-2) + ':' + ('0' + mi).slice(-2);
+      if (!due) due = Date.parse(today + 'T' + at + ':00+08:00') > nowMs ? today : plus(1);
+    }
+    return {due: due, at: at};
   }
   function todoDel(q, store, me) {
     var rows = store.load('todos'), keep = rows.filter(function (r) { return !(r.id === q.id && r.ownerId === me.id); });
@@ -1187,7 +1237,39 @@ var CORE = (function () {
       } else if (!e.rep && now >= st + 10 * 60e3) { e.remSent = 'past'; sent++; }
     });
     if (sent) store.save('events', rows);
-    return {sent: sent};
+    var tds = store.load('todos'), tsent = 0, day = mytDay(now);
+    tds.forEach(function (x) {
+      if (x.kind === 'note' || !x.at) return;
+      var on = x.daily === '1' ? day : x.due; if (!on || on !== day) return;
+      if (x.daily === '1' ? x.done && mytDay(Date.parse(x.done)) === day : x.done) return;
+      if (x.remSent === day) return;
+      var t = Date.parse(day + 'T' + x.at + ':00+08:00');
+      if (now >= t - 60e3 && now < t + 30 * 60e3) {
+        store.push([x.ownerId], {title: (x.daily === '1' ? '🔁 ' : '☑️ ') + 'To-do: ' + str(x.text, 80), body: x.at + (x.notes ? ' · ' + str(x.notes, 100) : '') + ' · Tap ✅ when it is done', tag: 'td-' + x.id, url: '#/todo'});
+        x.remSent = day; tsent++;
+      }
+    });
+    if (tsent) store.save('todos', tds);
+    return {sent: sent + tsent};
+  }
+  /* Sales appointments (presentation / follow-up, join field too): 3 days and 1 day before, remind the AGENT to remind the prospect. */
+  var ONFIELD_URL = 'https://wkahjian93.github.io/policy-summary-power-tools/';
+  function salesKind(e) { return e.type === 'present' || e.type === 'followup' ? e.type : e.type === 'joinfield' ? (e.jfKind || 'present') : ''; }
+  function prospectReminders(store) {
+    var now = store.now().getTime(), today = mytDay(now), n = 0, active = {};
+    store.load('members').forEach(function (m) { if (String(m.active) !== 'false') active[m.id] = 1; });
+    [3, 1].forEach(function (days) {
+      var k = mytDay(Date.parse(today + 'T12:00:00+08:00') + days * 864e5), a = Date.parse(k + 'T00:00:00+08:00');
+      store.load('events').forEach(function (e) {
+        var kind = salesKind(e); if (!kind || e.out === 'cancel' || e.out) return;
+        var occ = occurrences(e, a, a + 864e5).filter(function (o) { return mytDay(o.s) === k; })[0]; if (!occ) return;
+        var who = creditId(e); if (!active[who]) return;
+        var p = new Date(occ.s + 8 * 3600e3), wd = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][p.getUTCDay()];
+        var time = e.allDay === 'true' ? '' : ' ' + (p.getUTCHours() % 12 || 12) + ':' + ('0' + p.getUTCMinutes()).slice(-2) + (p.getUTCHours() < 12 ? 'am' : 'pm');
+        store.push([who], {title: '📞 Remind your prospect: ' + (days === 1 ? 'tomorrow' : 'in 3 days'), body: str(e.title, 80) + ' · ' + wd + ' ' + p.getUTCDate() + '/' + (p.getUTCMonth() + 1) + time + '. Send a quick WhatsApp so they keep the ' + (kind === 'followup' ? 'follow-up' : 'presentation') + '.', tag: 'pr-' + e.id + '-' + days, url: '#/e/' + e.id}); n++;
+      });
+    });
+    return n;
   }
   function dayEvents(store, memberId, dayKey, msgs) {
     msgs = msgs || store.load('msgs');
@@ -1200,9 +1282,12 @@ var CORE = (function () {
     var now = store.now().getTime(), day = mytDay(now), n = 0, tomorrow = mytDay(now + 864e5);
     var lastMonth = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'][(new Date(now + 8 * 3600e3).getUTCMonth() + 11) % 12];
     var bdays = store.load('members').filter(function (x) { return String(x.active) !== 'false' && x.bday === day.slice(5); }).map(function (x) { return {id: x.id, name: shortOf(x)}; });
+    var tdAll = store.load('todos'), pr = prospectReminders(store);
     store.load('members').forEach(function (m) {
       if (String(m.active) === 'false') return;
       var list = dayEvents(store, m.id, day), extra = [];
+      var tdN = tdAll.filter(function (x) { return x.ownerId === m.id && x.kind !== 'note' && !x.done && x.daily !== '1' && x.due && x.due <= day; }).length;
+      if (tdN) extra.push('☑️ ' + tdN + ' to-do' + (tdN > 1 ? 's' : '') + ' for today');
       holidaysOn(day).forEach(function (h) { extra.push(h.icon + ' Today: ' + h.name); });
       holidaysOn(tomorrow).forEach(function (h) { if (h.kind === 'ph' || /Valentine|Mother|Father|妇女节|Qingming/.test(h.name)) extra.push(h.icon + ' Tomorrow: ' + h.name); });
       bdays.forEach(function (b) { if (b.id !== m.id) extra.push('🎂 ' + b.name + '’s birthday today!'); else extra.unshift('🎂 Happy birthday, ' + b.name + '! 🎉'); });
@@ -1211,7 +1296,7 @@ var CORE = (function () {
       var timed = list.filter(function (e) { return e.allDay !== 'true'; })[0] || list[0];
       store.push([m.id], {title: list.length ? '☀️ Today: ' + list.length + ' event' + (list.length > 1 ? 's' : '') : extra[0], body: (timed ? 'First: ' + timed.title + ' · ' + whenText(timed).split(', ').pop() : '') + (extra.length ? (timed ? ' · ' : '') + extra.slice(list.length ? 0 : 1).join(' · ') : ''), tag: 'today', url: '#/'}); n++;
     });
-    return {sent: n};
+    return {sent: n, prospect: pr};
   }
   function evening(store) {
     var now = store.now().getTime(), day = mytDay(now), n = 0;
@@ -1291,7 +1376,7 @@ var CORE = (function () {
   }
 
   return {TABLES: TABLES, TYPES: TYPES, TYPE_ORDER: TYPE_ORDER, PROSPECT: PROSPECT, COLORS: COLORS, REMIND: REMIND,
-    handle: handle, voiceToEvent: voiceToEvent, feedIcs: feedIcs, parseVoice: parseVoice, voicePrompt: voicePrompt, parseThemeAI: parseThemeAI, isOwner: isOwner, rankOf: rankOf, OCCASIONS: OCCASIONS, ANIMS: ANIMS, tick: tick, occurrences: occurrences, holidaysOn: holidaysOn, schoolHoliday: schoolHoliday, HOLIDAYS: HOLIDAYS, defaultShort: defaultShort, answers: answers, attendance: attendance, TEAM_REMIND: TEAM_REMIND, cents: cents, MODES: MODES, casesOf: casesOf, commentTargets: commentTargets, isAll: isAll, MAX_NOC: MAX_NOC, morning: morning, evening: evening, detectType: detectType, stats: stats, addStats: addStats,
+    handle: handle, voiceToEvent: voiceToEvent, feedIcs: feedIcs, parseVoice: parseVoice, voicePrompt: voicePrompt, parseThemeAI: parseThemeAI, isOwner: isOwner, rankOf: rankOf, todoWhen: todoWhen, salesKind: salesKind, ONFIELD_URL: ONFIELD_URL, prospectReminders: prospectReminders, OCCASIONS: OCCASIONS, ANIMS: ANIMS, tick: tick, occurrences: occurrences, holidaysOn: holidaysOn, schoolHoliday: schoolHoliday, HOLIDAYS: HOLIDAYS, defaultShort: defaultShort, answers: answers, attendance: attendance, TEAM_REMIND: TEAM_REMIND, cents: cents, MODES: MODES, casesOf: casesOf, commentTargets: commentTargets, isAll: isAll, MAX_NOC: MAX_NOC, morning: morning, evening: evening, detectType: detectType, stats: stats, addStats: addStats,
     ratios: ratios, parseRead: parseRead, parseICS: parseICS, similarTitle: similarTitle, textPrompt: textPrompt, creditId: creditId, jfKindOf: jfKindOf, readPrompt: readPrompt, startMs: startMs, endMs: endMs, myt: myt, whenText: whenText};
 })();
 if (typeof module !== 'undefined') module.exports = CORE;
