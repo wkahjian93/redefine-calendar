@@ -10,7 +10,7 @@
    transcribe(audioBase64, mime, hint) -> text, putFile(id, mime, base64) / getFile(id) -> {mime, data} / delFile(id). */
 var CORE = (function () {
   var TABLES = {
-    members: ['id', 'name', 'pin', 'role', 'color', 'created', 'active', 'partner', 'partnerReq', 'short', 'photoV', 'bday', 'pinTemp', 'feed', 'merges', 'chipOrder', 'rank', 'unit', 'prCode', 'prSince'],
+    members: ['id', 'name', 'pin', 'role', 'color', 'created', 'active', 'partner', 'partnerReq', 'short', 'photoV', 'bday', 'pinTemp', 'feed', 'merges', 'chipOrder', 'rank', 'unit', 'prCode', 'prSince', 'bdayYear'],
     photos: ['memberId', 'data', 'updated'],
     sessions: ['token', 'memberId', 'created', 'lastSeen', 'device'],
     events: ['id', 'ownerId', 'title', 'type', 'start', 'end', 'allDay', 'place', 'notes', 'vis', 'with', 'remind', 'count', 'out', 'anp', 'source', 'remSent', 'created', 'updated', 'noc', 'all', 'cases', 'rep', 'repEnd', 'jfKind', 'agentId', 'skip'],
@@ -321,7 +321,7 @@ var CORE = (function () {
       todos: store.load('todos').filter(function (t) { return t.ownerId === me.id; }).slice(-1000),
       goals: store.load('goals').filter(function (g) { return g.memberId === me.id; }),
       themesOn: themesOn(store), themes: liveThemes(store),
-      me: {id: me.id, name: me.name, prLinked: !!me.prCode, prSince: me.prSince || '', owner: isOwner(me, store), merges: str(me.merges, 400), chipOrder: str(me.chipOrder, 1500), short: shortOf(me), bday: me.bday || '', mustChange: me.pinTemp === 'true', shortSet: !!me.short, photoV: me.photoV || '', role: me.role, rank: myRank, unit: me.unit || '', color: me.color, leader: leader, devices: myDevices, partner: me.partner || '', partnerReq: me.partnerReq || '',
+      me: {id: me.id, name: me.name, prLinked: !!me.prCode, prSince: me.prSince || '', owner: isOwner(me, store), merges: str(me.merges, 400), chipOrder: str(me.chipOrder, 1500), short: shortOf(me), bday: me.bday || '', bdayYear: me.bdayYear || '', mustChange: me.pinTemp === 'true', shortSet: !!me.short, photoV: me.photoV || '', role: me.role, rank: myRank, unit: me.unit || '', color: me.color, leader: leader, devices: myDevices, partner: me.partner || '', partnerReq: me.partnerReq || '',
         partnerAsks: members.filter(function (m) { return m.partnerReq === me.id && String(m.active) !== 'false'; }).map(function (m) { return m.id; })},
       members: members.filter(function (m) { return String(m.active) !== 'false' || leader; }).map(function (m) {
         var o = {id: m.id, name: m.name, short: shortOf(m), role: m.role, color: m.color, active: String(m.active) !== 'false', partner: m.partner || '', photoV: m.photoV || '', bday: m.bday || '', rank: rankOf(m, oid), unit: m.unit || ''}; if (seeSeen(m)) o.seen = seen[m.id] || ''; return o;
@@ -775,7 +775,13 @@ var CORE = (function () {
   }
   function profile(q, store, me) {
     var rows = store.load('members'), my = rows.filter(function (m) { return m.id === me.id; })[0], out = {};
-    if (q.bday != null) { var bd = str(q.bday, 5); if (bd && !(/^\d{2}-\d{2}$/.test(bd) && isDate('2024-' + bd))) fail('bad_date'); my.bday = bd; out.bday = bd; }
+    if (q.bday != null) {
+      var full = str(q.bday, 10), yr = '', bd = full;
+      if (/^\d{4}-\d{2}-\d{2}$/.test(full)) { if (!isDate(full)) fail('bad_date'); yr = full.slice(0, 4); bd = full.slice(5); if (+yr < 1900 || full > mytDay(store.now().getTime())) fail('bad_date'); }
+      else bd = str(q.bday, 5);
+      if (bd && !(/^\d{2}-\d{2}$/.test(bd) && isDate('2024-' + bd))) fail('bad_date');
+      my.bday = bd; my.bdayYear = bd ? yr : ''; out.bday = bd; out.bdayYear = my.bdayYear;
+    }
     if (q.merges != null) { var mg = str(q.merges, 400); if (mg && !/^[a-z0-9]+(\.[a-z0-9]+)*(,[a-z0-9]+(\.[a-z0-9]+)*)*$/.test(mg)) fail('bad_request'); my.merges = mg; out.merges = mg; }   // kept chips; "a.b" = me + several people
     if (q.chipOrder != null) { var co = str(q.chipOrder, 1500); if (co && !/^[a-z0-9]+(,[a-z0-9]+)*$/.test(co)) fail('bad_request'); my.chipOrder = co; out.chipOrder = co; }   // my order of the people chips
     if (q.color != null) { var c = str(q.color, 7); if (!/^#[0-9A-Fa-f]{6}$/.test(c)) fail('bad_request'); my.color = c; out.color = c; }
@@ -1450,7 +1456,7 @@ var CORE = (function () {
   }
 
   return {TABLES: TABLES, TYPES: TYPES, TYPE_ORDER: TYPE_ORDER, PROSPECT: PROSPECT, COLORS: COLORS, REMIND: REMIND,
-    handle: handle, prApply: prApply, prCollectAll: prCollectAll, voiceToEvent: voiceToEvent, feedIcs: feedIcs, parseVoice: parseVoice, voicePrompt: voicePrompt, parseThemeAI: parseThemeAI, isOwner: isOwner, rankOf: rankOf, todoWhen: todoWhen, salesKind: salesKind, ONFIELD_URL: ONFIELD_URL, prospectReminders: prospectReminders, OCCASIONS: OCCASIONS, ANIMS: ANIMS, tick: tick, occurrences: occurrences, holidaysOn: holidaysOn, schoolHoliday: schoolHoliday, HOLIDAYS: HOLIDAYS, defaultShort: defaultShort, answers: answers, attendance: attendance, TEAM_REMIND: TEAM_REMIND, cents: cents, MODES: MODES, casesOf: casesOf, commentTargets: commentTargets, isAll: isAll, MAX_NOC: MAX_NOC, morning: morning, evening: evening, detectType: detectType, stats: stats, addStats: addStats,
+    handle: handle, prApply: prApply, prCollectAll: prCollectAll, voiceToEvent: voiceToEvent, feedIcs: feedIcs, parseVoice: parseVoice, voicePrompt: voicePrompt, parseThemeAI: parseThemeAI, isOwner: isOwner, rankOf: rankOf, mytDay: mytDay, todoWhen: todoWhen, salesKind: salesKind, ONFIELD_URL: ONFIELD_URL, prospectReminders: prospectReminders, OCCASIONS: OCCASIONS, ANIMS: ANIMS, tick: tick, occurrences: occurrences, holidaysOn: holidaysOn, schoolHoliday: schoolHoliday, HOLIDAYS: HOLIDAYS, defaultShort: defaultShort, answers: answers, attendance: attendance, TEAM_REMIND: TEAM_REMIND, cents: cents, MODES: MODES, casesOf: casesOf, commentTargets: commentTargets, isAll: isAll, MAX_NOC: MAX_NOC, morning: morning, evening: evening, detectType: detectType, stats: stats, addStats: addStats,
     ratios: ratios, parseRead: parseRead, parseICS: parseICS, similarTitle: similarTitle, textPrompt: textPrompt, creditId: creditId, jfKindOf: jfKindOf, readPrompt: readPrompt, startMs: startMs, endMs: endMs, myt: myt, whenText: whenText};
 })();
 

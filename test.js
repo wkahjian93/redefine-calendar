@@ -821,6 +821,22 @@ function fresh() {
   ok(CORE.salesKind({type: 'followup'}) === 'followup' && CORE.salesKind({type: 'meeting'}) === '', 'sales kinds');
 }
 
+/* ---------- birthday: the year is kept for me only ---------- */
+{
+  const {s, h, join} = fresh();
+  const a = join('Year Keeper'), b = join('Team Mate');
+  const r = h({op: 'profile', token: a.token, bday: '1996-03-15'});
+  ok(r.bday === '03-15' && r.bdayYear === '1996', 'birthday saved with its year');
+  const mine = h({op: 'sync', token: a.token}).me, theirs = h({op: 'sync', token: b.token}).members.filter(m => m.id === a.me.id)[0];
+  ok(mine.bday === '03-15' && mine.bdayYear === '1996', 'I see my birthday year (no more 2000)');
+  ok(theirs.bday === '03-15' && !('bdayYear' in theirs), 'the team sees only day and month');
+  h({op: 'profile', token: a.token, bday: '04-20'});
+  ok(h({op: 'sync', token: a.token}).me.bdayYear === '', 'old phones (day-month only) still work');
+  throws(() => h({op: 'profile', token: a.token, bday: '2030-01-01'}), 'bad_date', 'birthday in the future refused');
+  h({op: 'profile', token: a.token, bday: ''});
+  ok(h({op: 'sync', token: a.token}).me.bday === '' && h({op: 'sync', token: a.token}).me.bdayYear === '', 'remove clears the year too');
+}
+
 { const fs = require('fs'), v = JSON.parse(fs.readFileSync(__dirname + '/docs/version.json', 'utf8')).v, m = /APP_VERSION = '([0-9]+)'/.exec(fs.readFileSync(__dirname + '/docs/app.js', 'utf8'));
   ok(m && m[1] === v, 'docs/version.json (' + v + ') matches APP_VERSION (' + (m && m[1]) + ')'); }
 

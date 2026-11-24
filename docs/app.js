@@ -7,7 +7,7 @@
   var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   var MONTH = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   var DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  var APP_VERSION = '65';
+  var APP_VERSION = '66';
   var H8 = 8 * 3600e3, DAY = 864e5, SELLING = {approach: 1, open: 1, present: 1, followup: 1, close: 1, joinfield: 1, recruit: 1};
 
   /* ---------- storage (each phone) ---------- */
@@ -274,7 +274,7 @@
       } else d.msgs.push({id: tmp, to: q.to, from: my, kind: 'text', text: q.text, created: now});
     };
     if (op === 'delmsg') return function (d) { d.msgs = d.msgs.filter(function (m) { return m.id !== q.id; }); };
-    if (op === 'profile' && q.bday != null) return function (d) { d.me.bday = q.bday; d.members.forEach(function (m) { if (m.id === my) m.bday = q.bday; }); };
+    if (op === 'profile' && q.bday != null) return function (d) { var b = String(q.bday), md = b.length === 10 ? b.slice(5) : b; d.me.bday = md; d.me.bdayYear = md && b.length === 10 ? b.slice(0, 4) : ''; d.members.forEach(function (m) { if (m.id === my) m.bday = md; }); };
     if (op === 'profile') return function (d) { [d.me].concat(d.members.filter(function (m) { return m.id === my; })).forEach(function (m) { if (q.color) m.color = q.color; if (q.short) { m.short = q.short; d.me.shortSet = true; } }); };
     if (op === 'todo') return function (d) {
       var it = q.item; d.todos = d.todos || []; var ex = d.todos.filter(function (x) { return x.id === it.id; })[0], note = ex ? ex.kind === 'note' : it.kind === 'note';
@@ -1844,7 +1844,7 @@
       '<div class="card"><h4>My short name</h4><p class="tiny muted">What the team sees on chips, Team day, attendance and the close case list. Avoid surnames, e.g. KJ, MJ, Rex.</p><div class="row"><input id="shortin" maxlength="12" value="' + esc(me().short || '') + '" placeholder="e.g. KJ" style="flex:1;min-width:120px"><button class="btn primary" data-act="short">Save</button></div>' + (!me().shortSet ? '<p class="tiny warn-t">Suggested from your name. Change it if you like, then tap Save.</p>' : '') + '</div>' +
       '<div class="card who-photo"><h4>My photo</h4>' + avatar(m, 'xl') + '<p class="tiny muted">Your face shows on the calendar, Team day and the board so everyone knows it’s you.</p><label class="btn primary file">📷 ' + (m.photoV ? 'Change photo' : 'Upload my photo') + '<input type="file" accept="image/*" data-act="pick-photo" hidden></label></div>' +
       '<div class="card"><h4>Notifications</h4>' + push + '</div>' +
-      '<div class="card"><h4>🎂 My birthday</h4><p class="tiny muted">The team sees it on the calendar and gets a reminder on the day. Only the day and month are shared.</p><div class="row"><input id="bdayin" type="date" value="' + (m.bday ? '2000-' + m.bday : '') + '" style="flex:1;min-width:150px"><button class="btn primary" data-act="bdaysave">Save</button>' + (m.bday ? '<button class="btn ghost" data-act="bdayclear">Remove</button>' : '') + '</div></div>' +
+      '<div class="card"><h4>🎂 My birthday</h4><p class="tiny muted">The team sees it on the calendar and gets a reminder on the day. Only the day and month are shared; your year stays private.</p><div class="row"><input id="bdayin" type="date" value="' + (m.bday ? (m.bdayYear || '2000') + '-' + m.bday : '') + '" max="' + dayKey(Date.now()) + '" style="flex:1;min-width:150px"><button class="btn primary" data-act="bdaysave">Save</button>' + (m.bday ? '<button class="btn ghost" data-act="bdayclear">Remove</button>' : '') + '</div></div>' +
       peopleCard() +
       partnerCard() +
       prospectingCard() +
@@ -2158,7 +2158,7 @@
 
     if (a === 'goalp') { S.goalP = +b.dataset.i; return render(); }
     if (a === 'goalsave') { var gv = (document.getElementById('goalin') || {}).value || ''; if (gv !== '' && !(+gv >= 0)) return toast('Type the ANP goal in RM.', 'bad'); S.prog = null; return send('goal', {key: b.dataset.key, anp: gv === '' ? '' : Math.round(+gv)}, gv === '' ? 'Goal removed' : '🎯 Goal saved'); }
-    if (a === 'bdaysave') { var bv = (document.getElementById('bdayin') || {}).value || ''; if (!bv) return toast('Pick your birthday first.', 'bad'); return send('profile', {bday: bv.slice(5)}, '🎂 Birthday saved'); }
+    if (a === 'bdaysave') { var bv = (document.getElementById('bdayin') || {}).value || ''; if (!bv) return toast('Pick your birthday first.', 'bad'); return send('profile', {bday: bv}, '🎂 Birthday saved'); }
     if (a === 'bdayclear') return send('profile', {bday: ''}, 'Removed');
     if (a === 'person-del') return confirmBox('Remove this?', 'It will no longer repeat every year.', 'Remove', true).then(function (y) { if (y) send('del', {id: b.dataset.id}, 'Removed'); });
     if (a === 'filter' && b.dataset.id === 'pick') return pickMerge();
@@ -2245,6 +2245,18 @@
     }
     if (b.dataset.mid) return;
   });
+  function fileChosen(t) {
+    if (!t.files || !t.files.length) return false;
+    if (t.dataset.act === 'pick-photo') { uploadPhoto(t.files[0]); t.value = ''; return true; }
+    if (t.dataset.act === 'pick-photos') { readPhotos(t.files); t.value = ''; return true; }
+    if (t.dataset.act === 'pick-ics') { readIcs(t.files[0]); t.value = ''; return true; }
+    return false;
+  }
+  document.addEventListener('click', function (ev) {
+    var t = ev.target;
+    if (!t || t.tagName !== 'INPUT' || t.type !== 'file' || t._fc) return;
+    t._fc = 1; t.addEventListener('change', function () { if (fileChosen(t)) t._picked = 1; });
+  }, true);
   document.addEventListener('change', function (ev) {
     var t = ev.target;
     if (t.dataset.act === 'place') {
@@ -2253,9 +2265,8 @@
       if (pm.rank === 'um' && !body.rank && members().some(function (x) { return x.unit === pm.id; })) return confirmBox('Stop ' + pm.name + ' leading a unit?', 'Their agents will show "unit not set" until you give them a unit again.', 'Yes').then(function (y) { if (y) send('member', body, msg); else render(); });
       return send('member', body, msg);
     }
-    if (t.dataset.act === 'pick-photo') { if (t.files[0]) uploadPhoto(t.files[0]); t.value = ''; return; }
-    if (t.dataset.act === 'pick-photos') { readPhotos(t.files); t.value = ''; return; }
-    if (t.dataset.act === 'pick-ics') { if (t.files[0]) readIcs(t.files[0]); t.value = ''; return; }
+    if (t._picked) { t._picked = 0; return; }   // already handled on the input itself
+    if (fileChosen(t)) return;
     var row = t.closest && t.closest('.imp');
     if (row && t.dataset.imp) {
       var r = S.importRows[+row.dataset.i], k = t.dataset.imp;
