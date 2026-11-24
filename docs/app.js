@@ -7,7 +7,7 @@
   var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   var MONTH = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   var DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  var APP_VERSION = '67';
+  var APP_VERSION = '68';
   var H8 = 8 * 3600e3, DAY = 864e5, SELLING = {approach: 1, open: 1, present: 1, followup: 1, close: 1, joinfield: 1, recruit: 1};
 
   /* ---------- storage (each phone) ---------- */
@@ -2449,12 +2449,25 @@
     // The physical screen size is never wrong: when the app fills the screen and no keyboard is up, the frame IS the screen.
     var full = fullScreenH();
     if (full && !typing) { top = 0; h = full; }
-    FRAME.full = full; FRAME.vv = Math.round(v.height); FRAME.ih = window.innerHeight;
+    // iPhone Safari 26+ (not the Home Screen app): the floating toolbar at the bottom is drawn OVER the page, and the
+    // viewport iOS reports runs underneath it. Stop the app above the toolbar so the tabs, the day panel and the
+    // sheet buttons (Add to calendar) can be seen and tapped.
+    var bar = safariBar();
+    var kbUp = typing && Math.round(v.height) < window.innerHeight - 120;   // a field can be selected with no keyboard (Repeat, Remind me): still keep clear of the toolbar
+    if (bar && !kbUp) h -= bar;
+    FRAME.bar = bar; FRAME.full = full; FRAME.vv = Math.round(v.height); FRAME.ih = window.innerHeight;
     var kb = typing && h < window.innerHeight - 120;                  // keyboard is up: hide the bottom bar, the frame ends at the keyboard
     if (top !== FRAME.top) { FRAME.top = top; root.style.setProperty('--frame-top', top + 'px'); }
     if (h !== FRAME.h) { FRAME.h = h; root.style.setProperty('--frame-h', h + 'px'); }
     if (kb !== FRAME.kb) { FRAME.kb = kb; root.classList.toggle('kb', kb); }
     if (!typing && (window.scrollY || window.scrollX)) window.scrollTo(0, 0);
+  }
+  var SAFARI_BAR = 64;   // the iOS 26 floating Safari toolbar with its gap (about 60 pt)
+  function safariVersion() { var ua = navigator.userAgent || ''; if (!/iphone|ipod/i.test(ua) || /CriOS|FxiOS|EdgiOS|OPiOS/i.test(ua)) return 0; var m = /Version\/(\d+)/.exec(ua); return m ? +m[1] : 0; }
+  function safariBar() {
+    if (standalone() || safariVersion() < 26) return 0;
+    var portrait = window.matchMedia ? matchMedia('(orientation: portrait)').matches : innerHeight >= innerWidth;
+    return portrait ? SAFARI_BAR : 0;   // landscape: the toolbar is at the top
   }
   function fullScreenH() {
     if (navigator.standalone !== true || !window.screen) return 0;             // only the iPhone/iPad Home Screen app has this bug
@@ -2463,13 +2476,20 @@
     var W = portrait ? sw : sh, H = portrait ? sh : sw;
     return Math.abs(window.innerWidth - W) <= 2 ? H : 0;                      // not full width (iPad split view): trust the browser
   }
-  function frameInfo() { var F = FRAME || {}; return 'Screen ' + (F.full || '–') + ' · view ' + (F.ih || innerHeight) + ' · visible ' + (F.vv || '–') + ' · app ' + (F.h > 0 ? F.h : '–') + ' · page ' + document.documentElement.offsetHeight; }
+  function frameInfo() { var F = FRAME || {}; return (F.bar ? 'Safari bar ' + F.bar + ' · ' : '') + 'Screen ' + (F.full || '–') + ' · view ' + (F.ih || innerHeight) + ' · visible ' + (F.vv || '–') + ' · app ' + (F.h > 0 ? F.h : '–') + ' · page ' + document.documentElement.offsetHeight; }
   function fitSoon() { fitFrame(); setTimeout(fitFrame, 60); setTimeout(fitFrame, 350); setTimeout(fitFrame, 800); }
   if (window.visualViewport) { visualViewport.addEventListener('resize', fitFrame); visualViewport.addEventListener('scroll', fitFrame); }
   ['resize', 'orientationchange', 'pageshow', 'focus'].forEach(function (ev) { window.addEventListener(ev, fitSoon); });
   document.addEventListener('focusin', fitSoon); document.addEventListener('focusout', fitSoon);
   setInterval(fitFrame, 1000);
   fitFrame();
+  setTimeout(function () {   // iPhone in Safari: once, suggest the Home Screen app (full screen + pop-ups)
+    try {
+      if (!isIOS() || standalone() || LS.get('homeTip', 0) || !(S.data && S.data.me) || document.getElementById('modal-root').className) return;
+      LS.set('homeTip', 1);
+      modal('<h3>📲 Use it as an app</h3><p class="muted">You are using REDEFINE Calendar inside Safari. Put it on your home screen: it opens full screen (no Safari bar covering buttons) and you can get pop-up reminders.</p>' + installHelp(false).replace(/^<h3>[^<]*<\/h3>/, ''));
+    } catch (x) {}
+  }, 2500);
   document.addEventListener('visibilitychange', function () { if (!document.hidden) { fitSoon(); quietSync(); checkUpdate(); } });
   window.addEventListener('pageshow', function (e) { if (e.persisted) { quietSync(); checkUpdate(); } });
   window.addEventListener('online', function () { quietSync(); });
