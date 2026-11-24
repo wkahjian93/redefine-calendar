@@ -622,3 +622,9 @@ html[data-celebrate] .calhead { background: color-mix(in srgb, var(--bg) 92%, tr
 .daily-chk:has(input:checked) { border-color: var(--coral); background: rgba(229,72,77,.06); }
 .td-when input[type=time], .td-when input[type=date] { min-width: 0; }
 .card.wow { border: 1.5px solid #F2C200; background: linear-gradient(180deg, rgba(242,194,0,.10), transparent); }
+
+.crop-view { position: relative; margin: 10px auto 6px; overflow: hidden; border-radius: 16px; background: #111; touch-action: none; user-select: none; -webkit-user-select: none; cursor: grab; max-width: 100%; }
+.crop-view:active { cursor: grabbing; }
+.crop-img { position: absolute; left: 0; top: 0; max-width: none; transform-origin: 0 0; pointer-events: none; -webkit-user-drag: none; }
+.crop-ring { position: absolute; inset: 0; border-radius: 50%; box-shadow: 0 0 0 999px rgba(0,0,0,.55); border: 2px solid rgba(255,255,255,.9); pointer-events: none; }
+.crop-zoom { display: flex; align-items: center; gap: 10px; margin: 8px auto 4px; max-width: 280px; } .crop-zoom span { color: var(--muted); font-weight: 700; } .crop-zoom input { flex: 1; padding: 0; border: 0; background: none; accent-color: var(--coral); }

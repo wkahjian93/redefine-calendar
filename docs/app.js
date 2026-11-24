@@ -7,7 +7,7 @@
   var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   var MONTH = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   var DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  var APP_VERSION = '66';
+  var APP_VERSION = '67';
   var H8 = 8 * 3600e3, DAY = 864e5, SELLING = {approach: 1, open: 1, present: 1, followup: 1, close: 1, joinfield: 1, recruit: 1};
 
   /* ---------- storage (each phone) ---------- */
@@ -1892,19 +1892,72 @@
       '<p class="tiny muted">Photos are read by AI on REDEFINE\'s server and not stored. Tip: blur or crop out client phone numbers / IC first.</p></main>';
   }
   /* portrait: centre square, 192 px JPEG (about 10 KB) */
+  /* Pick a photo -> crop it (drag to move, pinch / slider to zoom) inside a circle -> 192 px JPEG */
   function uploadPhoto(file) {
     var img = new Image(), url = URL.createObjectURL(file);
-    img.onload = function () {
-      var s = Math.min(img.width, img.height), c = document.createElement('canvas'); c.width = c.height = 192;
-      c.getContext('2d').drawImage(img, (img.width - s) / 2, (img.height - s) / 2, s, s, 0, 0, 192, 192);
-      URL.revokeObjectURL(url);
+    img.onload = function () { cropPhoto(img, url); };
+    img.onerror = function () { URL.revokeObjectURL(url); toast('That picture could not be read.', 'bad'); };
+    img.src = url;
+  }
+  function cropPhoto(img, url) {
+    var W0 = img.naturalWidth || img.width, H0 = img.naturalHeight || img.height, V = 260, base = V / Math.min(W0, H0), ZMAX = 5;
+    var st = {z: 1, x: 0, y: 0}, pts = {}, pinch = null;
+    modal('<div class="row between"><h3>Adjust your photo</h3><button type="button" class="icon-btn" data-x="no" aria-label="Close">✕</button></div>' +
+      '<p class="tiny muted center">Drag to move · pinch or slide to zoom. Keep your face inside the circle.</p>' +
+      '<div class="crop-view" style="width:' + V + 'px;height:' + V + 'px"><img class="crop-img" alt="" draggable="false"><div class="crop-ring"></div></div>' +
+      '<div class="crop-zoom"><span>－</span><input type="range" min="1" max="' + ZMAX + '" step="0.01" value="1" aria-label="Zoom"><span>＋</span></div>' +
+      '<div class="row sheet-btns"><button type="button" class="btn ghost" data-x="no">Cancel</button><button type="button" class="btn primary big" data-x="ok">Save photo</button></div>', function (sh) {
+      var view = sh.querySelector('.crop-view'), im = sh.querySelector('.crop-img'), rng = sh.querySelector('input[type=range]');
+      im.src = url;
+      var clamp = function () {
+        st.z = Math.max(1, Math.min(ZMAX, st.z));
+        var mx = (W0 * base * st.z - V) / 2, my = (H0 * base * st.z - V) / 2;
+        st.x = Math.max(-mx, Math.min(mx, st.x)); st.y = Math.max(-my, Math.min(my, st.y));
+      };
+      var draw = function () {
+        clamp(); var w = W0 * base * st.z, h = H0 * base * st.z;
+        im.style.width = w + 'px'; im.style.height = h + 'px';
+        im.style.transform = 'translate(' + (V / 2 - w / 2 + st.x) + 'px,' + (V / 2 - h / 2 + st.y) + 'px)';
+        rng.value = st.z;
+      };
+      var zoomTo = function (z, cx, cy) {   // keep the point under the fingers still
+        var k = Math.max(1, Math.min(ZMAX, z)) / st.z; cx = cx == null ? 0 : cx; cy = cy == null ? 0 : cy;
+        st.x = cx - (cx - st.x) * k; st.y = cy - (cy - st.y) * k; st.z *= k; draw();
+      };
+      var rel = function (e) { var r = view.getBoundingClientRect(); return {x: e.clientX - r.left - V / 2, y: e.clientY - r.top - V / 2}; };
+      view.addEventListener('pointerdown', function (e) { e.preventDefault(); try { view.setPointerCapture(e.pointerId); } catch (x) {} pts[e.pointerId] = {x: e.clientX, y: e.clientY}; pinch = null; });
+      view.addEventListener('pointermove', function (e) {
+        var p0 = pts[e.pointerId]; if (!p0) return; e.preventDefault();
+        var ids = Object.keys(pts);
+        if (ids.length >= 2) {
+          pts[e.pointerId] = {x: e.clientX, y: e.clientY};
+          var a = pts[ids[0]], b = pts[ids[1]], d = Math.hypot(a.x - b.x, a.y - b.y), r = view.getBoundingClientRect(), mid = {x: (a.x + b.x) / 2 - r.left - V / 2, y: (a.y + b.y) / 2 - r.top - V / 2};
+          if (pinch) { st.x += mid.x - pinch.mid.x; st.y += mid.y - pinch.mid.y; zoomTo(st.z * d / pinch.d, mid.x, mid.y); }
+          pinch = {d: d || 1, mid: mid}; return;
+        }
+        st.x += e.clientX - p0.x; st.y += e.clientY - p0.y; pts[e.pointerId] = {x: e.clientX, y: e.clientY}; draw();
+      });
+      var up = function (e) { delete pts[e.pointerId]; pinch = null; };
+      view.addEventListener('pointerup', up); view.addEventListener('pointercancel', up); view.addEventListener('lostpointercapture', up);
+      view.addEventListener('wheel', function (e) { e.preventDefault(); var q = rel(e); zoomTo(st.z * (e.deltaY < 0 ? 1.1 : 1 / 1.1), q.x, q.y); }, {passive: false});
+      rng.addEventListener('input', function () { zoomTo(+rng.value); });
+      draw();
+      Array.prototype.forEach.call(sh.querySelectorAll('[data-x=no]'), function (b) { b.onclick = function () { closeModal(); URL.revokeObjectURL(url); }; });
+      sh.querySelector('[data-x=ok]').onclick = function () {
+        var k = base * st.z, s = V / k, sx = W0 / 2 - (V / 2 + st.x) / k, sy = H0 / 2 - (V / 2 + st.y) / k;
+        var c = document.createElement('canvas'); c.width = c.height = 192;
+        var g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, 192, 192); g.drawImage(img, sx, sy, s, s, 0, 0, 192, 192);
+        closeModal(); URL.revokeObjectURL(url); savePhoto(c);
+      };
+    });
+  }
+  function savePhoto(c) {
+    {
       var q = 0.82, data = c.toDataURL('image/jpeg', q).split(',')[1]; while (data.length > 55000 && q > 0.4) { q -= 0.1; data = c.toDataURL('image/jpeg', q).split(',')[1]; }
       var my = me().id, v = new Date().toISOString();
       photoCache[my] = {v: v, d: data};
       optimistic(function (dd) { dd.me.photoV = v; dd.members.forEach(function (x) { if (x.id === my) x.photoV = v; }); }, 'photo', {data: data}, 'Photo saved 📷', function (j) { photoCache[my] = {v: j.photoV, d: data}; S.data.me.photoV = j.photoV; S.data.members.forEach(function (x) { if (x.id === my) x.photoV = j.photoV; }); try { LS.set('photos', photoCache); } catch (x) {} });
-    };
-    img.onerror = function () { URL.revokeObjectURL(url); toast('That picture could not be read.', 'bad'); };
-    img.src = url;
+    }
   }
   function shrink(file) {
     return new Promise(function (ok, bad) {

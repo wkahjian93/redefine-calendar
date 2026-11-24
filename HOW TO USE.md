@@ -12,6 +12,8 @@
 
 **Set your short name:** Me → **My short name** (e.g. KJ, MJ, Rex). The team sees it on chips, Team day, attendance and the close case list, so no surnames get mixed up. Until you set it, the app suggests your given-name initials (WONG KAH JIAN → KJ).
 
+**Your photo:** Me → **My photo** → pick a photo. A round frame opens: **drag** to move it and **pinch** (or use the slider) to zoom until your face fills the circle, then tap **Save photo**.
+
 You stay signed in on that phone for good, like WhatsApp. Only two things sign you out: tapping **Sign out** on that phone, or a leader removing you. Changing the team code or losing signal never does.
 
 ## Every day (agents)
@@ -39,7 +41,7 @@ You stay signed in on that phone for good, like WhatsApp. Only two things sign y
 - **🔁 Repeat:** in a new event, choose Every week / month / year and an optional *Until* date. To change or delete a repeating event, open it on the date you want and tap ✏️ Edit (or Delete): the app asks **Only this date** or **Every repeat**. Only this date leaves every other date as it was. ✓ Done / 💰 Closed are marked on the first one only; repeat copies never count in your numbers (a date you changed on its own becomes a normal event that counts).
 - **📄 Duplicate:** open any event and tap **📄 Duplicate**. A new event opens with the same title, type, place, notes, people and time; just change the date or time and tap Add.
 - **Holidays:** Malaysia + Penang public holidays (red date), festivals, and school holidays (light blue days) show on the calendar. You get a pop-up the day before and on the day.
-- **🎂 Birthdays:** Me → **My birthday** (day + month only) puts it on everyone's calendar with a pop-up that morning. Me → **Important people** adds yearly birthdays and anniversaries for family or clients (🔒 only you by default).
+- **🎂 Birthdays:** Me → **My birthday** (the team sees the day and month only; your year stays private) puts it on everyone's calendar with a pop-up that morning. Me → **Important people** adds yearly birthdays and anniversaries for family or clients (🔒 only you by default).
 - **✅ To-do tab:** 4 boxes: 🔴 urgent & important, 🟠 urgent, 🔵 important, ⚪ neither. **Tap a box** to add a to-do straight into it (with optional details and a date). **Hold a box’s 🎤** and speak: what you say is written down and saved in that box. **Tap a to-do** to edit it, add details, change its date or move it to another box, or delete it. Everything is on one list; finished ones stay for a week (tap *Show older finished ones* for the rest).
 - **To-dos on the calendar:** a new to-do is set for **today** unless you change the date. Any to-do with a date shows on **your** calendar (☑️, only you see it). Add a **time** and you get a pop-up at that time. When you hold 🎤, say the day and time (“tomorrow 3pm call Ali”, “星期五下午三点”, “esok pukul 2”) and the app sets them; if you say none, it is for today. Tap a to-do on the calendar to open it. Clear the date to keep a to-do off the calendar.
 - **Done → ✕:** tick ✅ when a to-do is done, then tap the **✕** beside it to delete it straight away.
