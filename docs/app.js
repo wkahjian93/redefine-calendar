@@ -7,7 +7,7 @@
   var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   var MONTH = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   var DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  var APP_VERSION = '68';
+  var APP_VERSION = '69';
   var H8 = 8 * 3600e3, DAY = 864e5, SELLING = {approach: 1, open: 1, present: 1, followup: 1, close: 1, joinfield: 1, recruit: 1};
 
   /* ---------- storage (each phone) ---------- */
@@ -168,6 +168,8 @@
   var ERR = {
     pr_bad_code: 'That Prospecting code is not valid (it may have been replaced). Make a new one in Prospecting → Me → Connected apps.',
     pr_unreachable: 'Could not reach REDEFINE Prospecting. Try again in a minute.',
+    ms_bad_code: 'That Meeting App link is not valid (it may have been replaced). In the Meeting App: ☰ Menu → Connect my REDEFINE Calendar.',
+    ms_unreachable: 'Could not reach the REDEFINE Meeting App. Try again in a minute.',
     already_done: 'It already happened (Done / Closed), so it can’t be postponed.', same_time: 'Pick a different date or time.',
     not_an_appointment: 'That didn’t sound like an appointment. Say what, which day and what time.',
     bad_audio: 'That recording couldn’t be used. Try again (up to 60 seconds).', nothing_heard: 'Nothing was heard. Hold the phone closer and try again.', owner_only: 'Only the owner can change celebration themes.', bad_theme: 'Please pick the colours again.', bad_music: 'Use an MP3 or M4A file up to 5 MB.',
@@ -216,6 +218,8 @@
       setTimeout(loadPhotos, 0);
       if (j.me.mustChange) setTimeout(askNewPin, 300);
       if (pushOn() && j.me.devices === 0 && !S.repairTried) { S.repairTried = true; repairPush(false); }   // server lost this phone: reconnect quietly
+      if (LS.get('mslink', '')) setTimeout(function () { linkMs(LS.get('mslink', '')); }, 0);
+      else if (j.me.msLinked && !S.msPulled) { S.msPulled = true; api('mspull').then(function (x) { if (x.changed) quietSync(true); }, function () {}); }   // REDEFINE Meeting App: collect Kick Start appointments now
       if (LS.get('prlink', '')) setTimeout(function () { linkPr(LS.get('prlink', '')); }, 0);
       else if (j.me.prLinked && !S.prPulled) { S.prPulled = true; api('prpull').then(function (x) { if (x.changed) quietSync(true); }, function () {}); }   // REDEFINE Prospecting: collect new calls / appointments now
       render();
@@ -1848,6 +1852,7 @@
       peopleCard() +
       partnerCard() +
       prospectingCard() +
+      meetingCard() +
       '<div class="card"><h4>Move my calendar here</h4><p class="muted">Google Calendar, TimeTree, iPhone, or a paper diary: snap photos or screenshots and the AI copies them in. You check every row first.</p><a class="btn primary" href="#/import">⤓ Import calendar</a></div>' +
       (!standalone() ? '<div class="card"><h4>Install</h4><p class="muted">Add REDEFINE Calendar to your home screen so it opens like an app.</p><button class="btn ghost" data-act="install">How?</button></div>' : '') +
       (m.leader ? '<div class="card"><h4>Leader</h4><a class="btn ghost" href="#/members">👥 Manage members</a></div>' : '') +
@@ -2102,7 +2107,29 @@
   function route() { return (location.hash || '#/').slice(1); }
   var lastRoute = '';
   /* ---------- REDEFINE Prospecting link: #/link-prospecting?code=... (from Prospecting → Me → Connected apps) ---------- */
+  /* REDEFINE Meeting App link: #/link-meeting?code=... (from the Meeting App: ☰ Menu → Connect my REDEFINE Calendar) */
+  function catchMsLink() {
+    var m = /^#\/?link-meeting\?(.*)$/.exec(location.hash); if (!m) return false;
+    var code = (new URLSearchParams(m[1]).get('code') || '').replace(/[^a-z0-9]/gi, '').slice(0, 40);
+    if (code) LS.set('mslink', code);
+    history.replaceState(null, '', location.pathname + location.search + '#/me');
+    return true;
+  }
+  function linkMs(code) {
+    LS.del('mslink');
+    return api('mslink', {code: code}).then(function (r) {
+      toast('✅ Connected to REDEFINE Meeting App' + (r.changed ? ' · ' + r.changed + ' appointment(s) added' : '') + '. Kick Start appointments now come in by themselves.', 'good');
+      return quietSync(true);
+    }, function (e) { toast(errText(e), 'bad'); });
+  }
+  function meetingCard() {
+    var on = me().msLinked;
+    return '<div class="card"><h4>🎓 REDEFINE Meeting App</h4>' + (on
+      ? '<p class="ok-t">✅ Connected. 90 Days Kick Start weekly appointments come in by themselves as 👥 Meeting / training (not counted in A/O/P), and move or disappear when they change there.</p><div class="row"><button class="btn ghost" data-act="mspull">Update now</button><button class="btn ghost" data-act="msunlink">Disconnect</button></div>'
+      : '<p class="tiny muted">In the Meeting App: ☰ Menu → Connect my REDEFINE Calendar. It opens here and connects itself.</p>') + '</div>';
+  }
   function catchPrLink() {
+    catchMsLink();
     var m = /^#\/?link-prospecting\?(.*)$/.exec(location.hash); if (!m) return;
     var code = (new URLSearchParams(m[1]).get('code') || '').replace(/[^a-z0-9]/gi, '').slice(0, 60);
     if (code) LS.set('prlink', code);
@@ -2268,6 +2295,8 @@
     if (a === 'pushfix') return repairPush(true).then(render);
     if (a === 'prconnect') { var pc = (($app.querySelector('#prcodein') || {}).value || '').replace(/[^a-z0-9]/gi, ''); if (!pc) return toast('Paste the code from Prospecting first', 'bad'); return linkPr(pc); }
     if (a === 'prpull') return api('prpull').then(function (x) { toast(x.changed ? x.changed + ' event(s) updated from Prospecting' : 'Up to date with Prospecting', 'good'); return quietSync(true); }, function (e) { toast(errText(e), 'bad'); });
+    if (a === 'mspull') return api('mspull').then(function (x) { toast(x.changed ? x.changed + ' appointment(s) updated from the Meeting App' : 'Up to date with the Meeting App', 'good'); return quietSync(true); }, function (e) { toast(errText(e), 'bad'); });
+    if (a === 'msunlink') return confirmBox('Disconnect REDEFINE Meeting App?', 'Kick Start appointments stop coming in, and the ones still ahead are taken off this calendar.', 'Disconnect').then(function (y) { if (y) return api('msunlink').then(function () { toast('Disconnected'); return quietSync(true); }); });
     if (a === 'prunlink') return confirmBox('Disconnect REDEFINE Prospecting?', 'New calls and appointments will stop coming in. Events already here stay.', 'Disconnect').then(function (y) { if (y) return api('prunlink').then(function () { toast('Disconnected'); return quietSync(true); }); });
     if (a === 'pushtest15') { toast('Lock your phone now. A pop-up should arrive in about 15 seconds.'); return api('pushtest', {delay: 15}).catch(function () {}); }
     if (a === 'pushtest') return api('pushtest').then(function () { toast('Sent. It should pop up in a few seconds.'); }, function (e) { toast(errText(e), 'bad'); });

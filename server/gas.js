@@ -224,7 +224,7 @@ var GAS = (function () {
 })();
 
 /* Timed jobs, installed by setup(). */
-function reminderTick() { GAS.withLock(function () { CORE.tick(GAS); }); GAS.flushPush(); try { var r = CORE.prCollectAll(GAS); if (r.changed) console.log('Prospecting: ' + r.changed + ' event change(s) for ' + r.members + ' connected agent(s)'); } catch (e) { console.warn('Prospecting collect failed: ' + e); } }
+function reminderTick() { GAS.withLock(function () { CORE.tick(GAS); }); GAS.flushPush(); try { var r = CORE.prCollectAll(GAS); if (r.changed) console.log('Prospecting: ' + r.changed + ' event change(s) for ' + r.members + ' connected agent(s)'); } catch (e) { console.warn('Prospecting collect failed: ' + e); } try { var m = CORE.msCollectAll(GAS); if (m.changed) console.log('Meeting App: ' + m.changed + ' event change(s) for ' + m.members + ' connected people'); } catch (e) { console.warn('Meeting App collect failed: ' + e); } GAS.flushPush(); }
 function morningDigest() { GAS.withLock(function () { CORE.morning(GAS); }); GAS.flushPush(); }
 function eveningConfirm() { GAS.withLock(function () { CORE.evening(GAS); }); GAS.flushPush(); }
 

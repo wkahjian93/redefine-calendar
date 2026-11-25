@@ -7,7 +7,7 @@
    transcribe(audioBase64, mime, hint) -> text, putFile(id, mime, base64) / getFile(id) -> {mime, data} / delFile(id). */
 var CORE = (function () {
   var TABLES = {
-    members: ['id', 'name', 'pin', 'role', 'color', 'created', 'active', 'partner', 'partnerReq', 'short', 'photoV', 'bday', 'pinTemp', 'feed', 'merges', 'chipOrder', 'rank', 'unit', 'prCode', 'prSince', 'bdayYear'],
+    members: ['id', 'name', 'pin', 'role', 'color', 'created', 'active', 'partner', 'partnerReq', 'short', 'photoV', 'bday', 'pinTemp', 'feed', 'merges', 'chipOrder', 'rank', 'unit', 'prCode', 'prSince', 'bdayYear', 'msCode'],
     photos: ['memberId', 'data', 'updated'],
     sessions: ['token', 'memberId', 'created', 'lastSeen', 'device'],
     events: ['id', 'ownerId', 'title', 'type', 'start', 'end', 'allDay', 'place', 'notes', 'vis', 'with', 'remind', 'count', 'out', 'anp', 'source', 'remSent', 'created', 'updated', 'noc', 'all', 'cases', 'rep', 'repEnd', 'jfKind', 'agentId', 'skip'],
@@ -318,7 +318,7 @@ var CORE = (function () {
       todos: store.load('todos').filter(function (t) { return t.ownerId === me.id; }).slice(-1000),
       goals: store.load('goals').filter(function (g) { return g.memberId === me.id; }),
       themesOn: themesOn(store), themes: liveThemes(store),
-      me: {id: me.id, name: me.name, prLinked: !!me.prCode, prSince: me.prSince || '', owner: isOwner(me, store), merges: str(me.merges, 400), chipOrder: str(me.chipOrder, 1500), short: shortOf(me), bday: me.bday || '', bdayYear: me.bdayYear || '', mustChange: me.pinTemp === 'true', shortSet: !!me.short, photoV: me.photoV || '', role: me.role, rank: myRank, unit: me.unit || '', color: me.color, leader: leader, devices: myDevices, partner: me.partner || '', partnerReq: me.partnerReq || '',
+      me: {id: me.id, name: me.name, prLinked: !!me.prCode, prSince: me.prSince || '', msLinked: !!me.msCode, owner: isOwner(me, store), merges: str(me.merges, 400), chipOrder: str(me.chipOrder, 1500), short: shortOf(me), bday: me.bday || '', bdayYear: me.bdayYear || '', mustChange: me.pinTemp === 'true', shortSet: !!me.short, photoV: me.photoV || '', role: me.role, rank: myRank, unit: me.unit || '', color: me.color, leader: leader, devices: myDevices, partner: me.partner || '', partnerReq: me.partnerReq || '',
         partnerAsks: members.filter(function (m) { return m.partnerReq === me.id && String(m.active) !== 'false'; }).map(function (m) { return m.id; })},
       members: members.filter(function (m) { return String(m.active) !== 'false' || leader; }).map(function (m) {
         var o = {id: m.id, name: m.name, short: shortOf(m), role: m.role, color: m.color, active: String(m.active) !== 'false', partner: m.partner || '', photoV: m.photoV || '', bday: m.bday || '', rank: rankOf(m, oid), unit: m.unit || ''}; if (seeSeen(m)) o.seen = seen[m.id] || ''; return o;
@@ -1378,6 +1378,70 @@ var CORE = (function () {
     return {members: list.length, changed: n};
   }
 
+  /* ---------- REDEFINE Meeting App link: 90 Days Kick Start weekly appointments ----------
+     Each person connects once with the personal code from the Meeting App (☰ Menu → Connect my REDEFINE Calendar).
+     Every collect brings that person's full current list: new or moved appointments are put in, cleared ones are
+     taken out. Events are 👥 Meeting / training (not counted in A/O/P), private, source "ms:<agentId>-w<week>".
+     Past events are never removed, and one the person cancelled here is left alone. */
+  var MEETING_URL_DEFAULT = 'https://script.google.com/macros/s/AKfycbxv8bw_x4Ek97YoTNwLSqbLo46pQ44_11MBVgncTGoIItPwttdO8Qssds82tt6YyL4b/exec';
+  function msUrl(store) { return store.prop('MEETING_URL') || MEETING_URL_DEFAULT; }
+  function msFetch(store, code) {   // the network part, outside the lock
+    if (!store.fetchJson) fail('no_fetch');
+    var r = store.fetchJson(msUrl(store), {op: 'calFeed', code: code});
+    if (!r || r.error) fail(r && r.error === 'bad_link' ? 'ms_bad_code' : 'ms_unreachable');
+    return r;
+  }
+  function msApply(store, member, res, quiet) {
+    var rows = store.load('events'), now = nowIso(store), nowMs = Date.parse(now), changed = 0, seen = {}, fresh = [];
+    var leader = str(res.leader, 60) || 'your leader', link = str(res.appUrl, 200);
+    var sig = function (e) { return JSON.stringify([e.title, e.start, e.end, e.allDay, e.notes]); };
+    (res.items || []).forEach(function (it) {
+      var key = str(it.id, 40).replace(/[^A-Za-z0-9-]/g, ''), date = str(it.date, 10), time = str(it.time, 5);
+      if (!key || !isDate(date) || (time && !/^\d{2}:\d{2}$/.test(time))) return;
+      var src = 'ms:' + key; seen[src] = 1;
+      var week = str(it.week, 40) || 'Week ' + it.wk;
+      var f = {type: 'meeting', title: ('🎓 ' + (it.mine ? 'Kick Start ' + week + ' with ' + leader : str(it.agent, 60) + ' · Kick Start ' + week)).slice(0, 120),
+        notes: ((it.note ? str(it.note, 200) + '\n' : '') + 'From REDEFINE Meeting App' + (it.by ? ' · set by ' + str(it.by, 60) : '') + (link ? '\n' + link : '')).slice(0, 1000)};
+      if (time) { var s = Date.parse(date + 'T' + time + ':00+08:00'); f.allDay = 'false'; f.start = new Date(s).toISOString(); f.end = new Date(s + 3600e3).toISOString(); }
+      else { f.allDay = 'true'; f.start = date; f.end = date; }
+      var e = rows.filter(function (x) { return x.ownerId === member.id && x.source === src; })[0];
+      if (e && (e.out === 'cancel' || e.out === 'closed')) return;   // the person dealt with it here: leave it alone
+      if (!e) { e = prBlank(member, now); e.id = newId(store, 10); e.source = src; e.remind = time ? '30' : ''; e.start = ''; rows.push(e); fresh.push(f); }
+      var before = sig(e), moved = e.start && e.start !== f.start;
+      Object.keys(f).forEach(function (k) { e[k] = f[k]; });
+      if (moved) { e.remSent = ''; if (!e.remind && time) e.remind = '30'; }
+      if (sig(e) !== before) { e.updated = now; changed++; }
+    });
+    rows = rows.filter(function (x) {   // cleared in the Meeting App: take out what is still ahead
+      if (x.ownerId !== member.id || String(x.source).indexOf('ms:') !== 0 || seen[x.source] || endMs(x) < nowMs) return true;
+      changed++; return false;
+    });
+    if (changed) { store.save('events', rows); store.version(true); }
+    if (fresh.length && !quiet && store.push) store.push([member.id], {title: '📅 New Kick Start appointment', body: fresh[0].title + (fresh.length > 1 ? ' (+' + (fresh.length - 1) + ' more)' : '')});
+    return changed;
+  }
+  function msSave(store, memberId, code, res) {   // under the lock; code is set only when connecting
+    var members = store.load('members'), m = members.filter(function (x) { return x.id === memberId; })[0];
+    if (!m) return 0;
+    if (code !== undefined) { m.msCode = code; store.save('members', members); }
+    return msApply(store, m, res, code !== undefined);
+  }
+  function msDrop(store, memberId) {   // disconnect: forget the code, take out the appointments still ahead
+    var members = store.load('members'), m = members.filter(function (x) { return x.id === memberId; })[0];
+    if (m) { m.msCode = ''; store.save('members', members); }
+    var nowMs = Date.parse(nowIso(store)), rows = store.load('events'), keep = rows.filter(function (x) { return !(x.ownerId === memberId && String(x.source).indexOf('ms:') === 0 && endMs(x) >= nowMs && x.out !== 'cancel'); });
+    if (keep.length !== rows.length) { store.save('events', keep); store.version(true); }
+  }
+  /* every 5 minutes (gas reminderTick): collect for every connected person */
+  function msCollectAll(store) {
+    var list = store.load('members').filter(function (m) { return m.msCode && String(m.active) !== 'false'; }), n = 0;
+    list.forEach(function (m) {
+      try { var res = msFetch(store, m.msCode); n += store.withLock(function () { return msSave(store, m.id, undefined, res); }); }
+      catch (e) { if (e.appCode === 'ms_bad_code') store.withLock(function () { msDrop(store, m.id); }); }
+    });
+    return {members: list.length, changed: n};
+  }
+
   var READ_ONLY = {sync: 1, teamtotals: 1, photos: 1, progress: 1, file: 1, themes: 1, besttime: 1};
   var OPS = {sync: sync, save: saveEvent, del: delEvent, repone: repOne, outcome: outcome, import: importEvents, send: send, delmsg: delMsg,
     pushreg: pushReg, pushoff: pushOff, pushtest: pushTest, teamtotals: teamTotals, rsvp: rsvp, member: member, partner: partner, profile: profile, todo: todo, tododel: todoDel, goal: goal, changepin: changePin, progress: progress, feed: feedOp, checked: checkedOp, postpone: postpone, besttime: bestTime, themes: themesList, theme: themeSave, themedel: themeDel, themeson: themesSwitch, file: getFile, photo: setPhoto, photos: getPhotos, signout: signOut};
@@ -1391,6 +1455,17 @@ var CORE = (function () {
       var n = store.withLock(function () { return prSave(store, pm.id, q.op === 'prlink' ? code : undefined, res); });
       return {ok: true, linked: true, changed: n, agent: res.agent && res.agent.name};
     }
+    if (q.op === 'mslink' || q.op === 'mspull') {   // REDEFINE Meeting App: fetch outside the lock, save inside
+      var mm = store.withLock(function () { return who(q, store).me; });
+      var mcode = q.op === 'mslink' ? str(q.code, 40).replace(/[^A-Za-z0-9]/g, '').toUpperCase() : str(mm.msCode);
+      if (!mcode) { if (q.op === 'mspull') return {ok: true, linked: false}; fail('ms_bad_code'); }
+      var mres;
+      try { mres = msFetch(store, mcode); }
+      catch (e) { if (e.appCode === 'ms_bad_code' && q.op === 'mspull') store.withLock(function () { msDrop(store, mm.id); }); throw e; }
+      var mn = store.withLock(function () { return msSave(store, mm.id, q.op === 'mslink' ? mcode : undefined, mres); });
+      return {ok: true, linked: true, changed: mn, name: str(mres.name, 60)};
+    }
+    if (q.op === 'msunlink') return store.withLock(function () { msDrop(store, who(q, store).me.id); return {ok: true, linked: false}; });
     if (q.op === 'prunlink') return store.withLock(function () { var me1 = who(q, store).me, ms = store.load('members'), x = ms.filter(function (y) { return y.id === me1.id; })[0]; x.prCode = ''; x.prSince = ''; store.save('members', ms); return {ok: true, linked: false}; });
     if (q.op === 'signin') {
       return store.withLock(function () {
@@ -1453,7 +1528,7 @@ var CORE = (function () {
   }
 
   return {TABLES: TABLES, TYPES: TYPES, TYPE_ORDER: TYPE_ORDER, PROSPECT: PROSPECT, COLORS: COLORS, REMIND: REMIND,
-    handle: handle, prApply: prApply, prCollectAll: prCollectAll, voiceToEvent: voiceToEvent, feedIcs: feedIcs, parseVoice: parseVoice, voicePrompt: voicePrompt, parseThemeAI: parseThemeAI, isOwner: isOwner, rankOf: rankOf, mytDay: mytDay, todoWhen: todoWhen, salesKind: salesKind, ONFIELD_URL: ONFIELD_URL, prospectReminders: prospectReminders, OCCASIONS: OCCASIONS, ANIMS: ANIMS, tick: tick, occurrences: occurrences, holidaysOn: holidaysOn, schoolHoliday: schoolHoliday, HOLIDAYS: HOLIDAYS, defaultShort: defaultShort, answers: answers, attendance: attendance, TEAM_REMIND: TEAM_REMIND, cents: cents, MODES: MODES, casesOf: casesOf, commentTargets: commentTargets, isAll: isAll, MAX_NOC: MAX_NOC, morning: morning, evening: evening, detectType: detectType, stats: stats, addStats: addStats,
+    handle: handle, prApply: prApply, prCollectAll: prCollectAll, msApply: msApply, msCollectAll: msCollectAll, voiceToEvent: voiceToEvent, feedIcs: feedIcs, parseVoice: parseVoice, voicePrompt: voicePrompt, parseThemeAI: parseThemeAI, isOwner: isOwner, rankOf: rankOf, mytDay: mytDay, todoWhen: todoWhen, salesKind: salesKind, ONFIELD_URL: ONFIELD_URL, prospectReminders: prospectReminders, OCCASIONS: OCCASIONS, ANIMS: ANIMS, tick: tick, occurrences: occurrences, holidaysOn: holidaysOn, schoolHoliday: schoolHoliday, HOLIDAYS: HOLIDAYS, defaultShort: defaultShort, answers: answers, attendance: attendance, TEAM_REMIND: TEAM_REMIND, cents: cents, MODES: MODES, casesOf: casesOf, commentTargets: commentTargets, isAll: isAll, MAX_NOC: MAX_NOC, morning: morning, evening: evening, detectType: detectType, stats: stats, addStats: addStats,
     ratios: ratios, parseRead: parseRead, parseICS: parseICS, similarTitle: similarTitle, textPrompt: textPrompt, creditId: creditId, jfKindOf: jfKindOf, readPrompt: readPrompt, startMs: startMs, endMs: endMs, myt: myt, whenText: whenText};
 })();
 if (typeof module !== 'undefined') module.exports = CORE;
