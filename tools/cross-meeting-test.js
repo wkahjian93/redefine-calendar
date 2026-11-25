@@ -6,6 +6,7 @@ const MS_DIR = path.join(__dirname, '..', '..', '90Days Kick Start', 'docs');
 Object.assign(global, require(path.join(MS_DIR, 'syllabus.js')));
 global.KS = require(path.join(MS_DIR, 'logic.js'));
 const MS = require(path.join(MS_DIR, 'core.js'));
+global.CORE = MS; require(path.join(MS_DIR, 'minutes.js'));   // mini mini plugs into the Meeting App rules
 let pass = 0, failN = 0;
 const ok = (c, m) => { if (c) pass++; else { failN++; console.log('FAIL: ' + m); } };
 
@@ -94,6 +95,20 @@ ok(evOf(GMc).length === 1, 'GM still connected');
 // 7) disconnect from the calendar side takes off what is ahead
 cal(Object.assign({op: 'msunlink'}, INc));
 ok(evOf(INc).length === 0 && cal(Object.assign({op: 'sync'}, INc)).me.msLinked === false, 'disconnect: introducer\'s future Kick Start events removed');
+
+// 7b) mini mini: the next meeting from approved minutes goes to the GM and the people in the meeting
+Object.assign(msStore, {getFile: () => ({b64: 'QUFBQQ=='}), transcribe: () => ({text: '下次开会下个星期一晚上八点。'}), chat: () => ({title: '周会', summary: ['a'], people: [], next_meeting: {date: '2026-11-30', time: '20:00', note: ''}})});
+const mt = ms({op: 'mtStart', code: L, title: 'Monday meeting', consent: true, people: [{id: yt.id}]}).meeting;
+ms({op: 'mtPart', code: L, id: mt.id, n: 0, mime: 'audio/webm', secs: 60, b64: 'QUFBQQ=='});
+ms({op: 'mtFinish', code: L, id: mt.id, parts: 1, secs: 60});
+ms({op: 'mtProcess', code: L, id: mt.id});
+const sm = ms({op: 'mtGet', code: L, id: mt.id}).summary;
+ms({op: 'mtApprove', code: L, id: mt.id, summary: sm, confirm: true, skipUnmatched: true, setNext: true, nextTitle: 'Monday team meeting'});
+cal(Object.assign({op: 'mslink', code: codeFrom(ms({op: 'calCode', code: yt.code}).url)}, AGc));   // Yi Ting reconnects (her link was reset above)
+CAL.msCollectAll(cs);
+const nm = evOf(AGc).find(e => /Monday team meeting/.test(e.title)), gm = evOf(GMc).find(e => /Monday team meeting/.test(e.title));
+ok(nm && gm && nm.title === '🗓 Monday team meeting' && nm.start === '2026-11-30T12:00:00.000Z', 'next meeting from mini mini minutes: in the agent and GM calendars (' + (nm && nm.title) + ')');
+ok(!evOf(INc).some(e => /Monday team meeting/.test(e.title)), 'not for someone outside that meeting');
 
 // 8) bad codes are refused
 let bad = '';

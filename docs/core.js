@@ -1400,7 +1400,7 @@ var CORE = (function () {
       if (!key || !isDate(date) || (time && !/^\d{2}:\d{2}$/.test(time))) return;
       var src = 'ms:' + key; seen[src] = 1;
       var week = str(it.week, 40) || 'Week ' + it.wk;
-      var f = {type: 'meeting', title: ('🎓 ' + (it.mine ? 'Kick Start ' + week + ' with ' + leader : str(it.agent, 60) + ' · Kick Start ' + week)).slice(0, 120),
+      var f = {type: 'meeting', title: (it.title ? str(it.title, 100) : '🎓 ' + (it.mine ? 'Kick Start ' + week + ' with ' + leader : str(it.agent, 60) + ' · Kick Start ' + week)).slice(0, 120),   // it.title: a next meeting set from mini mini minutes
         notes: ((it.note ? str(it.note, 200) + '\n' : '') + 'From REDEFINE Meeting App' + (it.by ? ' · set by ' + str(it.by, 60) : '') + (link ? '\n' + link : '')).slice(0, 1000)};
       if (time) { var s = Date.parse(date + 'T' + time + ':00+08:00'); f.allDay = 'false'; f.start = new Date(s).toISOString(); f.end = new Date(s + 3600e3).toISOString(); }
       else { f.allDay = 'true'; f.start = date; f.end = date; }
@@ -1417,7 +1417,7 @@ var CORE = (function () {
       changed++; return false;
     });
     if (changed) { store.save('events', rows); store.version(true); }
-    if (fresh.length && !quiet && store.push) store.push([member.id], {title: '📅 New Kick Start appointment', body: fresh[0].title + (fresh.length > 1 ? ' (+' + (fresh.length - 1) + ' more)' : '')});
+    if (fresh.length && !quiet && store.push) store.push([member.id], {title: /^🗓/.test(fresh[0].title) ? '📅 New team meeting' : '📅 New Kick Start appointment', body: fresh[0].title + (fresh.length > 1 ? ' (+' + (fresh.length - 1) + ' more)' : '')});
     return changed;
   }
   function msSave(store, memberId, code, res) {   // under the lock; code is set only when connecting
