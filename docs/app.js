@@ -7,7 +7,7 @@
   var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   var MONTH = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   var DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  var APP_VERSION = '72';
+  var APP_VERSION = '73';
   var H8 = 8 * 3600e3, DAY = 864e5, SELLING = {approach: 1, open: 1, present: 1, followup: 1, close: 1, joinfield: 1, recruit: 1};
 
   /* ---------- storage (each phone) ---------- */
@@ -55,7 +55,7 @@
   function unitOf(m) {
     if (m.rank === 'gm' || m.rank === 'um') return m.id;
     var hs = heads(), h = m.unit && hs.filter(function (x) { return x.id === m.unit; })[0]; if (h) return h.id;
-    var g = hs.filter(function (x) { return x.rank === 'gm'; })[0]; return g ? g.id : '';   // unit not set yet = GM direct
+    return '';   // not ticked by any manager: in no unit, shown in Whole group only
   }
   function statsScopes() {
     var r = myRank(), my = me().id;
@@ -1734,6 +1734,7 @@
     html += '<div class="card"><h4>' + esc(scopeName(sc)) + ' · ' + esc(d.r.label) + '</h4>' +
       (scopes ? '<div class="seg scope">' + scopes.map(function (x) { return '<button class="' + (sc === x[0] ? 'on' : '') + '" data-act="scope" data-s="' + esc(x[0]) + '">' + esc(x[1]) + '</button>'; }).join('') + '</div>' : '') +
       (myRank() ? '<p class="unitlink"><a class="link" href="#/myunit">✏️ Choose my direct agents</a></p>' : '') +
+      (myRank() && sc === 'u:' + me().id && ms.length <= 1 ? '<p class="tiny muted">No direct agents ticked yet, so this shows only you. Tap <b>Choose my direct agents</b> to add them.</p>' : '') +
       '<div class="teamtot">' + kpi('Activities', actTotal(tot), 'A+O+P+F+R') + kpi('NOC', tot.C, 'cases closed') + kpi('ANP', rm(tot.anp), 'closed') + kpi('Avg case', tq.M == null ? '–' : rm(tq.M), 'ANP ÷ NOC') + '</div>' +
       '<p class="tiny muted">Confirmed activities only. ' + (lead ? (sc !== 'all' ? 'Everyone in this unit, with their ratios.' : 'You see every agent\'s ratios.') : 'Ratios of each agent stay private (their manager sees them).') + '</p><div class="tablewrap"><table class="board"><thead><tr><th>#</th><th class="l">Agent</th><th>A</th><th>O</th><th>P</th><th>F</th><th>R</th><th class="sum">Total</th><th>NOC</th><th>ANP</th>' +
       (lead ? '<th>Avg case</th><th>NOC/P</th><th>O/A</th><th>P/O</th><th>F/P</th><th>Not conf.</th><th>Last seen</th>' : '') + '</tr></thead><tbody>' +
@@ -1908,10 +1909,10 @@
     var ord = function (m) { var h = headOf(m); return !h ? 1 : h.id === my ? 0 : 2; };
     list.sort(function (a, b) { return ord(a) - ord(b) || String(a.name).localeCompare(String(b.name)); });
     return topbar('My unit', {back: '#/stats'}) + '<main><div class="card"><h4>My direct agents · ' + mine + ' chosen</h4><p class="tiny muted">Tap an agent to tick or untick. It saves at once. ' +
-      (r === 'gm' ? 'Agents nobody has ticked yet still count in your unit, until a UM ticks them. Tapping an agent who is in a UM’s unit moves them to yours.' : 'You can tick agents nobody has chosen yet. An agent already in another manager’s unit can only be moved by the GM.') + '</p></div>' +
+      (r === 'gm' ? 'My unit in Activity shows only the agents ticked here. Agents nobody has ticked appear in Whole group only. Tapping an agent who is in a UM’s unit moves them to yours.' : 'You can tick agents nobody has chosen yet. An agent already in another manager’s unit can only be moved by the GM.') + '</p></div>' +
       (list.length ? list.map(function (m) {
         var h = headOf(m), on = !!h && h.id === my, taken = !!h && h.id !== my, lock = taken && r !== 'gm';
-        var txt = on ? 'In my unit' : taken ? 'In ' + shortName(h) + (h.rank === 'gm' ? '’s unit (GM direct)' : '’s unit') : r === 'gm' ? 'Not ticked by anyone · counts in my unit for now' : 'Not chosen yet';
+        var txt = on ? 'In my unit' : taken ? 'In ' + shortName(h) + (h.rank === 'gm' ? '’s unit (GM direct)' : '’s unit') : r === 'gm' ? 'Not ticked by anyone' : 'Not chosen yet';
         return '<button class="card mrow pick' + (on ? ' on' : '') + (lock ? ' lock' : '') + '" data-act="unit-pick" data-id="' + m.id + '"' + (lock ? ' disabled' : '') + '><span class="tick">' + (on ? '✓' : lock ? '🔒' : '') + '</span>' + avatar(m, 'sm') + '<span class="grow"><b>' + esc(m.name) + '</b><small class="muted">' + esc(txt) + '</small></span></button>';
       }).join('') : '<p class="empty">No agents yet.</p>') + '</main>';
   }
@@ -1921,12 +1922,12 @@
     var unset = members().filter(function (m) { return m.active !== false && !m.rank && !(m.unit && hs.some(function (h) { return h.id === m.unit; })); }).length;
     var place = function (m) {
       var v = m.rank ? 'r:' + m.rank : 'u:' + (hs.some(function (h) { return h.id === m.unit; }) ? m.unit : '');
-      var o = [['r:gm', '⭐ GM (Group Manager)'], ['r:um', '⭐ UM (leads a unit)']].concat(hs.filter(function (h) { return h.id !== m.id; }).map(function (h) { return ['u:' + h.id, 'Agent in ' + shortName(h) + (h.rank === 'gm' ? ' (GM direct)' : ' unit')]; })).concat([['u:', 'Agent · unit not set (counts as GM direct)']]);
+      var o = [['r:gm', '⭐ GM (Group Manager)'], ['r:um', '⭐ UM (leads a unit)']].concat(hs.filter(function (h) { return h.id !== m.id; }).map(function (h) { return ['u:' + h.id, 'Agent in ' + shortName(h) + (h.rank === 'gm' ? ' (GM direct)' : ' unit')]; })).concat([['u:', 'Agent · unit not set (Whole group only)']]);
       return '<label class="mplace">Unit <select data-act="place" data-id="' + m.id + '">' + o.map(function (x) { return '<option value="' + esc(x[0]) + '"' + (x[0] === v ? ' selected' : '') + '>' + esc(x[1]) + '</option>'; }).join('') + '</select></label>';
     };
     var placeTxt = function (m) { return m.rank === 'gm' ? ' · GM' : m.rank === 'um' ? ' · UM' : ' · ' + (hs.some(function (h) { return h.id === m.unit; }) ? (mem(m.unit).rank === 'gm' ? 'GM direct' : shortName(mem(m.unit)) + ' unit') : 'unit not set'); };
     return topbar('Members', {back: '#/me'}) + '<main><p class="muted">Members join by signing in with the team code. Removing someone signs them out everywhere; their events stay.</p>' +
-      (gm ? '<div class="card"><h4>Units</h4><p class="tiny muted">Set each person\'s unit below. In Activity, a UM sees the full numbers (ratios, last seen) of their own unit only; the GM sees the whole group and each unit.' + (unset ? ' <b>' + unset + ' member' + (unset > 1 ? 's have' : ' has') + ' no unit yet</b> (counted as GM direct).' : '') + '</p></div>' : '') +
+      (gm ? '<div class="card"><h4>Units</h4><p class="tiny muted">Set each person\'s unit below. In Activity, a UM sees the full numbers (ratios, last seen) of their own unit only; the GM sees the whole group and each unit.' + (unset ? ' <b>' + unset + ' member' + (unset > 1 ? 's have' : ' has') + ' no unit yet</b> (shown in Whole group only).' : '') + '</p></div>' : '') +
       members().map(function (m) {
         var you = m.id === me().id;
         return '<div class="card mrow' + (m.active === false ? ' off' : '') + '">' + avatar(m, 'sm') + '<div class="grow"><b>' + esc(m.name) + '</b><small class="muted">' + (m.role === 'leader' ? '⭐ Leader' : 'Agent') + placeTxt(m) + (m.active === false ? ' · removed' : '') + ' · last seen ' + (m.seen ? ago(m.seen) : 'never') + '</small></div>' +
