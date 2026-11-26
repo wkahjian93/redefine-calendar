@@ -7,7 +7,7 @@
   var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   var MONTH = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   var DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  var APP_VERSION = '70';
+  var APP_VERSION = '71';
   var H8 = 8 * 3600e3, DAY = 864e5, SELLING = {approach: 1, open: 1, present: 1, followup: 1, close: 1, joinfield: 1, recruit: 1};
 
   /* ---------- storage (each phone) ---------- */
@@ -868,8 +868,10 @@
      recordings (nothing is recorded unless the 🎤 is held) and is switched off when the app goes to the background
      or after 5 minutes without a recording. Result: at most one question each time the app is opened. */
   var MIC = {stream: null, timer: 0};
-  function micLive() { return MIC.stream && MIC.stream.getAudioTracks().some(function (t) { return t.readyState === 'live'; }) ? MIC.stream : null; }
+  function micLive() { return MIC.stream && MIC.stream.getAudioTracks().some(function (t) { return t.readyState === 'live' && !t.muted && t.enabled; }) ? MIC.stream : null; }
   function getMic() { var s = micLive(); if (s) return Promise.resolve(s); return navigator.mediaDevices.getUserMedia({audio: true}).then(function (st) { MIC.stream = st; return st; }); }
+  /* the phone names its recording format in different ways ("audio/mp4;codecs=…", "video/mp4", sometimes nothing): send one the server knows */
+  function voiceMime(m) { m = String(m || '').toLowerCase(); return /webm/.test(m) ? 'audio/webm' : /mp4|m4a|aac/.test(m) ? 'audio/mp4' : /ogg/.test(m) ? 'audio/ogg' : /mpeg|mp3/.test(m) ? 'audio/mpeg' : /wav/.test(m) ? 'audio/wav' : /iPhone|iPad|iPod/.test(navigator.userAgent) ? 'audio/mp4' : 'audio/webm'; }
   function micRelease() { clearTimeout(MIC.timer); if (MIC.stream) MIC.stream.getTracks().forEach(function (t) { t.stop(); }); MIC.stream = null; }
   function micIdle() { clearTimeout(MIC.timer); MIC.timer = setTimeout(function () { if (!HOLD) micRelease(); }, 5 * 60e3); }
   document.addEventListener('visibilitychange', function () { if (document.hidden && !HOLD) micRelease(); });
@@ -897,8 +899,14 @@
         micIdle(); clearInterval(h.tm);   // the microphone stays ready for the next recording
         if (h.cancel) return toast('Cancelled', '');
         if (Date.now() - h.tStart < 900) return toast('Hold the 🎤 button while you speak, then let go.', 'bad');
-        queueVoice(new Blob(chunks, {type: String(rec.mimeType || mime || 'audio/webm').split(';')[0]}), btn.classList.contains('mic-hold') ? {kind: btn.dataset.kind === 'note' ? 'note' : '', q: btn.dataset.q || ''} : null);
+        var blob = new Blob(chunks, {type: voiceMime(rec.mimeType || mime)});
+        /* a microphone kept ready can go dead (a call, Siri, another app took it): the recording comes out empty.
+           Say so at once and switch the microphone off, so the next hold starts a fresh one. */
+        if (h.err || blob.size < 400) { micRelease(); return toast('🎤 Nothing was recorded, so the microphone was restarted. Hold 🎤 and say it again.', 'bad'); }
+        if (blob.size > 2200000) return toast('🎤 That recording is too big to send. Keep it shorter and try again.', 'bad');
+        queueVoice(blob, btn.classList.contains('mic-hold') ? {kind: btn.dataset.kind === 'note' ? 'note' : '', q: btn.dataset.q || ''} : null);
       };
+      rec.onerror = function () { h.err = true; };
       rec.start(500);
       try { navigator.vibrate && navigator.vibrate(15); } catch (x) {}
       h.tm = setInterval(function () { if (HOLD !== h) return; holdUI(h); if (Date.now() - h.tStart >= 60e3) micUp(); }, 250);
@@ -954,6 +962,7 @@
       quietSync(true); runVoiceQ();
     }, function (err) {
       vqBusy = false; var code = err && (err.code || err.message);
+      if (code === 'bad_audio') micRelease();
       if (VOICE_DROP[code] || ++it.tries >= 6) { VQ = VQ.filter(function (x) { return x.id !== it.id; }); saveVQ(); render(); toast('🎤 Not added: ' + errText(err), 'bad'); return runVoiceQ(); }
       it.next = Date.now() + Math.min(300e3, 15e3 * Math.pow(2, it.tries - 1)); saveVQ();   // network or busy: try again shortly
     });
