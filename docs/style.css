@@ -628,3 +628,10 @@ html[data-celebrate] .calhead { background: color-mix(in srgb, var(--bg) 92%, tr
 .crop-img { position: absolute; left: 0; top: 0; max-width: none; transform-origin: 0 0; pointer-events: none; -webkit-user-drag: none; }
 .crop-ring { position: absolute; inset: 0; border-radius: 50%; box-shadow: 0 0 0 999px rgba(0,0,0,.55); border: 2px solid rgba(255,255,255,.9); pointer-events: none; }
 .crop-zoom { display: flex; align-items: center; gap: 10px; margin: 8px auto 4px; max-width: 280px; } .crop-zoom span { color: var(--muted); font-weight: 700; } .crop-zoom input { flex: 1; padding: 0; border: 0; background: none; accent-color: var(--coral); }
+
+/* My unit: tick my direct agents */
+.unitlink { margin: 2px 0 10px; text-align: right; font-size: 13.5px; }
+button.mrow.pick { width: 100%; text-align: left; cursor: pointer; flex-wrap: nowrap; }
+button.mrow.pick .tick { flex: 0 0 26px; height: 26px; border-radius: 8px; border: 2px solid rgba(128,128,128,.45); display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 15px; }
+button.mrow.pick.on .tick { background: #1f9d55; border-color: #1f9d55; color: #fff; }
+button.mrow.pick.lock { opacity: .55; cursor: default; } button.mrow.pick.lock .tick { border-color: transparent; font-size: 14px; }

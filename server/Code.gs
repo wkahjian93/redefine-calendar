@@ -724,6 +724,21 @@ var CORE = (function () {
     store.save('members', rows); log(store, me.id, 'pin', 'changed'); return {changed: true};
   }
 
+  /* ---------- a manager (GM or UM) picks their own direct agents ----------
+     A UM can take an agent nobody has picked yet and can let go of their own; an agent already in another manager's unit
+     stays there (only the GM moves people between units). The GM can take anyone. */
+  function myUnit(q, store, me) {
+    var oid = ownerIdOf(store), r = rankOf(me, oid); if (!r) fail('manager_only');
+    var rows = store.load('members'), m = rows.filter(function (x) { return x.id === q.id; })[0];
+    if (!m || String(m.active) === 'false') fail('not_found');
+    if (m.id === me.id || rankOf(m, oid)) fail('bad_request');
+    var cur = m.unit && rows.some(function (x) { return x.id === m.unit && rankOf(x, oid) && String(x.active) !== 'false'; }) ? m.unit : '';
+    if (q.on === true || q.on === 'true') { if (cur && cur !== me.id && r !== 'gm') fail('unit_taken'); m.unit = me.id; }
+    else if (cur === me.id) m.unit = '';
+    store.save('members', rows); store.version(true); log(store, me.id, 'myunit', m.name + (m.unit === me.id ? ' picked' : ' let go'));
+    return {member: {id: m.id, unit: m.unit || ''}};
+  }
+
   /* ---------- leader: members ---------- */
   function member(q, store, me, leader) {
     if (!leader) fail('leader_only');
@@ -1447,7 +1462,7 @@ var CORE = (function () {
 
   var READ_ONLY = {sync: 1, teamtotals: 1, photos: 1, progress: 1, file: 1, themes: 1, besttime: 1};
   var OPS = {sync: sync, save: saveEvent, del: delEvent, repone: repOne, outcome: outcome, import: importEvents, send: send, delmsg: delMsg,
-    pushreg: pushReg, pushoff: pushOff, pushtest: pushTest, teamtotals: teamTotals, rsvp: rsvp, member: member, partner: partner, profile: profile, todo: todo, tododel: todoDel, goal: goal, changepin: changePin, progress: progress, feed: feedOp, checked: checkedOp, postpone: postpone, besttime: bestTime, themes: themesList, theme: themeSave, themedel: themeDel, themeson: themesSwitch, file: getFile, photo: setPhoto, photos: getPhotos, signout: signOut};
+    pushreg: pushReg, pushoff: pushOff, pushtest: pushTest, teamtotals: teamTotals, rsvp: rsvp, member: member, myunit: myUnit, partner: partner, profile: profile, todo: todo, tododel: todoDel, goal: goal, changepin: changePin, progress: progress, feed: feedOp, checked: checkedOp, postpone: postpone, besttime: bestTime, themes: themesList, theme: themeSave, themedel: themeDel, themeson: themesSwitch, file: getFile, photo: setPhoto, photos: getPhotos, signout: signOut};
   function handle(q, store) {
     if (!q || typeof q !== 'object') fail('bad_request');
     if (q.op === 'prlink' || q.op === 'prpull') {   // REDEFINE Prospecting: fetch outside the lock, save inside

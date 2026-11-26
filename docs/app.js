@@ -7,7 +7,7 @@
   var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   var MONTH = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   var DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  var APP_VERSION = '71';
+  var APP_VERSION = '72';
   var H8 = 8 * 3600e3, DAY = 864e5, SELLING = {approach: 1, open: 1, present: 1, followup: 1, close: 1, joinfield: 1, recruit: 1};
 
   /* ---------- storage (each phone) ---------- */
@@ -180,7 +180,7 @@
     daily_limit: 'Daily photo limit reached. Try again tomorrow.', bad_photo: 'That photo could not be read. Try a smaller or clearer one.',
     ai_unreadable: 'The AI reply was messy. Please try that photo again.', no_api_key: 'Photo reading is not set up on the server yet.',
     no_credit: 'The AI account has no credit left. Tell your leader.', rate_limited: 'AI is busy. Try again in a minute.', ai_unavailable: 'AI is not available right now.',
-    bad_api_key: 'The AI key on the server is wrong.', too_long: 'An event can be at most 14 days.', leader_only: 'Only leaders can do that.',
+    bad_api_key: 'The AI key on the server is wrong.', too_long: 'An event can be at most 14 days.', leader_only: 'Only leaders can do that.', manager_only: 'Only a GM or UM can choose direct agents.', unit_taken: 'That agent is already in another manager’s unit. Ask the GM to move them.',
     network: 'No connection. Check your internet.', busy: 'The server is busy right now. Please try again in a moment.', too_many: 'Too many events at once (max 300).', cannot_close: 'Only open / present / follow-up / closing can be closed.', bad_noc: 'NOC must be 1 to 50 cases.', plan_needed: 'Please type the plan name for each case.', mode_needed: 'Please pick M / Q / HY / Y for each case.', cases_needed: 'Add at least one case.', not_team_event: 'Attendance is only for whole-team events.', ended: 'This event has ended.', cancelled: 'This event was cancelled.', already_linked: 'One of you is already linked to someone else.', no_request: 'That request is no longer there.', not_linked: 'You are not linked.', short_taken: 'Someone already uses that short name. Try another.', bad_short: 'Use letters and numbers only.'
   };
   function errText(e) { return ERR[e && e.code] || ERR[e && e.message] || 'Something went wrong (' + ((e && (e.code || e.message)) || 'error') + ')'; }
@@ -284,6 +284,7 @@
       } else { e.cases = []; e.noc = 0; e.anp = 0; }
       if (q.count != null && e.type === 'approach') e.count = +q.count;
     };
+    if (op === 'myunit') return function (d) { var my = d.me && d.me.id; (d.members || []).forEach(function (m) { if (m.id === q.id) m.unit = q.on ? my : (m.unit === my ? '' : m.unit); }); };
     if (op === 'member' && (q.rank != null || q.unit != null)) return function (d) {
       (d.members || []).forEach(function (m) {
         if (m.id === q.id) { if (q.rank != null) { m.rank = q.rank; if (q.rank) m.unit = ''; } if (q.unit != null) m.unit = q.unit; }
@@ -1732,6 +1733,7 @@
     var tq = C.ratios(tot);
     html += '<div class="card"><h4>' + esc(scopeName(sc)) + ' · ' + esc(d.r.label) + '</h4>' +
       (scopes ? '<div class="seg scope">' + scopes.map(function (x) { return '<button class="' + (sc === x[0] ? 'on' : '') + '" data-act="scope" data-s="' + esc(x[0]) + '">' + esc(x[1]) + '</button>'; }).join('') + '</div>' : '') +
+      (myRank() ? '<p class="unitlink"><a class="link" href="#/myunit">✏️ Choose my direct agents</a></p>' : '') +
       '<div class="teamtot">' + kpi('Activities', actTotal(tot), 'A+O+P+F+R') + kpi('NOC', tot.C, 'cases closed') + kpi('ANP', rm(tot.anp), 'closed') + kpi('Avg case', tq.M == null ? '–' : rm(tq.M), 'ANP ÷ NOC') + '</div>' +
       '<p class="tiny muted">Confirmed activities only. ' + (lead ? (sc !== 'all' ? 'Everyone in this unit, with their ratios.' : 'You see every agent\'s ratios.') : 'Ratios of each agent stay private (their manager sees them).') + '</p><div class="tablewrap"><table class="board"><thead><tr><th>#</th><th class="l">Agent</th><th>A</th><th>O</th><th>P</th><th>F</th><th>R</th><th class="sum">Total</th><th>NOC</th><th>ANP</th>' +
       (lead ? '<th>Avg case</th><th>NOC/P</th><th>O/A</th><th>P/O</th><th>F/P</th><th>Not conf.</th><th>Last seen</th>' : '') + '</tr></thead><tbody>' +
@@ -1888,12 +1890,30 @@
       meetingCard() +
       '<div class="card"><h4>Move my calendar here</h4><p class="muted">Google Calendar, TimeTree, iPhone, or a paper diary: snap photos or screenshots and the AI copies them in. You check every row first.</p><a class="btn primary" href="#/import">⤓ Import calendar</a></div>' +
       (!standalone() ? '<div class="card"><h4>Install</h4><p class="muted">Add REDEFINE Calendar to your home screen so it opens like an app.</p><button class="btn ghost" data-act="install">How?</button></div>' : '') +
+      (myRank() ? '<div class="card"><h4>My unit</h4><a class="btn ghost" href="#/myunit">✏️ Choose my direct agents</a></div>' : '') +
       (m.leader ? '<div class="card"><h4>Leader</h4><a class="btn ghost" href="#/members">👥 Manage members</a></div>' : '') +
       '<div class="card"><h4>How counting works</h4><p class="tiny muted">Each event has a type (👋 Approach, 📊 Present, 🔁 Follow-up (signing meetings too), 🤝 Join field, 🌱 Recruit, 👥 Meeting, 🛠️ Service, 🎁 CRM, 📝 Paperwork, 🏠 Personal). The app guesses it from the title. After the event, tap ✓ Done, 💰 Closed (with ANP) or ✕ Didn\'t happen. Only confirmed events count, except: setting a 📊 presentation counts O (appointment) straight away; P counts when it’s Done. O/A = prospecting, P/O = presentation, F/P = follow-up, NOC/P = closing ratio. Personal events never count.</p></div>' +
       subCard() + soundCard() + (m.owner ? '<div class="card"><h4>🎉 Celebration themes</h4><p class="tiny muted">Only you (the owner) see this. Upload a festival poster: the app takes its colours and pictures for the whole team.</p><a class="btn primary" href="#/themes">Manage themes</a></div>' : '') +
       '<div class="card"><h4>Help & security</h4><div class="row"><button class="btn primary" data-act="tour">📖 Take the tour</button><button class="btn ghost" data-act="pinchange">🔑 Change my PIN</button></div></div>' +
       '<p class="center tiny muted">App version ' + APP_VERSION + ' · ' + frameInfo() + ' · ' + (isIOS() ? 'iPhone' : 'Android / other') + (standalone() ? ' · home-screen app' : ' · browser') + ' · notifications: ' + ('Notification' in window ? Notification.permission : 'not supported') + ' · server has ' + (me().devices || 0) + ' phone(s) for you</p>' +
       '<p class="center"><button class="link danger" data-act="signout">Sign out of this phone</button></p></main>' + tabs('me');
+  }
+  /* Each manager ticks their own direct agents. Tapping a row saves at once. */
+  function myUnitScreen() {
+    var r = myRank(), my = me().id, hs = heads();
+    if (!r) return topbar('My unit', {back: '#/stats'}) + '<main><p class="empty">Only a GM or UM chooses direct agents. Ask your GM to mark you as a UM first.</p></main>';
+    var list = members().filter(function (m) { return m.active !== false && m.id !== my && !m.rank; });
+    var headOf = function (m) { return m.unit && hs.filter(function (h) { return h.id === m.unit; })[0]; };
+    var mine = list.filter(function (m) { return m.unit === my; }).length;
+    var ord = function (m) { var h = headOf(m); return !h ? 1 : h.id === my ? 0 : 2; };
+    list.sort(function (a, b) { return ord(a) - ord(b) || String(a.name).localeCompare(String(b.name)); });
+    return topbar('My unit', {back: '#/stats'}) + '<main><div class="card"><h4>My direct agents · ' + mine + ' chosen</h4><p class="tiny muted">Tap an agent to tick or untick. It saves at once. ' +
+      (r === 'gm' ? 'Agents nobody has ticked yet still count in your unit, until a UM ticks them. Tapping an agent who is in a UM’s unit moves them to yours.' : 'You can tick agents nobody has chosen yet. An agent already in another manager’s unit can only be moved by the GM.') + '</p></div>' +
+      (list.length ? list.map(function (m) {
+        var h = headOf(m), on = !!h && h.id === my, taken = !!h && h.id !== my, lock = taken && r !== 'gm';
+        var txt = on ? 'In my unit' : taken ? 'In ' + shortName(h) + (h.rank === 'gm' ? '’s unit (GM direct)' : '’s unit') : r === 'gm' ? 'Not ticked by anyone · counts in my unit for now' : 'Not chosen yet';
+        return '<button class="card mrow pick' + (on ? ' on' : '') + (lock ? ' lock' : '') + '" data-act="unit-pick" data-id="' + m.id + '"' + (lock ? ' disabled' : '') + '><span class="tick">' + (on ? '✓' : lock ? '🔒' : '') + '</span>' + avatar(m, 'sm') + '<span class="grow"><b>' + esc(m.name) + '</b><small class="muted">' + esc(txt) + '</small></span></button>';
+      }).join('') : '<p class="empty">No agents yet.</p>') + '</main>';
   }
   function membersScreen() {
     if (!isLeader()) return topbar('Members', {back: '#/me'}) + '<main><p class="empty">Leaders only.</p></main>';
@@ -2211,6 +2231,7 @@
     else if (parts[0] === 'stats') html = statsScreen();
     else if (parts[0] === 'me') html = meScreen();
     else if (parts[0] === 'members') html = membersScreen();
+    else if (parts[0] === 'myunit') html = myUnitScreen();
     else if (parts[0] === 'import') html = importScreen();
     else if (parts[0] === 'confirm') html = confirmScreen();
     else if (parts[0] === 'invites') html = invitesScreen();
@@ -2319,6 +2340,12 @@
     if (a === 'wa-send') { closeModal(); var ws = events().filter(function (x) { return x.id === b.dataset.id; })[0]; if (ws) waSend(teamShareText(ws)); return; }
     if (a === 'wa-team') { var we = events().filter(function (x) { return x.id === b.dataset.id; })[0]; if (we) copyText(teamShareText(we)); return; }
     if (a === 'rsvp') return send('rsvp', {id: b.dataset.id, answer: b.dataset.v}, b.dataset.v === 'yes' ? '✅ See you there!' : b.dataset.v === 'no' ? 'Noted: can\'t go' : 'Answer cleared');
+    if (a === 'unit-pick') {
+      var um = mem(b.dataset.id), uon = um.unit !== me().id, uh = um.unit && heads().filter(function (h) { return h.id === um.unit; })[0];
+      var ugo = function () { send('myunit', {id: um.id, on: uon}, uon ? shortName(um) + ' is in your unit' : shortName(um) + ' removed from your unit'); };
+      if (uon && uh && uh.id !== me().id) return confirmBox('Move ' + um.name + '?', 'They are in ' + shortName(uh) + '’s unit now. Move them to your unit?', 'Move').then(function (y) { if (y) ugo(); });
+      return ugo();
+    }
     if (a === 'scope') { S.statsScope = b.dataset.s; LS.set('statsScope', S.statsScope); return render(); }
     if (a === 'period') { S.statsPeriod = b.dataset.p; LS.set('statsPeriod', S.statsPeriod); return render(); }
     if (a === 'report') return copyReport();

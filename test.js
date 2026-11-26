@@ -767,6 +767,21 @@ function fresh() {
   ok('seen' in by(sj2, a2.me.id) && !('seen' in by(sj2, a1.me.id)), 'a UM (agent role) sees last-seen of their own unit only');
   ok('seen' in by(sm, a1.me.id), 'a UM with the leader role still sees last-seen (Members screen)');
   ok(!('seen' in by(sa, a1.me.id)), 'agents see no last-seen');
+  // each manager picks their own direct agents (a1 is in MJ's unit, a2 in JH's)
+  const a3 = join('Agent Three'), unitNow = id => by(h({op: 'sync', token: kj.token}), id).unit;
+  throws(() => h({op: 'myunit', token: a1.token, id: a3.me.id, on: true}), 'manager_only', 'agents cannot pick a unit');
+  h({op: 'myunit', token: jh.token, id: a3.me.id, on: true});
+  ok(unitNow(a3.me.id) === jh.me.id, 'a UM picks an agent nobody has chosen');
+  throws(() => h({op: 'myunit', token: mj.token, id: a3.me.id, on: true}), 'unit_taken', 'a UM cannot take another manager\'s agent');
+  h({op: 'myunit', token: mj.token, id: a3.me.id, on: false});
+  ok(unitNow(a3.me.id) === jh.me.id, 'a UM cannot untick another manager\'s agent');
+  throws(() => h({op: 'myunit', token: jh.token, id: mj.me.id, on: true}), 'bad_request', 'a manager cannot be picked as an agent');
+  h({op: 'myunit', token: jh.token, id: a3.me.id, on: false});
+  ok(unitNow(a3.me.id) === '', 'a UM lets go of their own agent');
+  h({op: 'myunit', token: kj.token, id: a1.me.id, on: true});
+  ok(unitNow(a1.me.id) === kj.me.id, 'the GM can move an agent from a UM to GM direct');
+  throws(() => h({op: 'myunit', token: mj.token, id: a1.me.id, on: true}), 'unit_taken', 'a UM cannot take a GM-direct agent the GM ticked');
+  h({op: 'member', token: kj.token, id: a1.me.id, unit: mj.me.id});
   h({op: 'member', token: kj.token, id: mj.me.id, rank: ''});
   ok(by(h({op: 'sync', token: kj.token}), a1.me.id).unit === '', 'no longer a UM: their agents go back to unit not set');
 }
