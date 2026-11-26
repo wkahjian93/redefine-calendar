@@ -7,7 +7,7 @@
   var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   var MONTH = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   var DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  var APP_VERSION = '69';
+  var APP_VERSION = '70';
   var H8 = 8 * 3600e3, DAY = 864e5, SELLING = {approach: 1, open: 1, present: 1, followup: 1, close: 1, joinfield: 1, recruit: 1};
 
   /* ---------- storage (each phone) ---------- */
@@ -189,8 +189,10 @@
   function api(op, body) {
     if (!CFG.api) return Promise.reject({code: 'server_not_set_up'});
     var q = Object.assign({op: op, token: S.token}, body || {});
-    return fetch(CFG.api, {method: 'POST', headers: {'Content-Type': 'text/plain;charset=utf-8'}, body: JSON.stringify(q)})
-      .then(function (r) { return r.json(); }, function () { S.online = false; throw {code: 'network'}; })
+    var ctl = window.AbortController ? new AbortController() : null, slow = /^(voice|voicetodo|read|readtext|import|themeai|photo)$/.test(op);
+    var timer = ctl ? setTimeout(function () { ctl.abort(); }, slow ? 180e3 : 30e3) : 0;   // weak signal: give up instead of waiting forever
+    return fetch(CFG.api, {method: 'POST', headers: {'Content-Type': 'text/plain;charset=utf-8'}, body: JSON.stringify(q), signal: ctl ? ctl.signal : undefined})
+      .then(function (r) { clearTimeout(timer); return r.json(); }, function () { clearTimeout(timer); S.online = false; throw {code: 'network'}; })
       .then(function (j) {
         S.online = true;
         if (j.error) { if ((j.error === 'signed_out' || j.error === 'removed') && op !== 'signin') signOutLocal(j.error); throw {code: j.error}; }
@@ -206,6 +208,7 @@
   function sync(force) {
     if (!S.token) return Promise.resolve();
     if (syncing) return syncing;
+    if (outbox().length) return flushOutbox().then(function (left) { if (left) { render(); return false; } return sync(true); });
     var r = rangeFor(), same = S.range && S.range.from === r.from && S.range.to === r.to, seq = mutSeq;
     syncing = api('sync', {from: r.from, to: r.to, ver: same && !force ? S.ver : 0}).then(function (j) {
       syncing = null;
@@ -239,9 +242,30 @@
       pendingOps--; if (ok) toast(ok, 'good'); if (after) { try { after(j); } catch (x) {} render(); }
       quietSync(true); return j;
     }, function (e) {
-      pendingOps--; mutSeq++; S.data = JSON.parse(backup); ansCache.ver = -2; S.stats = {}; render();
+      pendingOps--;
+      if (e && e.code === 'network' && QUEUE_OK[op]) {   // no signal: keep it on this phone, send it when back online
+        var box = outbox(); box.push({op: op, body: body, t: Date.now()}); LS.set('outbox', box); LS.set('cache', S.data);
+        toast('📴 No signal. Saved on this phone; it will be sent when you are back online.', 'good'); render(); throw {code: 'queued'};
+      }
+      mutSeq++; S.data = JSON.parse(backup); ansCache.ver = -2; S.stats = {}; render();
       toast('Not saved: ' + errText(e), 'bad'); quietSync(true); throw e;
     });
+  }
+  /* ---------- outbox: changes made with no signal, sent in order once the phone is online again ---------- */
+  var QUEUE_OK = {save: 1, del: 1, repone: 1, outcome: 1, postpone: 1, rsvp: 1, send: 1, delmsg: 1, checked: 1, todo: 1, tododel: 1, goal: 1, profile: 1, photo: 1};
+  function outbox() { var b = LS.get('outbox', []); return Array.isArray(b) ? b : []; }
+  var flushing = null;
+  function flushOutbox() {   // resolves with how many are still waiting (0 = all sent)
+    if (flushing) return flushing;
+    flushing = (function next(sent) {
+      var box = outbox(); if (!box.length) return Promise.resolve(0).then(function (x) { if (sent) toast('✅ ' + sent + ' change' + (sent > 1 ? 's' : '') + ' made offline ' + (sent > 1 ? 'were' : 'was') + ' sent.', 'good'); return x; });
+      var it = box[0];
+      return apiRetry(it.op, it.body, 0).then(function () { LS.set('outbox', outbox().slice(1)); return next(sent + 1); }, function (e) {
+        if (e && e.code === 'network') return box.length;                                   // still offline: try again later
+        LS.set('outbox', outbox().slice(1)); toast('Not saved (made offline): ' + errText(e), 'bad'); return next(sent);   // refused by the server: drop that one
+      });
+    })(0).then(function (left) { flushing = null; return left; }, function () { flushing = null; return outbox().length; });
+    return flushing;
   }
   function apiRetry(op, body, n) {
     return api(op, body).catch(function (e) {
@@ -951,7 +975,7 @@
   }
 
   function signOutLocal(reason) {
-    S.token = ''; S.data = null; LS.del('token'); LS.del('cache'); LS.del('pushToken');
+    S.token = ''; S.data = null; LS.del('token'); LS.del('cache'); LS.del('pushToken'); LS.del('outbox');
     if (reason) toast(errText({code: reason}), 'bad');
     render();
   }
@@ -975,7 +999,7 @@
     return '<header class="top">' + (opts.back ? '<a class="back" href="' + opts.back + '" aria-label="Back">‹</a>' : '<span class="brand"><img class="brand-logo" src="icons/team-mark.png" alt="REDEFINE"></span>') +
       '<h2>' + title + '</h2>' + (opts.right || '') + '</header>' +
       (CFG.sample ? '<div class="sample">' + esc(CFG.sample) + '</div>' : '') +
-      (!S.online ? '<div class="offline">No signal. Showing the last saved copy.</div>' : '');
+      (!S.online || outbox().length ? '<div class="offline">' + (!S.online ? 'No signal. Showing the last saved copy.' : 'Sending changes…') + (outbox().length ? ' ' + outbox().length + ' change' + (outbox().length > 1 ? 's' : '') + ' waiting to send.' : '') + '</div>' : '');
   }
 
   /* ---------- calendar ---------- */
@@ -2458,8 +2482,15 @@
       if (!v || v === APP_VERSION || LS.get('reloadedFor', '') === v) return;
       var busy = document.getElementById('modal-root').className || (document.activeElement && /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName));
       if (busy) return;
-      LS.set('reloadedFor', v); location.reload();
+      refreshShell().then(function () { LS.set('reloadedFor', v); location.reload(); });
     }).catch(function () {});
+  }
+  function refreshShell() {   // ask the service worker to download every app file fresh (up to 15 s), so the reload opens the new version
+    return new Promise(function (ok) {
+      var c = navigator.serviceWorker && navigator.serviceWorker.controller; if (!c || !window.MessageChannel) return ok();
+      var ch = new MessageChannel(), t = setTimeout(ok, 15e3); ch.port1.onmessage = function () { clearTimeout(t); ok(); };
+      try { c.postMessage({rcalRefresh: 1}, [ch.port2]); } catch (x) { clearTimeout(t); ok(); }
+    });
   }
   /* ---------- app frame ----------
      iPhone sometimes leaves the visible area (visualViewport) shifted down or a different height from the page's own viewport:

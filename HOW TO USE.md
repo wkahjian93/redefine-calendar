@@ -16,6 +16,13 @@
 
 You stay signed in on that phone for good, like WhatsApp. Only two things sign you out: tapping **Sign out** on that phone, or a leader removing you. Changing the team code or losing signal never does.
 
+## Opening fast and working without signal
+
+- The app opens straight from your phone, so it shows at once even on weak signal. New versions download in the background and switch over on the next opening.
+- **No signal?** You can still look at your calendar and add or change events, to-dos, results (Done / Closed), comments and RSVPs. The app shows *“No signal … N changes waiting to send”*, keeps them on the phone (even if you close the app), and sends them by itself when you are back online (*“✅ N changes made offline were sent”*).
+- Voice, photo reading and importing need signal (the AI runs on the server); voice notes recorded offline wait in their own queue as before.
+- Signing out of a phone throws away any changes still waiting to send on it.
+
 ## Every day (agents)
 - **Add an appointment:** tap **+**, type what it is ("Present Mr Lim medical card", "签单 Ooi", "FU Jason"). The app works out the type (👋 Approach, 📊 Present, 🔁 Follow-up, 🤝 Join field, 🌱 Recruit, 👥 Meeting, 🛠️ Service, 🎁 CRM, 📝 Paperwork, 🏠 Personal). Tap another type if it guessed wrong. There is no Closing type: a signing meeting ("签单 Ooi") is a 🔁 Follow-up, and you record the sale with **💰 Closed** after it. Older Closing events still show and count.
 - **Team or Only me:** 👥 Team = everyone sees it. 🔒 Only me = others see a grey **Busy** block, with no title, client or place. Hidden work events still count in your numbers. Personal events never count.
