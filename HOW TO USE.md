@@ -99,7 +99,7 @@ You stay signed in on that phone for good, like WhatsApp. Only two things sign y
 
 ## Leaders
 
-- **Best time, for chosen people:** Team events → 🔎 Find the time most people are free → **Who: ✅ Choose people**, tick the agents. Only they are counted (even new agents who hardly use the calendar yet), and **📅 Set it here and invite them** opens a new event with them already invited. **👥 Everyone** works as before.
+- **Best time, for chosen people:** Team events → 🔎 Find the time most people are free → **Who: ✅ Choose people**, tick the agents. Only they are counted (even new agents who hardly use the calendar yet), and **📅 Set it here and invite them** opens a new event with them already invited. A **🤝 Common free time** list at the top shows every time on those dates when **all** the chosen agents are free together (e.g. Tue 1 Dec 7:30pm – 10pm, 2.5 h), with a 🕑 note if someone is usually busy then; tap one to set it. **👥 Everyone** works as before.
 - **Calendar → Team day:** one row per person for the day. Grey = private busy, blank = free. The top line says who is **free right now**. Tap a person's event and leave a comment to set a time; only they get the pop-up.
 - **Activity tab:** your team board (A / O / P / F / Recruit, **Total activities**, NOC, ANP, average case, NOC/P, O/A, P/O, F/P, unconfirmed, last seen), with week, last week, month and last month. Open a closed event to see its plan names, modes and ANP.
   - **Needs a check-in** lists agents with no confirmed selling activity in 5 days.

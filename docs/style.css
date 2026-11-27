@@ -653,3 +653,10 @@ button.mrow.pick.lock { opacity: .55; cursor: default; } button.mrow.pick.lock .
 .bt-people { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 4px; }
 .bt-person { display: inline-flex; align-items: center; gap: 4px; border: 1px solid var(--line); background: var(--card); color: var(--text); border-radius: 999px; padding: 5px 10px 5px 5px; font-size: 13px; font-weight: 600; }
 .bt-person.on { border-color: #22A049; background: rgba(34,160,73,.12); color: #157A35; }
+
+.card.common { padding: 6px 10px; }
+.cm-row { display: grid; grid-template-columns: 1fr 1.4fr auto; align-items: center; gap: 8px; width: 100%; text-align: left; border: 0; border-bottom: 1px solid var(--line); background: none; color: var(--text); padding: 10px 2px; font: inherit; }
+.cm-row:last-of-type { border-bottom: 0; }
+.cm-row .d { font-weight: 700; font-size: 14px; } .cm-row .t { font-size: 14px; font-weight: 600; } .cm-row small { display: block; font-size: 11px; font-weight: 400; color: var(--muted); }
+.cm-row b { color: #157A35; font-size: 13px; white-space: nowrap; }
+.cm-row.first { background: rgba(34,160,73,.08); border-radius: 10px; }

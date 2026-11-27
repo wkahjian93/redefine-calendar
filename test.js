@@ -883,6 +883,9 @@ function fresh() {
   const busy8 = r.slots.filter(x => Date.parse(x.start) === Date.parse('2026-11-13T12:00:00Z'))[0];
   ok(!busy8 || (busy8.free === 1 && busy8.busy.length === 1), 'the chosen person who is booked shows as busy');
   ok(r.slots[0].free === 2, 'best slot has both chosen people free');
+  ok(r.common.length >= 1 && r.common.every(w => w.day === '2026-11-13'), 'common free time listed for the chosen people');
+  ok(!r.common.some(w => Date.parse(w.start) < Date.parse('2026-11-13T14:00:00Z') && Date.parse(w.end) > Date.parse('2026-11-13T12:00:00Z')), 'common free time never overlaps a booking of a chosen person');
+  ok(r.common.some(w => w.start === '2026-11-13T10:00:00.000Z' && w.end === '2026-11-13T12:00:00.000Z'), 'the 6pm-8pm window before the booking is found');
   throws(() => h({op: 'besttime', token: kj.token, ids: ['nobody']}), 'bad_request', 'unknown people refused');
   throws(() => h({op: 'besttime', token: a.token, ids: [b.me.id]}), 'leader_only', 'agents cannot run it');
 }

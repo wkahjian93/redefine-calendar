@@ -880,6 +880,14 @@ var CORE = (function () {
         slots.push({s: st, e: en, k: k, free: N - busy.length, exp: exp, busy: busy, usual: usual});
       }
     }
+    // Common free time: every stretch when ALL the counted people are free (nothing booked), joined into windows,
+    // e.g. "Fri 11 Dec 7pm - 10pm". "usual" = who is often busy at that time of the week (a warning, not a clash).
+    var common = [], cur = null;
+    slots.slice().sort(function (x, y) { return x.s - y.s; }).forEach(function (c) {
+      if (c.busy.length || !N) { cur = null; return; }
+      if (cur && cur.k === c.k && c.s <= cur.e) { cur.e = Math.max(cur.e, c.e); c.usual.forEach(function (m) { cur.usual[m.id] = m; }); return; }
+      cur = {k: c.k, s: c.s, e: c.e, usual: {}}; c.usual.forEach(function (m) { cur.usual[m.id] = m; }); common.push(cur);
+    });
     var dayBest = {};   // the best slot of every day, so a leader can compare dates
     slots.forEach(function (c) { var b = dayBest[c.k]; if (!b || c.exp > b.exp + 1e-9 || (Math.abs(c.exp - b.exp) < 1e-9 && c.free > b.free)) dayBest[c.k] = c; });
     slots.sort(function (x, y) { return y.exp - x.exp || y.free - x.free || x.s - y.s; });
@@ -897,7 +905,8 @@ var CORE = (function () {
       })};
     });
     var view = function (c) { return {start: new Date(c.s).toISOString(), end: new Date(c.e).toISOString(), day: c.k, free: c.free, expected: Math.round(c.exp * 10) / 10, busy: names(c.busy), usual: names(c.usual), hol: holidaysOn(c.k).map(function (h) { return h.icon + ' ' + h.name; })}; };
-    return {of: N, picked: want.length > 0, dur: dur, days: days, when: when, from: from, to: mytDay(A + days * DAYMS + 12 * 3600e3), byDay: Object.keys(dayBest).sort().map(function (k) { return view(dayBest[k]); }), blocks: BT_BLOCKS.map(function (b) { return b[2] + ' ' + b[0] + '–' + b[1]; }),
+    var commonView = common.slice(0, 40).map(function (w) { var us = Object.keys(w.usual).map(function (id) { return w.usual[id]; }); return {day: w.k, start: new Date(w.s).toISOString(), end: new Date(w.e).toISOString(), mins: Math.round((w.e - w.s) / 60e3), usual: names(us), hol: holidaysOn(w.k).map(function (h) { return h.icon + ' ' + h.name; })}; });
+    return {of: N, picked: want.length > 0, common: commonView, dur: dur, days: days, when: when, from: from, to: mytDay(A + days * DAYMS + 12 * 3600e3), byDay: Object.keys(dayBest).sort().map(function (k) { return view(dayBest[k]); }), blocks: BT_BLOCKS.map(function (b) { return b[2] + ' ' + b[0] + '–' + b[1]; }),
       notCounted: names(members.filter(function (m) { return info[m.id].hist < 5; })), heat: heat,
       slots: pick.map(function (c) { return {start: new Date(c.s).toISOString(), end: new Date(c.e).toISOString(), day: c.k, free: c.free, expected: Math.round(c.exp * 10) / 10, busy: names(c.busy), usual: names(c.usual), hol: holidaysOn(c.k).map(function (h) { return h.icon + ' ' + h.name; })}; })};
   }

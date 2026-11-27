@@ -7,7 +7,7 @@
   var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   var MONTH = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   var DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  var APP_VERSION = '77';
+  var APP_VERSION = '78';
   var H8 = 8 * 3600e3, DAY = 864e5, SELLING = {approach: 1, open: 1, present: 1, followup: 1, close: 1, joinfield: 1, recruit: 1};
 
   /* ---------- storage (each phone) ---------- */
@@ -1373,6 +1373,16 @@
       return html + '<p class="empty">Checking everyone’s calendar…</p></main>' + tabs('cal');
     }
     if (!r.of) return html + '<p class="empty">Not enough calendar data yet: people need at least 5 appointments in the last 8 weeks to be counted.</p></main>' + tabs('cal');
+    if (r.picked) {   // when ALL the chosen people are free (worked out from everyone's calendar, automatically)
+      var cm = r.common || [], dh = function (m) { return m >= 60 ? (m / 60) + ' h' : m + ' min'; };
+      html += '<h4 class="sub">🤝 Common free time · all ' + r.of + ' free</h4><div class="card common">' + (cm.length ? cm.slice(0, 15).map(function (w, i) {
+        var st = Date.parse(w.start), en = Date.parse(w.end);
+        return '<button class="cm-row' + (i === 0 ? ' first' : '') + '" data-act="btset" data-s="' + w.start + '" data-e="' + new Date(st + r.dur * 60e3).toISOString() + '">' +
+          '<span class="d">' + (i === 0 ? '⭐ ' : '') + esc(dayLabel(w.day)) + (w.hol.length ? '<small class="hol-t">' + esc(w.hol[0]) + '</small>' : '') + '</span>' +
+          '<span class="t">' + hm(st) + ' – ' + hm(en) + '<small>' + dh(w.mins) + ' free together' + (w.usual.length ? ' · 🕑 usually busy: ' + esc(w.usual.join(', ')) : '') + '</small></span><b>✅ ' + r.of + '/' + r.of + '</b></button>';
+      }).join('') + '<p class="tiny muted">Every time on these dates when all ' + r.of + ' have nothing booked (at least ' + dh(r.dur) + '). Tap one to set it and invite them.</p>'
+        : '<p class="empty small">No time when all ' + r.of + ' are free together. See the closest options below, or try other dates or a shorter time.</p>') + '</div>';
+    }
     var ranks = r.byDay.slice().sort(function (x, y) { return y.expected - x.expected || y.free - x.free; }).slice(0, 3).map(function (x) { return x.day; });
     html += '<h4 class="sub">Every day: ' + esc(dayLabel(r.from)) + ' – ' + esc(dayLabel(r.to)) + '</h4><div class="card days">' + (r.byDay.length ? r.byDay.map(function (x) {
       var pc = Math.round(x.free / r.of * 100), top = ranks.indexOf(x.day) >= 0, st = Date.parse(x.start);
