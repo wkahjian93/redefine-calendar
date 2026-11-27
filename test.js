@@ -852,6 +852,22 @@ function fresh() {
   ok(h({op: 'sync', token: a.token}).me.bday === '' && h({op: 'sync', token: a.token}).me.bdayYear === '', 'remove clears the year too');
 }
 
+/* ---------- to-do: no date / date (on calendar or list only) / every day ---------- */
+{
+  const {s, h, join} = fresh();
+  const a = join('When Tester');
+  const nd = h({op: 'todo', token: a.token, item: {text: 'No date one', q: '1'}}).todo;
+  ok(nd.due === '' && nd.at === '' && !nd.daily, 'to-do with no date and no time');
+  const lo = h({op: 'todo', token: a.token, item: {text: 'List only', q: '1', due: '2026-11-20', noCal: true}}).todo;
+  ok(lo.due === '2026-11-20' && lo.noCal === '1', 'dated to-do kept off the calendar');
+  const back = h({op: 'todo', token: a.token, item: {id: lo.id, text: 'List only', q: '1', due: '2026-11-20', noCal: false}}).todo;
+  ok(back.noCal === '', 'switch it back onto the calendar');
+  const cleared = h({op: 'todo', token: a.token, item: {id: lo.id, text: 'List only', q: '1', due: '', at: '', noCal: true}}).todo;
+  ok(cleared.due === '' && cleared.noCal === '', 'no date: nothing to show anyway');
+  const keep = h({op: 'todo', token: a.token, item: {id: back.id, text: 'Edited', q: '2', due: '2026-11-20'}}).todo;
+  ok(keep.noCal === '' && keep.q === '2', 'old phones (no noCal sent) keep the setting');
+}
+
 { const fs = require('fs'), v = JSON.parse(fs.readFileSync(__dirname + '/docs/version.json', 'utf8')).v, m = /APP_VERSION = '([0-9]+)'/.exec(fs.readFileSync(__dirname + '/docs/app.js', 'utf8'));
   ok(m && m[1] === v, 'docs/version.json (' + v + ') matches APP_VERSION (' + (m && m[1]) + ')'); }
 

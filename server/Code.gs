@@ -14,7 +14,7 @@ var CORE = (function () {
     photos: ['memberId', 'data', 'updated'],
     sessions: ['token', 'memberId', 'created', 'lastSeen', 'device'],
     events: ['id', 'ownerId', 'title', 'type', 'start', 'end', 'allDay', 'place', 'notes', 'vis', 'with', 'remind', 'count', 'out', 'anp', 'source', 'remSent', 'created', 'updated', 'noc', 'all', 'cases', 'rep', 'repEnd', 'jfKind', 'agentId', 'skip'],
-    todos: ['id', 'ownerId', 'text', 'q', 'due', 'done', 'created', 'updated', 'kind', 'notes', 'src', 'at', 'daily', 'remSent'],
+    todos: ['id', 'ownerId', 'text', 'q', 'due', 'done', 'created', 'updated', 'kind', 'notes', 'src', 'at', 'daily', 'remSent', 'noCal'],
     goals: ['memberId', 'key', 'anp', 'updated'],
     msgs: ['id', 'to', 'from', 'kind', 'text', 'created'],
     devices: ['token', 'memberId', 'created'],
@@ -624,6 +624,7 @@ var CORE = (function () {
       if (daily) due = ''; else if (at && !due) due = today;   // a time needs a date: today
       if (row.due !== due || (row.at || '') !== at || (row.daily || '') !== daily) row.remSent = '';
       row.q = qd; row.due = due; row.at = at; row.daily = daily;
+      if (it.noCal != null) row.noCal = it.noCal && due ? '1' : '';   // dated, but kept in the to-do list only (not on the calendar)
       // a daily routine is "done" only for the day it was ticked; tomorrow it comes back
       row.done = !it.done ? '' : daily ? (row.done && mytDay(Date.parse(row.done)) === today ? row.done : now) : (row.done || now);
       if (it.notes != null) row.notes = str(it.notes, 2000);

@@ -635,3 +635,11 @@ button.mrow.pick { width: 100%; text-align: left; cursor: pointer; flex-wrap: no
 button.mrow.pick .tick { flex: 0 0 26px; height: 26px; border-radius: 8px; border: 2px solid rgba(128,128,128,.45); display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 15px; }
 button.mrow.pick.on .tick { background: #1f9d55; border-color: #1f9d55; color: #fff; }
 button.mrow.pick.lock { opacity: .55; cursor: default; } button.mrow.pick.lock .tick { border-color: transparent; font-size: 14px; }
+
+.when-seg { margin: 4px 0 2px; } .when-seg button { font-size: 13px; padding: 9px 4px; }
+.when-help { margin: 2px 0 8px; }
+.when-box { display: flex; flex-direction: column; gap: 6px; }
+.when-box label { margin: 0; }
+.time-chk { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--card); color: var(--text); font-size: 14px; }
+.time-chk input { flex: none; width: 20px; height: 20px; margin: 0; padding: 0; accent-color: var(--coral); }
+.time-chk span small { display: block; font-size: 12px; color: var(--muted); margin-top: 1px; }
