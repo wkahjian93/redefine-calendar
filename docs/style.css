@@ -643,3 +643,9 @@ button.mrow.pick.lock { opacity: .55; cursor: default; } button.mrow.pick.lock .
 .time-chk { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--card); color: var(--text); font-size: 14px; }
 .time-chk input { flex: none; width: 20px; height: 20px; margin: 0; padding: 0; accent-color: var(--coral); }
 .time-chk span small { display: block; font-size: 12px; color: var(--muted); margin-top: 1px; }
+
+/* Invitation: am I free? */
+.freechk { margin: 10px 0 4px; padding: 10px 12px; border-radius: 12px; background: rgba(128,128,128,.10); border-left: 4px solid #8a8f98; font-size: 14px; }
+.freechk.free { border-left-color: #1f9d55; background: rgba(31,157,85,.10); } .freechk.tight, .freechk.maybe { border-left-color: #d98a00; background: rgba(217,138,0,.11); } .freechk.busy { border-left-color: #c53030; background: rgba(197,48,48,.10); }
+.freechk .fc-head { font-weight: 700; margin: 0 0 4px; } .freechk .fc-sub { margin: 8px 0 2px; font-size: 12px; font-weight: 700; opacity: .7; text-transform: uppercase; letter-spacing: .03em; }
+.freechk ul { margin: 0; padding-left: 18px; } .freechk li { margin: 2px 0; overflow-wrap: anywhere; } .freechk .fc-none { margin: 0; opacity: .65; } .freechk .link { margin-top: 8px; }

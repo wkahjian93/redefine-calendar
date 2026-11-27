@@ -7,7 +7,7 @@
   var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   var MONTH = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   var DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  var APP_VERSION = '74';
+  var APP_VERSION = '75';
   var H8 = 8 * 3600e3, DAY = 864e5, SELLING = {approach: 1, open: 1, present: 1, followup: 1, close: 1, joinfield: 1, recruit: 1};
 
   /* ---------- storage (each phone) ---------- */
@@ -104,6 +104,50 @@
   function faded(e, id) { return pendingFor(e, id) || (!!e.all && e.ownerId !== id && ansOf(e)[id] !== 'yes'); }
   function involves(e, id) { return e.ownerId === id || ((e.with || []).indexOf(id) >= 0 && ansOf(e)[id] !== 'no') || !!e.all; }
   function myInvites() { var my = me().id; return events().filter(function (e) { return pendingFor(e, my) && eMs(e) > Date.now() && e.out !== 'cancel'; }).sort(function (a, b) { return sMs(a) - sMs(b); }); }
+  /* Am I free for this invitation / team event? Worked out on the phone from my own calendar (no AI call, so it is instant
+     and nothing leaves the phone). Firm = events I own or said yes to; "maybe" = other invitations / team events I have not
+     answered. Shows what clashes, and what I have in the hour before and the hour after. */
+  function freeCheck(e) {
+    var my = me().id, s = sMs(e), en = eMs(e), HOUR = 3600e3, base = e.base || e.id;
+    var mine = events().filter(function (x) {
+      if (x.id === e.id || (x.base || x.id) === base || x.bday || x.busy || x.out === 'cancel' || x.rep === 'y') return false;
+      if (String(x.id).indexOf('td-') === 0 && (x.allDay || /^✅/.test(x.title))) return false;   // to-dos without a time, or already done
+      return involves(x, my);
+    }).map(function (x) { return {x: x, s: sMs(x), e: eMs(x), soft: faded(x, my)}; }).sort(function (a, b) { return a.s - b.s; });
+    var r = {allDay: !!e.allDay, clash: [], maybe: [], before: [], after: [], day: [], whole: []};
+    var d0 = keyMs(dayKey(s)), d1 = keyMs(dayKey(en - 1)) + DAY;
+    mine.forEach(function (o) {
+      if (o.e <= d0 || o.s >= d1) return;
+      if (o.x.allDay) { r.whole.push(o); return; }
+      r.day.push(o);
+      if (r.allDay) return;
+      if (o.s < en && o.e > s) (o.soft ? r.maybe : r.clash).push(o);
+      else if (o.e <= s && o.e > s - HOUR) r.before.push(o);
+      else if (o.s >= en && o.s < en + HOUR) r.after.push(o);
+    });
+    r.level = r.allDay ? (r.day.length ? 'info' : 'free') : r.clash.length ? 'busy' : r.maybe.length ? 'maybe' : (r.before.length || r.after.length) ? 'tight' : 'free';
+    return r;
+  }
+  function gapTxt(ms) { var m = Math.round(ms / 60e3); return m <= 0 ? 'back to back' : m + ' min'; }
+  function freeCheckHtml(e) {
+    if (eMs(e) <= Date.now() || e.out === 'cancel') return '';
+    var r = freeCheck(e), s = sMs(e), en = eMs(e);
+    var line = function (o, extra) { return '<li><b>' + esc(evTime(o.x)) + '</b> ' + esc(T(o.x.type).emoji + ' ' + o.x.title) + (o.soft ? ' <i>(not answered yet)</i>' : '') + (extra ? ' <span class="muted">· ' + esc(extra) + '</span>' : '') + '</li>'; };
+    var head = r.level === 'busy' ? '❌ You are not free: it clashes with ' + r.clash.length + ' of your events'
+      : r.level === 'maybe' ? '⚠️ Maybe: it overlaps something you have not answered yet'
+      : r.level === 'tight' ? '⚠️ You are free, but it is tight'
+      : r.level === 'info' ? 'ℹ️ All-day event: you have ' + r.day.length + ' timed event' + (r.day.length > 1 ? 's' : '') + ' that day'
+      : '✅ You are free';
+    var h = '<div class="freechk ' + r.level + '"><p class="fc-head">' + head + '</p>';
+    if (r.allDay) { if (r.day.length) h += '<ul>' + r.day.map(function (o) { return line(o); }).join('') + '</ul>'; }
+    else {
+      if (r.clash.length || r.maybe.length) h += '<p class="fc-sub">Same time</p><ul>' + r.clash.concat(r.maybe).map(function (o) { return line(o); }).join('') + '</ul>';
+      h += '<p class="fc-sub">1 hour before (' + esc(hm(s - 3600e3)) + ' – ' + esc(hm(s)) + ')</p>' + (r.before.length ? '<ul>' + r.before.map(function (o) { return line(o, 'ends ' + gapTxt(s - o.e) + (s - o.e > 0 ? ' before' : '')); }).join('') + '</ul>' : '<p class="fc-none">Nothing</p>');
+      h += '<p class="fc-sub">1 hour after (' + esc(hm(en)) + ' – ' + esc(hm(en + 3600e3)) + ')</p>' + (r.after.length ? '<ul>' + r.after.map(function (o) { return line(o, 'starts ' + gapTxt(o.s - en) + (o.s - en > 0 ? ' after' : '')); }).join('') + '</ul>' : '<p class="fc-none">Nothing</p>');
+    }
+    if (r.whole.length) h += '<p class="fc-sub">All day that day</p><ul>' + r.whole.map(function (o) { return '<li>' + esc(T(o.x.type).emoji + ' ' + o.x.title) + (o.soft ? ' <i>(not answered yet)</i>' : '') + '</li>'; }).join('') + '</ul>';
+    return h + '<button class="link" data-act="goto-day" data-k="' + dayKey(s) + '">📅 See my whole day (' + r.day.length + ' event' + (r.day.length === 1 ? '' : 's') + ')</button><p class="tiny muted">Checked against your own calendar on this phone.</p></div>';
+  }
   function isWork(e) { var t = e.type || e.t; return !!(C.TYPES[t] && C.TYPES[t].work); }
   function needsConfirm(e) { return !e.occ && !e.bday && C.creditId(e) === me().id && !e.busy && isWork(e) && !e.out && eMs(e) <= Date.now(); }
   function rawEvents() { return (S.data && S.data.events) || []; }
@@ -1300,7 +1344,7 @@
     var head = '';
     if (mineInv && open) head = a[my] === 'yes' ? '<p class="ok-t">✅ You accepted.</p><button class="link" data-act="invite" data-id="' + e.id + '" data-v="no">Can\'t make it after all? Reject</button>'
       : a[my] === 'no' ? '<p class="muted">❌ You rejected this. It is hidden from your calendar.</p><button class="link" data-act="invite" data-id="' + e.id + '" data-v="yes">Accept after all</button>'
-      : '<p><b>' + esc(shortName(mem(e.ownerId))) + '</b> invited you.</p><div class="outs"><button class="out" data-act="invite" data-id="' + e.id + '" data-v="yes">✅ Accept</button><button class="out grey" data-act="invite" data-id="' + e.id + '" data-v="no">❌ Reject</button></div>';
+      : '<p><b>' + esc(shortName(mem(e.ownerId))) + '</b> invited you.</p>' + freeCheckHtml(e) + '<div class="outs"><button class="out" data-act="invite" data-id="' + e.id + '" data-v="yes">✅ Accept</button><button class="out grey" data-act="invite" data-id="' + e.id + '" data-v="no">❌ Reject</button></div>';
     return '<div class="card attend"><h4>Invited</h4>' + head + '<div class="alist">' + (e.with || []).map(who).join('') + '</div><p class="tiny muted">✅ accepted · ⏳ not answered yet · ❌ rejected. Everyone still on the event can comment and gets comment pop-ups.</p></div>';
   }
   function upcomingTeam() { var now = Date.now(); return events().filter(function (e) { return e.all && eMs(e) > now && e.out !== 'cancel'; }).sort(function (x, y) { return sMs(x) - sMs(y); }); }
@@ -1432,7 +1476,7 @@
     var list = myInvites();
     return topbar('Invitations', {back: '#/'}) + '<main>' + (list.length ? list.map(function (e) {
       var o = mem(e.ownerId);
-      return '<div class="card cf" style="' + evStyle(e) + '"><a href="#/e/' + e.id + '"><b>' + esc(T(e.type).emoji + ' ' + e.title) + '</b><small class="muted">' + esc(dayLabel(dayKey(sMs(e)))) + ' · ' + esc(evTime(e)) + (e.place ? ' · ' + esc(e.place) : '') + '<br>from ' + esc(o.name) + '</small></a><div class="outs"><button class="out" data-act="invite" data-id="' + e.id + '" data-v="yes">✅ Accept</button><button class="out grey" data-act="invite" data-id="' + e.id + '" data-v="no">❌ Reject</button></div></div>';
+      return '<div class="card cf" style="' + evStyle(e) + '"><a href="#/e/' + e.id + '"><b>' + esc(T(e.type).emoji + ' ' + e.title) + '</b><small class="muted">' + esc(dayLabel(dayKey(sMs(e)))) + ' · ' + esc(evTime(e)) + (e.place ? ' · ' + esc(e.place) : '') + '<br>from ' + esc(o.name) + '</small></a>' + freeCheckHtml(e) + '<div class="outs"><button class="out" data-act="invite" data-id="' + e.id + '" data-v="yes">✅ Accept</button><button class="out grey" data-act="invite" data-id="' + e.id + '" data-v="no">❌ Reject</button></div></div>';
     }).join('') : '<p class="empty">No invitations waiting. 👍</p>') + '</main>' + tabs('cal');
   }
   /* whole-team event: Going / Can't go / No reply, with names */
@@ -1467,6 +1511,7 @@
     var at = attendOf(e), mine = myAnswer(e), open = eMs(e) > Date.now() && e.out !== 'cancel';
     var names = function (ids) { return ids.length ? ids.map(function (id) { return '<span class="who">' + avatar(mem(id), 'xs') + esc(id === me().id ? 'Me' : shortName(mem(id))) + '</span>'; }).join('') : '<span class="muted tiny">nobody</span>'; };
     return '<div class="card attend"><h4>Attendance</h4>' +
+      (open && !mine && e.ownerId !== me().id ? freeCheckHtml(e) : '') +
       (open ? '<div class="outs"><button class="out' + (mine === 'yes' ? ' on' : '') + '" data-act="rsvp" data-id="' + e.id + '" data-v="' + (mine === 'yes' ? '' : 'yes') + '">✅ Going</button><button class="out grey' + (mine === 'no' ? ' on' : '') + '" data-act="rsvp" data-id="' + e.id + '" data-v="' + (mine === 'no' ? '' : 'no') + '">❌ Can\'t go</button></div>' + (!mine ? '<p class="tiny warn-t">You haven\'t answered yet.</p>' : '') : '') +
       '<div class="alist"><b>✅ Going (' + at.yes.length + ')</b>' + names(at.yes) + '</div>' +
       '<div class="alist"><b>❌ Can\'t go (' + at.no.length + ')</b>' + names(at.no) + '</div>' +
@@ -2368,6 +2413,7 @@
       if (uon && uh && uh.id !== me().id) return confirmBox('Move ' + um.name + '?', 'They are in ' + shortName(uh) + '’s unit now. Move them to your unit?', 'Move').then(function (y) { if (y) ugo(); });
       return ugo();
     }
+    if (a === 'goto-day') { var gk = b.dataset.k, gp = P(keyMs(gk)); S.sel = gk; S.dayView = gk; S.agWeek = mondayOf(gk); S.cursor = {y: gp.y, m: gp.m}; if (route() === '/' || route() === '') render(); else location.hash = '#/'; return quietSync(); }
     if (a === 'scope') { S.statsScope = b.dataset.s; LS.set('statsScope', S.statsScope); return render(); }
     if (a === 'period') { S.statsPeriod = b.dataset.p; LS.set('statsPeriod', S.statsPeriod); return render(); }
     if (a === 'report') return copyReport();
