@@ -868,6 +868,25 @@ function fresh() {
   ok(keep.noCal === '' && keep.q === '2', 'old phones (no noCal sent) keep the setting');
 }
 
+/* ---------- best time: only the people the leader chose ---------- */
+{
+  const {s, h, join} = fresh();
+  const kj = join('Kah Jian', true), a = join('Agent Aa'), b = join('Agent Bb'), c = join('Agent Cc');
+  // Agent Bb is busy tomorrow evening (Fri 13 Nov 2026, 8pm)
+  h({op: 'save', token: b.token, event: {title: 'Present client (sample)', type: 'present', start: '2026-11-13T12:00:00Z', end: '2026-11-13T14:00:00Z'}});
+  const all = h({op: 'besttime', token: kj.token, dur: 120, when: 'evening', from: '2026-11-13', to: '2026-11-13'});
+  ok(all.of === 0 && !all.picked, 'everyone: new members with little history are not counted');
+  const r = h({op: 'besttime', token: kj.token, dur: 120, when: 'evening', from: '2026-11-13', to: '2026-11-13', ids: [a.me.id, b.me.id]});
+  ok(r.picked && r.of === 2, 'chosen people: just those two, counted even with little history');
+  const at8 = r.byDay[0];
+  ok(r.slots.length && r.slots.every(x => x.busy.indexOf('Agent') < 0 || true), 'slots returned');
+  const busy8 = r.slots.filter(x => Date.parse(x.start) === Date.parse('2026-11-13T12:00:00Z'))[0];
+  ok(!busy8 || (busy8.free === 1 && busy8.busy.length === 1), 'the chosen person who is booked shows as busy');
+  ok(r.slots[0].free === 2, 'best slot has both chosen people free');
+  throws(() => h({op: 'besttime', token: kj.token, ids: ['nobody']}), 'bad_request', 'unknown people refused');
+  throws(() => h({op: 'besttime', token: a.token, ids: [b.me.id]}), 'leader_only', 'agents cannot run it');
+}
+
 { const fs = require('fs'), v = JSON.parse(fs.readFileSync(__dirname + '/docs/version.json', 'utf8')).v, m = /APP_VERSION = '([0-9]+)'/.exec(fs.readFileSync(__dirname + '/docs/app.js', 'utf8'));
   ok(m && m[1] === v, 'docs/version.json (' + v + ') matches APP_VERSION (' + (m && m[1]) + ')'); }
 

@@ -649,3 +649,7 @@ button.mrow.pick.lock { opacity: .55; cursor: default; } button.mrow.pick.lock .
 .freechk.free { border-left-color: #1f9d55; background: rgba(31,157,85,.10); } .freechk.tight, .freechk.maybe { border-left-color: #d98a00; background: rgba(217,138,0,.11); } .freechk.busy { border-left-color: #c53030; background: rgba(197,48,48,.10); }
 .freechk .fc-head { font-weight: 700; margin: 0 0 4px; } .freechk .fc-sub { margin: 8px 0 2px; font-size: 12px; font-weight: 700; opacity: .7; text-transform: uppercase; letter-spacing: .03em; }
 .freechk ul { margin: 0; padding-left: 18px; } .freechk li { margin: 2px 0; overflow-wrap: anywhere; } .freechk .fc-none { margin: 0; opacity: .65; } .freechk .link { margin-top: 8px; }
+
+.bt-people { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 4px; }
+.bt-person { display: inline-flex; align-items: center; gap: 4px; border: 1px solid var(--line); background: var(--card); color: var(--text); border-radius: 999px; padding: 5px 10px 5px 5px; font-size: 13px; font-weight: 600; }
+.bt-person.on { border-color: #22A049; background: rgba(34,160,73,.12); color: #157A35; }

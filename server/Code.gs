@@ -832,12 +832,16 @@ var CORE = (function () {
     var today = mytDay(now), qf = str(q.from, 10), qt = str(q.to, 10), from = isDate(qf) && qf > today ? qf : today;   // a chosen date range (From - To), or the next N days
     if (isDate(qt)) { if (qt < from) fail('bad_date'); days = Math.round((dayStart(qt) - dayStart(from)) / DAYMS); if (days > 92) fail('bad_range'); }
     var A = dayStart(from), B = A + (days + 1) * DAYMS, P0 = dayStart(today) - 56 * DAYMS;
-    var members = store.load('members').filter(function (m) { return String(m.active) !== 'false'; }), msgs = store.load('msgs'), info = {};
+    var everyone = store.load('members').filter(function (m) { return String(m.active) !== 'false'; }), msgs = store.load('msgs'), info = {};
+    // only some people (the leader ticked them): count just them, and count them even if they hardly use the calendar yet
+    var want = Array.isArray(q.ids) ? q.ids.map(function (x) { return str(x, 20); }).filter(Boolean).slice(0, 200) : [];
+    var members = want.length ? everyone.filter(function (m) { return want.indexOf(m.id) >= 0; }) : everyone;
+    if (want.length && !members.length) fail('bad_request');
     members.forEach(function (m) { info[m.id] = {m: m, fut: [], days: {}, seen: {}, hist: 0}; });
     store.load('events').forEach(function (e) {
       if (e.out === 'cancel') return;
       var allDay = e.allDay === 'true' || e.allDay === true; if (allDay && e.rep === 'y') return;
-      var a = answers(e.id, msgs), people = (isAll(e) ? members.map(function (m) { return m.id; }) : [e.ownerId].concat(withList(e))).filter(function (id) { return id === e.ownerId || a[id] !== 'no'; });
+      var a = answers(e.id, msgs), people = (isAll(e) ? everyone.map(function (m) { return m.id; }) : [e.ownerId].concat(withList(e))).filter(function (id) { return id === e.ownerId || a[id] !== 'no'; });
       occurrences(e, P0, B).forEach(function (o) {
         people.forEach(function (id) {
           var b = info[id]; if (!b) return;
@@ -851,7 +855,7 @@ var CORE = (function () {
         });
       });
     });
-    var counted = members.filter(function (m) { return info[m.id].hist >= 5; }), N = counted.length;
+    var counted = members.filter(function (m) { return want.length || info[m.id].hist >= 5; }), N = counted.length;
     counted.forEach(function (m) {   // rate[weekday][half-hour] = share of the last 8 weeks this person was busy then
       var b = info[m.id], r = []; for (var w = 0; w < 7; w++) { r.push([]); for (var i = 0; i < 26; i++) r[w].push(0); }
       Object.keys(b.seen).forEach(function (key) { var p = key.split(':'); r[+p[0]][+p[1]] += 1 / 8; });
@@ -893,7 +897,7 @@ var CORE = (function () {
       })};
     });
     var view = function (c) { return {start: new Date(c.s).toISOString(), end: new Date(c.e).toISOString(), day: c.k, free: c.free, expected: Math.round(c.exp * 10) / 10, busy: names(c.busy), usual: names(c.usual), hol: holidaysOn(c.k).map(function (h) { return h.icon + ' ' + h.name; })}; };
-    return {of: N, dur: dur, days: days, when: when, from: from, to: mytDay(A + days * DAYMS + 12 * 3600e3), byDay: Object.keys(dayBest).sort().map(function (k) { return view(dayBest[k]); }), blocks: BT_BLOCKS.map(function (b) { return b[2] + ' ' + b[0] + '–' + b[1]; }),
+    return {of: N, picked: want.length > 0, dur: dur, days: days, when: when, from: from, to: mytDay(A + days * DAYMS + 12 * 3600e3), byDay: Object.keys(dayBest).sort().map(function (k) { return view(dayBest[k]); }), blocks: BT_BLOCKS.map(function (b) { return b[2] + ' ' + b[0] + '–' + b[1]; }),
       notCounted: names(members.filter(function (m) { return info[m.id].hist < 5; })), heat: heat,
       slots: pick.map(function (c) { return {start: new Date(c.s).toISOString(), end: new Date(c.e).toISOString(), day: c.k, free: c.free, expected: Math.round(c.exp * 10) / 10, busy: names(c.busy), usual: names(c.usual), hol: holidaysOn(c.k).map(function (h) { return h.icon + ' ' + h.name; })}; })};
   }
