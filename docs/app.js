@@ -7,7 +7,7 @@
   var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   var MONTH = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   var DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  var APP_VERSION = '78';
+  var APP_VERSION = '79';
   var H8 = 8 * 3600e3, DAY = 864e5, SELLING = {approach: 1, open: 1, present: 1, followup: 1, close: 1, joinfield: 1, recruit: 1};
 
   /* ---------- storage (each phone) ---------- */
@@ -2707,6 +2707,25 @@
   if (window.visualViewport) { visualViewport.addEventListener('resize', fitFrame); visualViewport.addEventListener('scroll', fitFrame); }
   ['resize', 'orientationchange', 'pageshow', 'focus'].forEach(function (ev) { window.addEventListener(ev, fitSoon); });
   document.addEventListener('focusin', fitSoon); document.addEventListener('focusout', fitSoon);
+  /* Typing: (1) the pinned Save / Add bar stops floating over the field (html.typing, see style.css);
+     (2) the field being typed in is scrolled to a clear spot above the keyboard, again once the keyboard has finished opening. */
+  function textField(el) { return !!(el && (el.tagName === 'TEXTAREA' || (el.tagName === 'INPUT' && !/^(checkbox|radio|button|submit|file|color|range|hidden)$/.test(el.type || '')) || el.isContentEditable)); }
+  function keepInView(el) {
+    if (!el || document.activeElement !== el || !el.isConnected) return;
+    var box = el.closest('.sheet') || document.getElementById('scroll'); if (!box) return;
+    var b = box.getBoundingClientRect(), v = window.visualViewport, bottom = Math.min(b.bottom, v ? v.offsetTop + v.height : innerHeight), top = b.top + 56;   // below a sticky sheet title
+    var r = el.getBoundingClientRect(), room = bottom - top;
+    if (r.top >= top && r.bottom <= bottom - 12) return;                                   // already fully in view
+    var want = r.height > room * 0.7 ? top + 8 : top + (room - r.height) * 0.35;            // tall boxes: show their top; others a bit above the middle
+    box.scrollTop += r.top - want;
+  }
+  document.addEventListener('focusin', function (ev) {
+    var el = ev.target; if (!textField(el)) return;
+    document.documentElement.classList.add('typing');
+    [60, 320, 650].forEach(function (ms) { setTimeout(function () { keepInView(el); }, ms); });
+  });
+  document.addEventListener('focusout', function () { setTimeout(function () { if (!textField(document.activeElement)) document.documentElement.classList.remove('typing'); }, 80); });
+  if (window.visualViewport) visualViewport.addEventListener('resize', function () { var el = document.activeElement; if (textField(el)) setTimeout(function () { keepInView(el); }, 30); });
   setInterval(fitFrame, 1000);
   fitFrame();
   setTimeout(function () {   // iPhone in Safari: once, suggest the Home Screen app (full screen + pop-ups)

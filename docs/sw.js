@@ -3,7 +3,7 @@
 // screen is never blank while the network is slow and never mixes old and new files.
 // Also shows the phone pop-ups that arrive from the server (Firebase Cloud Messaging) - by itself, without the Firebase
 // library, so it works the same on Android and iPhone and even when the app is closed.
-const CACHE = 'rcal-v78';
+const CACHE = 'rcal-v79';
 const FILES = ['./', 'index.html', 'style.css', 'app.js', 'core.js', 'config.js', 'manifest.webmanifest', 'icons/redefine-logo.png', 'icons/icon-192.png', 'icons/team-mark.png'];
 const IOS = /iphone|ipad|ipod|macintosh/i.test(self.navigator.userAgent) && /safari/i.test(self.navigator.userAgent) && !/chrome|crios|android/i.test(self.navigator.userAgent);
 function fill(cache) {   // fresh copies of every app file, straight from the server (never the browser's own cache)

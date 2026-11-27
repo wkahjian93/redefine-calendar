@@ -660,3 +660,7 @@ button.mrow.pick.lock { opacity: .55; cursor: default; } button.mrow.pick.lock .
 .cm-row .d { font-weight: 700; font-size: 14px; } .cm-row .t { font-size: 14px; font-weight: 600; } .cm-row small { display: block; font-size: 11px; font-weight: 400; color: var(--muted); }
 .cm-row b { color: #157A35; font-size: 13px; white-space: nowrap; }
 .cm-row.first { background: rgba(34,160,73,.08); border-radius: 10px; }
+
+/* while typing, buttons pinned to the bottom stay in the form instead of floating over the field (keyboard is up) */
+html.typing .sticky-actions { position: static; box-shadow: none; }
+html.typing .import .sticky-actions .btn { box-shadow: none; }
