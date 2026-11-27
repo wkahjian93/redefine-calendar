@@ -7,7 +7,7 @@
   var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   var MONTH = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   var DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  var APP_VERSION = '80';
+  var APP_VERSION = '81';
   var H8 = 8 * 3600e3, DAY = 864e5, SELLING = {approach: 1, open: 1, present: 1, followup: 1, close: 1, joinfield: 1, recruit: 1};
 
   /* ---------- storage (each phone) ---------- */
@@ -1928,24 +1928,17 @@
      One line per policy, in date order. Name = the agent's first name. ANP not entered yet shows as "ANP?". */
   function closeList(evs, r, sc) {
     var list = evs.filter(function (e) { return e.out === 'closed' && sMs(e) >= r.from && sMs(e) < r.to && members().some(function (m) { return m.id === C.creditId(e) && m.active !== false && inScope(m, sc || 'all'); }); })
-      .sort(function (x, y) { return sMs(x) - sMs(y); }), lines = [], total = 0, byWho = {}, missing = 0;
-    var MODE = {M: 'Monthly', Q: 'Quarterly', HY: 'Half-yearly', Y: 'Yearly'};
+      .sort(function (x, y) { return sMs(x) - sMs(y); }), lines = [], total = 0;
     list.forEach(function (e) {
-      var p = P(sMs(e)), who = waName(mem(C.creditId(e))), cs = e.cases && e.cases.length ? e.cases : [{plan: '(plan not entered)', anp: e.anp || '', mode: '?'}];
+      var p = P(sMs(e)), who = shortName(mem(C.creditId(e))), cs = e.cases && e.cases.length ? e.cases : [{plan: '(plan not entered)', anp: e.anp || '', mode: '?'}];
       if (!(e.cases && e.cases.length) && (e.noc || 1) > 1) for (var k = 1; k < e.noc; k++) cs.push({plan: '(plan not entered)', anp: '', mode: '?'});
       cs.forEach(function (c) {
-        var has = c.anp !== '' && c.anp != null && +c.anp > 0; if (has) total += +c.anp; else missing++;
-        byWho[who] = (byWho[who] || 0) + (has ? +c.anp : 0);
-        var md = String(c.mode || '').toUpperCase();
-        lines.push((lines.length + 1) + '. ' + p.d + '/' + (p.m + 1) + ' · *' + who + '* · ' + c.plan + ' · ' + (has ? waMoney(c.anp) : 'ANP ?') + (MODE[md] ? ' (' + MODE[md] + ')' : md && md !== '?' ? ' (' + md + ')' : ''));
+        var has = c.anp !== '' && c.anp != null && +c.anp > 0; if (has) total += +c.anp;
+        lines.push((lines.length + 1) + '. ' + p.d + '/' + (p.m + 1) + ' ' + who + ' ' + c.plan + ' ' + (has ? String(Math.round(+c.anp * 100) / 100) : 'ANP?') + '/' + (c.mode || '?'));
       });
     });
-    var head = r.label.toUpperCase(), top = Object.keys(byWho).sort(function (a, b) { return byWho[b] - byWho[a]; }).filter(function (w) { return byWho[w] > 0; }).slice(0, 3), medal = ['🥇', '🥈', '🥉'];
-    var T = ['🔥 *' + head + ' CLOSE CASE LIST* 🔥', WA_LINE].concat(lines).concat([WA_LINE,
-      '✍️ *Cases closed:* ' + lines.length, '💰 *Total ANP:* ' + waMoney(total) + (missing ? '  (' + missing + ' without ANP yet)' : '')]);
-    if (top.length) { T.push('', '🏆 *Top ANP*'); top.forEach(function (w, i) { T.push(medal[i] + ' ' + w + ' · ' + waMoney(byWho[w])); }); }
-    T.push('', '👏 Well done, team! Keep closing 💪');
-    return {lines: lines, text: T.join('\n')};
+    var head = /^(This|Last) /.test(r.label) ? r.label.toUpperCase() : r.label.toUpperCase();
+    return {lines: lines, text: '🔥' + head + ' CLOSE CASE LIST🔥\n\n' + lines.join('\n') + '\n\n\nTotal ANP: ' + money(total)};
   }
   function actTotal(s) { return s.A + s.O + s.P + s.F + s.recruit; }   // selling activities; NOC (results) shown separately
   /* ---------- goals: required weekly activity from my own ratios (last 90 days), or the team’s if I have too little history ---------- */
