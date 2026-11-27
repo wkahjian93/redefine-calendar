@@ -7,7 +7,7 @@
   var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   var MONTH = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   var DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  var APP_VERSION = '82';
+  var APP_VERSION = '83';
   var H8 = 8 * 3600e3, DAY = 864e5, SELLING = {approach: 1, open: 1, present: 1, followup: 1, close: 1, joinfield: 1, recruit: 1};
 
   /* ---------- storage (each phone) ---------- */
@@ -18,7 +18,7 @@
   };
   var S = {
     token: LS.get('token', ''), data: LS.get('cache', null), ver: 0, range: null,
-    view: LS.get('view', 'month'), filter: LS.get('filter', 'all'),
+    view: LS.get('view', 'month') === 'list' ? 'agenda' : LS.get('view', 'month'), filter: LS.get('filter', 'all'), kind: LS.get('kind', 'all'),
     cursor: null, sel: null, dayView: null, stats: {}, statsPeriod: LS.get('statsPeriod', 'month'),
     lastRead: LS.get('lastRead', {}), reminded: LS.get('reminded', {}), importRows: null, busy: false, online: true
   };
@@ -182,7 +182,7 @@
   }
   var fCache = {k: null, v: null};
   function filtered() {
-    var key = S.filter + '|' + S.ver + '|' + mutSeq + '|' + (S.data && S.data.events && S.data.events.length);
+    var key = S.filter + '|' + kindNow() + '|' + S.ver + '|' + mutSeq + '|' + (S.data && S.data.events && S.data.events.length);
     if (fCache.k === key && fCache.d === S.data && fCache.e === (S.data && S.data.events)) return fCache.v;
     fCache = {k: key, d: S.data, e: S.data && S.data.events, v: filteredRaw()};
     return fCache.v;
@@ -190,7 +190,32 @@
   function filteredRaw() {
     var f = S.filter, id = me().id;
     var group = f.indexOf('me+') === 0 ? f.slice(3).split('.') : null;   // merged view: me + one or several teammates
-    return events().filter(function (e) { return f === 'all' || (f === 'me' ? involves(e, id) : group ? involves(e, id) || group.some(function (g) { return involves(e, g); }) : involves(e, f)); });
+    var list = events().filter(function (e) { return f === 'all' || (f === 'me' ? involves(e, id) : group ? involves(e, id) || group.some(function (g) { return involves(e, g); }) : involves(e, f)); });
+    var kind = kindNow();
+    if (kind === 'work') return list.filter(function (e) { return !e.busy && !e.bday && evGroup(e) !== 'r'; });
+    if (kind === 'personal') return list.filter(function (e) { return !e.busy && !e.bday && !e.all && evGroup(e) === 'r'; });   // the red ones
+    if (kind === 'together') return togetherOnly(list, [id].concat(group));
+    return list;
+  }
+  /* which Show filter is on (Together only exists in a "Me + someone" view) */
+  function kindNow() { var k = S.kind || 'all'; return k === 'together' && S.filter.indexOf('me+') !== 0 ? 'all' : k; }
+  /* Events that ALL these people attend: one of them owns it and the others are invited (and did not say no), a team event none of
+     them said no to, or each of them wrote the same thing at the same time in their own calendar. */
+  function togetherOnly(list, people) {
+    var norm = function (e) { return String(e.title || '').toLowerCase().replace(/[^a-z0-9\u4e00-\u9fff]+/g, ''); }, same = {};
+    list.forEach(function (e) { if (e.busy || e.bday || e.todo) return; var k = sMs(e) + '|' + norm(e); (same[k] = same[k] || {})[e.ownerId] = 1; });
+    var goes = function (e, p) { var a = ansOf(e)[p]; return e.ownerId === p || ((e.with || []).indexOf(p) >= 0 && a !== 'no') || (!!e.all && a !== 'no'); };
+    return list.filter(function (e) {
+      if (e.bday || e.todo || e.out === 'cancel') return false;
+      var dup = !e.busy && same[sMs(e) + '|' + norm(e)];
+      return people.every(function (p) { return goes(e, p) || !!(dup && dup[p]); });
+    });
+  }
+  function kindRow() {
+    var grp = S.filter.indexOf('me+') === 0, k = kindNow(), ids = grp ? groupIds(S.filter.slice(3)) : [];
+    var opts = [['all', 'All'], ['work', '💼 Work'], ['personal', '🏠 Personal']];
+    if (grp) opts.push(['together', '🤝 ' + [shortName(me())].concat(ids.slice(0, 2).map(function (x) { return shortName(mem(x)); })).join(' + ') + (ids.length > 2 ? ' +' + (ids.length - 2) : '') + ' together']);
+    return '<div class="kinds">' + opts.map(function (o) { return '<button class="kind k-' + o[0] + (k === o[0] ? ' on' : '') + '" data-act="kind" data-k="' + o[0] + '">' + esc(o[1]) + '</button>'; }).join('') + '</div>';
   }
   var dayIdx = new WeakMap();
   function onDay(list, k) {
@@ -263,6 +288,7 @@
       if (!LS.get('since', '')) LS.set('since', j.now);
       notifyNew(old, j);
       setTimeout(loadPhotos, 0);
+      setTimeout(morningCheck, 900);
       if (j.me.mustChange) setTimeout(askNewPin, 300);
       else if (j.me.shortClash && j.me.shortClash.length) setTimeout(askNewShort, 300);
       if (pushOn() && j.me.devices === 0 && !S.repairTried) { S.repairTried = true; repairPush(false); }   // server lost this phone: reconnect quietly
@@ -592,6 +618,116 @@
       s = String(s || '').slice(0, 12); if (s && taken.indexOf(s.toLowerCase()) < 0 && out.indexOf(s) < 0 && s.toLowerCase() !== String(me().short).toLowerCase()) out.push(s.length <= 3 ? s.toUpperCase() : s);
     });
     return out.slice(0, 3).length ? out.slice(0, 3) : ['Rex', 'MJ'];
+  }
+  /* ---------- Morning reminder: from 6am, the first time the app opens that day, today's events pop up.
+     After 2pm the pop-up and the "Today" bar are gone. ---------- */
+  function morningOn() { var h = P(Date.now()).h; return h >= 6 && h < 14; }
+  function todayMine() {
+    var k = dayKey(Date.now()), my = me().id;
+    return onDay(events(), k).filter(function (e) { return (involves(e, my) || e.bday) && e.out !== 'cancel' && !(e.all && ansOf(e)[my] === 'no') && !(pendingFor(e, my) && ansOf(e)[my] === 'no'); })
+      .sort(function (x, y) { return (y.allDay ? 1 : 0) - (x.allDay ? 1 : 0) || sMs(x) - sMs(y); });
+  }
+  function firstNext(list) { var now = Date.now(); return list.filter(function (e) { return !e.allDay && eMs(e) > now; })[0] || null; }
+  function morningBar() {
+    if (!morningOn() || !S.data) return '';
+    var list = todayMine(), f = firstNext(list); if (!list.length) return '';
+    return '<button class="confirm-bar today-bar" data-act="morning"><span class="tb-t">📋 Today: <b>' + list.length + '</b> event' + (list.length > 1 ? 's' : '') + (f ? ' · next <b>' + hm(sMs(f)) + '</b> ' + esc(String(f.title || 'Busy').slice(0, 28)) : '') + '</span><span>›</span></button>';
+  }
+  function morningCheck() {
+    if (!S.data || !S.token || !morningOn() || route().replace(/^[/]+/, '')) return;
+    var k = dayKey(Date.now()); if (LS.get('morning', '') === k) return;
+    if (S.data.me.mustChange || (S.data.me.shortClash || []).length) return;   // those must be answered first
+    if (document.getElementById('modal-root').className) return setTimeout(morningCheck, 2500);
+    if (!wxFresh() && wxBusy && !S.mornWait) { S.mornWait = 1; return setTimeout(morningCheck, 3000); }   // give the weather a moment so it shows too
+    LS.set('morning', k); openMorning();
+  }
+  function openMorning() {
+    var list = todayMine(), f = firstNext(list), k = dayKey(Date.now()), w = WX && WX.daily && WX.daily[k], now = Date.now(), my = me().id;
+    var row = function (e) {
+      var o = mem(e.ownerId), past = !e.allDay && eMs(e) <= now, isF = f && e.id === f.id;
+      return '<a class="mrow' + (isF ? ' first' : '') + (past ? ' past' : '') + '" href="#/e/' + e.id + '" style="' + evStyle(e) + '"><span class="mt">' + (e.allDay ? 'All day' : hm(sMs(e))) + '</span><span class="mb"><b>' + (isF ? '⭐ ' : '') + esc(e.busy ? 'Busy' : e.title) + '</b>' +
+        ((e.place && !e.busy) || e.ownerId !== my ? '<small>' + (e.place && !e.busy ? '📍 ' + esc(e.place) : '') + (e.ownerId !== my ? (e.place ? ' · ' : '') + esc(shortName(o)) + '’s' : '') + '</small>' : '') + '</span></a>';
+    };
+    modal('<div class="morning"><div class="row between"><h3>' + (P(now).h < 12 ? '☀️ Good morning' : '👋 Hi') + ', ' + esc(shortName(me())) + '</h3><button type="button" class="icon-btn" data-act="close-modal" aria-label="Close">✕</button></div>' +
+      '<p class="muted">' + esc(dayLabel(k, true)) + (w ? ' · ' + wxIcon(w.c, 1) + ' ' + Math.round(w.min) + '–' + Math.round(w.max) + '°C' + (w.rain != null ? ' · 💧' + w.rain + '%' : '') : '') + '</p>' +
+      (list.length ? (f ? '<p class="lbl">First up</p>' + row(f) : '') + (list.filter(function (e) { return !f || e.id !== f.id; }).length ? '<p class="lbl">' + (f ? 'Also today' : 'Today') + '</p>' + list.filter(function (e) { return !f || e.id !== f.id; }).map(row).join('') : '')
+        : '<p class="empty">Nothing booked today.</p>') +
+      '<div class="row end sheet-btns"><button class="btn primary big" data-act="close-modal">OK</button></div></div>');
+    var sh = document.querySelector('#modal-root .sheet'); if (sh) sh.querySelectorAll('a.mrow').forEach(function (a) { a.addEventListener('click', function () { setTimeout(closeModal, 0); }); });
+  }
+  /* ---------- Live weather (Open-Meteo, free, no key). Location from the phone (rounded to about 1 km), else Penang.
+     Refreshed every 15 minutes while the app is open. ---------- */
+  var WX = LS.get('wx', null), WXL = LS.get('wxLoc', null), wxBusy = false;
+  var PENANG = {lat: 5.41, lon: 100.33, place: 'Penang', auto: false};
+  function wxIcon(c, day) {
+    c = +c;
+    if (c === 0) return day === 0 ? '🌙' : '☀️'; if (c === 1) return day === 0 ? '🌙' : '🌤️'; if (c === 2) return '⛅'; if (c === 3) return '☁️';
+    if (c === 45 || c === 48) return '🌫️'; if (c >= 51 && c <= 57) return '🌦️'; if (c >= 61 && c <= 67) return '🌧️'; if (c >= 71 && c <= 77) return '❄️';
+    if (c >= 80 && c <= 82) return '🌦️'; if (c >= 95) return '⛈️'; return '🌡️';
+  }
+  function wxText(c) {
+    c = +c;
+    return c === 0 ? 'Clear' : c === 1 ? 'Mostly clear' : c === 2 ? 'Partly cloudy' : c === 3 ? 'Cloudy' : c === 45 || c === 48 ? 'Haze / fog' : c >= 51 && c <= 57 ? 'Drizzle' :
+      c >= 61 && c <= 65 ? (c === 65 ? 'Heavy rain' : 'Rain') : c >= 66 && c <= 67 ? 'Rain' : c >= 80 && c <= 82 ? (c === 82 ? 'Heavy showers' : 'Showers') : c >= 95 ? 'Thunderstorm' : '';
+  }
+  function wxWhere() {   // the saved place, or the phone's location (asked again at most every 3 hours)
+    return new Promise(function (ok) {
+      if (WXL && Date.now() - WXL.at < 3 * 3600e3) return ok(WXL);
+      if (!navigator.geolocation || LS.get('wxDenied', false)) return ok(WXL || PENANG);
+      navigator.geolocation.getCurrentPosition(function (p) {
+        ok({lat: Math.round(p.coords.latitude * 100) / 100, lon: Math.round(p.coords.longitude * 100) / 100, auto: true, at: Date.now(), place: WXL && WXL.auto ? WXL.place : ''});
+      }, function (err) { if (err && err.code === 1) LS.set('wxDenied', true); ok(WXL || PENANG); }, {timeout: 9000, maximumAge: 30 * 60e3, enableHighAccuracy: false});
+    });
+  }
+  function loadWeather(force, loud) {
+    if (wxBusy || (!force && WX && Date.now() - WX.at < 15 * 60e3) || !S.token) return;
+    wxBusy = true;
+    wxWhere().then(function (L) {
+      var moved = !WXL || WXL.lat !== L.lat || WXL.lon !== L.lon;
+      var u = 'https://api.open-meteo.com/v1/forecast?latitude=' + L.lat + '&longitude=' + L.lon + '&timezone=Asia%2FKuala_Lumpur&forecast_days=16' +
+        '&current=temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,is_day' +
+        '&hourly=temperature_2m,precipitation_probability,weather_code,is_day&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,uv_index_max,sunrise,sunset';
+      var place = L.place ? Promise.resolve(L.place) : fetch('https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=' + L.lat + '&longitude=' + L.lon + '&localityLanguage=en')
+        .then(function (r) { return r.json(); }).then(function (g) { return g.locality || g.city || g.principalSubdivision || ''; }).catch(function () { return ''; });
+      return Promise.all([fetch(u).then(function (r) { if (!r.ok) throw new Error('wx'); return r.json(); }), place]).then(function (res) {
+        var j = res[0], d = j.daily || {}, h = j.hourly || {}, cur = j.current || {}, daily = {}, hours = [], now = Date.now();
+        (d.time || []).forEach(function (t, i) { daily[t] = {c: d.weather_code[i], max: d.temperature_2m_max[i], min: d.temperature_2m_min[i], rain: d.precipitation_probability_max ? d.precipitation_probability_max[i] : null, uv: d.uv_index_max ? d.uv_index_max[i] : null, rise: d.sunrise ? String(d.sunrise[i]).slice(11) : '', set: d.sunset ? String(d.sunset[i]).slice(11) : ''}; });
+        (h.time || []).forEach(function (t, i) { var ms = Date.parse(t + ':00+08:00'); if (ms > now - 3600e3 && hours.length < 25) hours.push({ms: ms, t: h.temperature_2m[i], c: h.weather_code[i], rain: h.precipitation_probability ? h.precipitation_probability[i] : null, day: h.is_day ? h.is_day[i] : 1}); });
+        L = Object.assign({}, L, {place: res[1] || L.place || (L.auto ? 'Your area' : 'Penang'), at: L.at || Date.now()});
+        WXL = L; LS.set('wxLoc', L);
+        WX = {at: Date.now(), place: L.place, auto: !!L.auto, cur: {t: cur.temperature_2m, feel: cur.apparent_temperature, hum: cur.relative_humidity_2m, c: cur.weather_code, day: cur.is_day}, daily: daily, hours: hours};
+        LS.set('wx', WX); wxBusy = false;
+        if (loud) toast('📍 Weather for ' + L.place, 'good');
+        if (!route().replace(/^[/]+/, '')) render();
+        if (document.querySelector('#modal-root .wxm')) openWeather();
+        void moved;
+      });
+    }).catch(function () { wxBusy = false; if (loud) toast('Could not get the weather now. Try again later.', 'bad'); });
+  }
+  function wxFresh() { return WX && Date.now() - WX.at < 6 * 3600e3; }
+  function wxDay(k, big) {   // icon on a Month cell / Agenda day. Today uses the weather right now.
+    if (!wxFresh()) return '';
+    var w = WX.daily[k], today = k === dayKey(Date.now()); if (!w) return '';
+    var ic = today && WX.cur && WX.cur.c != null ? wxIcon(WX.cur.c, WX.cur.day) : wxIcon(w.c, 1);
+    if (!big) return '<span class="gwx" title="' + esc(wxText(w.c)) + '">' + ic + '</span>';
+    return '<span class="agwx" title="' + esc(wxText(w.c)) + '">' + ic + ' ' + (today && WX.cur.t != null ? Math.round(WX.cur.t) + '°' : Math.round(w.max) + '°') + (w.rain != null && w.rain >= 30 ? '<i>💧' + w.rain + '%</i>' : '') + '</span>';
+  }
+  function wxChip() {
+    if (!wxFresh() || !WX.cur || WX.cur.t == null) return '<button class="wxchip" data-act="wx" aria-label="Weather">🌡️ Weather</button>';
+    return '<button class="wxchip" data-act="wx" aria-label="Weather forecast">' + wxIcon(WX.cur.c, WX.cur.day) + ' <b>' + Math.round(WX.cur.t) + '°</b></button>';
+  }
+  function openWeather() {
+    if (!wxFresh()) { loadWeather(true, true); if (!WX) return toast('🌡️ Getting the weather…'); }
+    var c = WX.cur || {}, k0 = dayKey(Date.now()), t = WX.daily[k0] || {};
+    var hrs = (WX.hours || []).map(function (h) { return '<div class="wh"><small>' + (h.ms <= Date.now() ? 'Now' : hm(h.ms)) + '</small><span>' + wxIcon(h.c, h.day) + '</span><b>' + Math.round(h.t) + '°</b>' + (h.rain != null ? '<i class="' + (h.rain >= 50 ? 'wet' : '') + '">💧' + h.rain + '%</i>' : '') + '</div>'; }).join('');
+    var days = Object.keys(WX.daily).sort().filter(function (k) { return k >= k0; }).slice(0, 14).map(function (k) {
+      var w = WX.daily[k]; return '<div class="wd"><span class="wdn">' + esc(k === k0 ? 'Today' : dayLabel(k).replace(/^.*?· /, '')) + '</span><span class="wdi">' + wxIcon(w.c, 1) + '</span><span class="wdt">' + esc(wxText(w.c)) + '</span><span class="wdr' + (w.rain >= 50 ? ' wet' : '') + '">' + (w.rain != null ? '💧' + w.rain + '%' : '') + '</span><span class="wdm">' + Math.round(w.min) + '° / <b>' + Math.round(w.max) + '°</b></span></div>';
+    }).join('');
+    modal('<div class="wxm"><div class="row between"><h3>' + (WX.auto ? '📍 ' : '') + esc(WX.place || 'Weather') + '</h3><button type="button" class="icon-btn" data-act="close-modal" aria-label="Close">✕</button></div>' +
+      '<div class="wnow"><span class="wbig">' + wxIcon(c.c, c.day) + '</span><div><b class="wt">' + Math.round(c.t) + '°C</b><p>' + esc(wxText(c.c)) + ' · feels ' + Math.round(c.feel) + '°</p><p class="tiny muted">💧 Humidity ' + c.hum + '%' + (t.uv != null ? ' · ☀️ UV ' + Math.round(t.uv) : '') + (t.rise ? ' · 🌅 ' + t.rise + ' · 🌇 ' + t.set : '') + '</p></div></div>' +
+      '<p class="lbl">Next 24 hours</p><div class="whours">' + hrs + '</div><p class="lbl">Next 14 days</p><div class="wdays">' + days + '</div>' +
+      '<p class="tiny muted">Updated ' + hm(WX.at) + ' · refreshes every 15 min · Open-Meteo forecast.' + (WX.auto ? '' : ' Showing Penang: allow location to see your own area.') + '</p>' +
+      '<div class="row end"><button class="btn ghost" data-act="wxloc">📍 ' + (WX.auto ? 'Update my location' : 'Use my location') + '</button></div></div>');
   }
   function askNewPin(force) {
     if (!force && !(S.data && S.data.me && S.data.me.mustChange)) return;
@@ -1201,17 +1337,17 @@
     var mon = agWeek(), today = dayKey(Date.now()), list = filtered(), my = me().id, html = '<div class="ag">';
     for (var i = 0; i < 7; i++) {
       var k = addDays(mon, i), p = P(keyMs(k)), n = p.d, evs = onDay(list, k).sort(function (x, y) { return (y.allDay ? 1 : 0) - (x.allDay ? 1 : 0) || sMs(x) - sMs(y); });
-      html += '<div class="ag-day' + (k === today ? ' today' : '') + (p.w === 0 ? ' sun' : '') + '" id="ag-' + k + '"><button class="ag-date" data-act="ag-new" data-k="' + k + '" aria-label="Add on ' + k + '"><b>' + n + '</b><small>' + WEEKDAY[p.w] + (n === 1 || i === 0 ? ' · ' + MONTH[p.m].slice(0, 3) : '') + '</small>' + (lunarLabel(k) ? '<em class="lun">' + lunarLabel(k) + '</em>' : '') + '</button><div class="ag-evs">' + holHtml(k, 'ag-hol') +
+      html += '<div class="ag-day' + (k === today ? ' today' : '') + (p.w === 0 ? ' sun' : '') + '" id="ag-' + k + '"><button class="ag-date" data-act="ag-new" data-k="' + k + '" aria-label="Add on ' + k + '"><b>' + n + '</b><small>' + WEEKDAY[p.w] + (n === 1 || i === 0 ? ' · ' + MONTH[p.m].slice(0, 3) : '') + '</small>' + (lunarLabel(k) ? '<em class="lun">' + lunarLabel(k) + '</em>' : '') + wxDay(k, true) + '</button><div class="ag-evs">' + holHtml(k, 'ag-hol') +
         evs.map(function (e) {
           var o = mem(e.ownerId), startsToday = dayKey(sMs(e)) === k;
           var t = e.allDay || !startsToday ? 'All-day' : hmLong(sMs(e));
-          return '<a class="ag-ev' + (faded(e, my) ? ' pend' : '') + (e.out === 'cancel' ? ' x' : '') + (e.all ? ' team' : '') + (e.busy ? ' busy' : '') + '" href="#/e/' + e.id + '"><span class="ag-t" style="color:' + (evColor(e) === '#F2C200' ? '#A87D00' : evColor(e)) + '">' + t + '</span><span class="ag-ti">' + (S.filter === 'all' || S.filter.indexOf('me+') === 0 ? avatar(o, 'xxs') : '') + (e.all ? '<img class="tlogo" src="icons/team-mark.png" alt="">' : '') + esc(e.busy ? 'Busy · ' + shortName(o) : e.title) + '</span></a>';
+          return '<a class="ag-ev' + (faded(e, my) ? ' pend' : '') + (e.out === 'cancel' ? ' x' : '') + (e.all ? ' team' : '') + (e.busy ? ' busy' : '') + '" href="#/e/' + e.id + '"><span class="ag-t" style="color:' + (evColor(e) === '#F2C200' ? '#A87D00' : evColor(e)) + '">' + t + '</span><span class="ag-ti">' + (S.filter === 'all' || S.filter.indexOf('me+') === 0 ? '<b class="ag-sn" style="color:' + esc(o.color || '#14213D') + '">' + esc(shortName(o)) + '</b>' + avatar(o, 'xxs') : '') + (e.all ? '<img class="tlogo" src="icons/team-mark.png" alt="">' : '') + esc(e.busy ? 'Busy · ' + shortName(o) : e.title) + '</span></a>';
         }).join('') + '</div></div>';
     }
     return html + '</div>';
   }
   function calBody() {
-    return S.view === 'day' ? (isLeader() ? '<a class="btn primary big bt-link" href="#/besttime">🔎 Best date for a team activity</a>' : '') + teamDay() : S.view === 'list' ? listView() : S.view === 'agenda' ? agendaView() : monthGrid() + '<p class="tiny muted hint">Tap a day to choose it (scroll inside to see all). Tap it again to open that day’s events.</p>';
+    return S.view === 'day' ? (isLeader() ? '<a class="btn primary big bt-link" href="#/besttime">🔎 Best date for a team activity</a>' : '') + teamDay() : S.view === 'agenda' ? agendaView() : monthGrid() + '<p class="tiny muted hint">Tap a day to choose it (scroll inside to see all). Tap it again to open that day’s events.</p>';
   }
   /* Move the calendar one page: month (Month view), week (Agenda) or day (Team day). Returns true if new data must be fetched. */
   function stepState(step) {
@@ -1249,7 +1385,7 @@
     if (r) $scroll.scrollTop = r.getBoundingClientRect().top - $scroll.getBoundingClientRect().top + $scroll.scrollTop - (h ? h.offsetHeight : 0) - 4;
   }
   function viewSwitch() {
-    return '<div class="seg">' + [['month', 'Month'], ['agenda', 'Agenda'], ['day', 'Team day'], ['list', 'List']].map(function (v) { return '<button class="' + (S.view === v[0] ? 'on' : '') + '" data-act="view" data-v="' + v[0] + '">' + v[1] + '</button>'; }).join('') + '</div>';
+    return '<div class="seg">' + [['month', 'Month'], ['agenda', 'Agenda'], ['day', 'Team day']].map(function (v) { return '<button class="' + (S.view === v[0] ? 'on' : '') + '" data-act="view" data-v="' + v[0] + '">' + v[1] + '</button>'; }).join('') + '</div>';
   }
   function keptMerges() { var m = S.data && S.data.me && S.data.me.merges; if (typeof m === 'string' && (m || LS.get('mergesSynced', false))) return m ? m.split(',') : []; return LS.get('merges', []); }
   function setKept(list) { list = list.slice(-6); LS.set('merges', list); LS.set('mergesSynced', true); if (S.data && S.data.me) S.data.me.merges = list.join(','); api('profile', {merges: list.join(',')}).catch(function () {}); }
@@ -1271,10 +1407,10 @@
       : '<div class="monthnav"><button class="nav" data-act="month" data-d="-1" aria-label="Previous month">‹</button><b class="mtitle">' + whoseFaces() + '<span>' + MONTH[c.m] + ' ' + c.y + '</span></b><button class="nav" data-act="month" data-d="1" aria-label="Next month">›</button><button class="btn tiny ghost" data-act="today">Today</button></div>';
     var body = S.view === 'list' ? calBody() : '<div class="pager"><div class="ptrack" id="ptrack"><div class="page">' + calBody() + '</div></div></div>';
     var nowP = P(Date.now()), yLeft = Math.round((Date.UTC(nowP.y, 11, 31) - Date.UTC(nowP.y, nowP.m, nowP.d)) / DAY), mLeft = new Date(Date.UTC(nowP.y, nowP.m + 1, 0)).getUTCDate() - nowP.d;
-    var countdown = '<div class="countdown">⏳ <b>' + yLeft + '</b> days left in ' + nowP.y + ' · <b>' + mLeft + '</b> days left in ' + MONTH[nowP.m] + '</div>';
+    var countdown = '<div class="countdown"><span>⏳ <b>' + yLeft + '</b> days left in ' + nowP.y + ' · <b>' + mLeft + '</b> days left in ' + MONTH[nowP.m] + '</span>' + wxChip() + '</div>';
     return '<div class="calhead">' + topbar('REDEFINE Calendar', {right: '<a class="icon-btn" href="#/import" aria-label="Import calendar">⤓</a>'}) +
-      '<div class="calhead-in">' + viewSwitch() + (S.view === 'day' ? '' : filterChips()) + head + countdown + '</div></div>' +
-      '<main class="cal" id="calmain">' + celebrateBar() + (!me().photoV ? '<a class="confirm-bar photo-bar" href="#/me">📷 Add your photo so the team knows it’s you <span>›</span></a>' : '') +
+      '<div class="calhead-in">' + viewSwitch() + (S.view === 'day' ? '' : filterChips() + kindRow()) + head + countdown + '</div></div>' +
+      '<main class="cal" id="calmain">' + celebrateBar() + morningBar() + (!me().photoV ? '<a class="confirm-bar photo-bar" href="#/me">📷 Add your photo so the team knows it’s you <span>›</span></a>' : '') +
       (upcomingTeam().length ? '<a class="confirm-bar team-bar" href="#/teamevents"><img class="tlogo" src="icons/team-mark.png" alt=""> Upcoming team events <b>(' + upcomingTeam().length + ')</b>' + (teamToAnswer() ? ' · <b class="ans">' + teamToAnswer() + ' to answer</b>' : '') + ' <span>›</span></a>' : '') +
       (vAsks().length ? '<button class="confirm-bar ask-bar" data-act="open-ask">🤔 <b>' + vAsks().length + '</b> voice appointment' + (vAsks().length > 1 ? 's need' : ' needs') + ' a quick answer <span>›</span></button>' : '') +
       (myInvites().length ? '<a class="confirm-bar invite" href="#/invites">📩 <b>' + myInvites().length + '</b> invitation' + (myInvites().length > 1 ? 's' : '') + ' waiting for your answer <span>›</span></a>' : '') +
@@ -1308,7 +1444,7 @@
       for (var d = 0; d < 7; d++) {
         var k = addDays(start, w * 7 + d), p = P(keyMs(k)), evs = onDay(list, k).sort(function (x, y) { return (y.all ? 1 : 0) - (x.all ? 1 : 0); });   // team events always visible first
         var lun = lunarLabel(k), showOwner = S.filter === 'all' || S.filter.indexOf('me+') === 0, hs = C.holidaysOn(k), isPh = hs.some(function (h) { return h.kind === 'ph'; });
-        html += '<div role="button" tabindex="0" class="gd' + (C.schoolHoliday(k) ? ' school' : '') + (p.m !== c.m ? ' dim' : '') + (k === today ? ' today' : '') + (k === S.sel ? ' sel' : '') + (evs.length > 3 ? ' many' : '') + '" data-act="sel" data-k="' + k + '"><span class="dn' + (isPh ? ' ph' : '') + '">' + p.d + (lun ? '<em class="lun">' + lun + '</em>' : '') + '</span>' + (hs.length ? '<span class="hol' + (isPh ? ' ph' : '') + '">' + hs[0].icon + ' ' + esc(hs[0].name) + '</span>' : '') + '<div class="gd-evs">' +
+        html += '<div role="button" tabindex="0" class="gd' + (C.schoolHoliday(k) ? ' school' : '') + (p.m !== c.m ? ' dim' : '') + (k === today ? ' today' : '') + (k === S.sel ? ' sel' : '') + (evs.length > 3 ? ' many' : '') + '" data-act="sel" data-k="' + k + '"><span class="dn' + (isPh ? ' ph' : '') + '">' + p.d + (lun ? '<em class="lun">' + lun + '</em>' : '') + '</span>' + wxDay(k) + (hs.length ? '<span class="hol' + (isPh ? ' ph' : '') + '">' + hs[0].icon + ' ' + esc(hs[0].name) + '</span>' : '') + '<div class="gd-evs">' +
           evs.map(function (e) { var o = mem(e.ownerId); return '<span class="bar' + (e.busy ? ' busy' : '') + (faded(e, me().id) ? ' pend' : '') + (e.out === 'cancel' ? ' x' : '') + (e.all ? ' team' : '') + '" style="' + evStyle(e) + '">' + (showOwner ? avatar(o, 'xxs') : '') + (e.all ? '<img class="tlogo" src="icons/team-mark.png" alt="">' : '') + esc(e.busy ? 'Busy' : e.title) + '</span>'; }).join('') +
           '</div>' + (evs.length > 3 ? '<span class="more">+' + (evs.length - 3) + '</span>' : '') + '</div>';
       }
@@ -2504,6 +2640,10 @@
     if (a === 'filter' && b.dataset.id === 'pick') return pickMerge();
     if (a === 'filter' && Date.now() - CHIPDRAG.ended < 500) return;   // the end of a press-and-hold move is not a tap
     if (a === 'filter') { S.filter = b.dataset.id; LS.set('filter', S.filter); return render(); }
+    if (a === 'kind') { S.kind = b.dataset.k; LS.set('kind', S.kind); return render(); }
+    if (a === 'wx') return openWeather();
+    if (a === 'wxloc') { LS.del('wxDenied'); WXL = null; LS.del('wxLoc'); closeModal(); toast('📍 Finding your location…'); return loadWeather(true, true); }
+    if (a === 'morning') return openMorning();
     if (a === 'merge-keep') { var mk = keptMerges(); if (mk.indexOf(b.dataset.id) < 0) mk.push(b.dataset.id); setKept(mk); toast('Kept. It stays on your chips.', 'good'); return render(); }
     if (a === 'merge-x') { setKept(keptMerges().filter(function (x) { return x !== b.dataset.id; })); if (S.filter === 'me+' + b.dataset.id) { S.filter = 'me'; LS.set('filter', 'me'); } return render(); }
     if (a === 'merge') { closeModal(); S.filter = 'me+' + b.dataset.id; LS.set('filter', S.filter); return render(); }
@@ -2807,6 +2947,9 @@
   document.addEventListener('focusout', function () { setTimeout(function () { if (!textField(document.activeElement)) document.documentElement.classList.remove('typing'); }, 80); });
   if (window.visualViewport) visualViewport.addEventListener('resize', function () { var el = document.activeElement; if (textField(el)) setTimeout(function () { keepInView(el); }, 30); });
   setInterval(fitFrame, 1000);
+  setTimeout(function () { loadWeather(); morningCheck(); }, 1200);
+  setInterval(function () { loadWeather(); morningCheck(); if (!route().replace(/^[/]+/, '') && !document.getElementById('modal-root').className) render(); }, 5 * 60e3);
+  document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible') setTimeout(function () { loadWeather(); morningCheck(); }, 600); });
   setTimeout(function () { if (S.token && vAsks().length) openAsk(); }, 3500);
   fitFrame();
   setTimeout(function () {   // iPhone in Safari: once, suggest the Home Screen app (full screen + pop-ups)

@@ -24,6 +24,11 @@ You stay signed in on that phone for good, like WhatsApp. Only two things sign y
 - Signing out of a phone throws away any changes still waiting to send on it.
 
 ## Every day (agents)
+- **Morning reminder:** from 6am, the first time you open the app that day, a pop-up shows today's events: ⭐ first up, then the rest, with today's weather. After you close it, a blue **📋 Today** bar on the calendar opens it again. Both are gone after 2pm.
+- **Weather:** the chip beside the countdown (e.g. ⛈️ 30°) is the weather now where you are. Tap it to see the next 24 hours and the next 14 days, with rain chance, UV, sunrise and sunset. Month and Agenda show a weather icon on today and the coming days. It updates every 15 minutes. The phone asks once to use your location. If you say no, it shows Penang. Tap **📍 Use my location** in the weather page to try again.
+- **Show: All / 💼 Work / 🏠 Personal:** the row under the people chips. Personal = only the red events. Work = everything else (birthdays and other people's Busy blocks are left out).
+- **🤝 Together (Me + partner view):** in a "Me + someone" view there is one more button, e.g. **🤝 KJ + MJ together**. It shows only what you all have to attend: one of you invited the other, a team event none of you said no to, or the same thing at the same time in both calendars.
+- **Agenda:** in Everyone and "Me + …" views each event shows the short name and face, e.g. **KJ** 🙂 Meeting khai ping. (The List view was removed: use Agenda.)
 - **Add an appointment:** tap **+**, type what it is ("Present Mr Lim medical card", "签单 Ooi", "FU Jason"). The app works out the type (👋 Approach, 📊 Present, 🔁 Follow-up, 🤝 Join field, 🌱 Recruit, 👥 Meeting, 🛠️ Service, 🎁 CRM, 📝 Paperwork, 🏠 Personal). Tap another type if it guessed wrong. There is no Closing type: a signing meeting ("签单 Ooi") is a 🔁 Follow-up, and you record the sale with **💰 Closed** after it. Older Closing events still show and count.
 - **Team or Only me:** 👥 Team = everyone sees it. 🔒 Only me = others see a grey **Busy** block, with no title, client or place. Hidden work events still count in your numbers. Personal events never count.
 - **After the appointment:** tap **✓ Done**, **💰 Closed**, or **✕ Didn't happen**. Only confirmed events count. The app never guesses. At 9pm it reminds you if anything is still unconfirmed.

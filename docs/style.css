@@ -675,3 +675,41 @@ html.typing .import .sticky-actions .btn { box-shadow: none; }
 .ask-foot { margin-top: 14px; }
 button.confirm-bar { width: 100%; font: inherit; text-align: left; cursor: pointer; }
 .ask-bar { background: #FFF4D6; color: #7A5600; }
+
+/* Show: All / Work / Personal / Together */
+.kinds { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; margin: 0 0 6px; }
+.kinds::-webkit-scrollbar { display: none; }
+.kind { flex: none; border: 1px solid var(--line); background: var(--card); color: var(--text); border-radius: 999px; padding: 4px 12px; font: inherit; font-size: 13px; font-weight: 600; white-space: nowrap; }
+.kind.on { background: #14213D; color: #fff; border-color: #14213D; }
+.kind.k-personal.on { background: #E5484D; border-color: #E5484D; }
+.kind.k-work.on { background: #22A049; border-color: #22A049; }
+.kind.k-together { border-color: #8E44AD; color: #8E44AD; }
+.kind.k-together.on { background: #8E44AD; color: #fff; }
+/* Agenda: short name before the face */
+.ag-sn { font-size: 11px; font-weight: 800; margin-right: 3px; letter-spacing: .2px; }
+/* weather */
+.countdown { display: flex; align-items: center; justify-content: center; gap: 8px; flex-wrap: wrap; }
+.wxchip { border: 1px solid var(--line); background: var(--card); color: var(--text); border-radius: 999px; padding: 2px 10px; font: inherit; font-size: 13px; line-height: 20px; cursor: pointer; }
+.wxchip b { color: var(--text); }
+.gd .gwx { position: absolute; top: 1px; right: 2px; font-size: 12px; line-height: 16px; pointer-events: none; }
+.agwx { display: block; font-size: 11px; color: var(--muted); margin-top: 2px; white-space: nowrap; }
+.agwx i { display: block; font-style: normal; font-size: 10px; color: #2E86DE; }
+.wxm .wnow { display: flex; align-items: center; gap: 14px; margin: 6px 0 4px; }
+.wxm .wbig { font-size: 52px; line-height: 1; }
+.wxm .wt { font-size: 34px; line-height: 1.1; }
+.wxm .wnow p { margin: 2px 0; }
+.whours { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 6px; scrollbar-width: thin; }
+.wh { flex: none; width: 56px; text-align: center; background: var(--soft); border-radius: 12px; padding: 6px 2px; display: flex; flex-direction: column; gap: 2px; font-size: 13px; }
+.wh span { font-size: 22px; } .wh small { color: var(--muted); font-size: 11px; } .wh i { font-style: normal; font-size: 10px; color: var(--muted); } .wh i.wet, .wdr.wet { color: #2E86DE; font-weight: 700; }
+.wdays { display: flex; flex-direction: column; }
+.wd { display: grid; grid-template-columns: 82px 26px 1fr 52px 78px; align-items: center; gap: 4px; padding: 7px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
+.wd:last-child { border-bottom: 0; }
+.wdi { font-size: 20px; } .wdt { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .wdr { font-size: 12px; color: var(--muted); } .wdm { text-align: right; }
+/* morning reminder */
+.today-bar { background: #EAF4FF; color: #0B4F8A; border-color: #BBD9F7; }
+.morning .mrow { display: flex; gap: 10px; align-items: flex-start; padding: 10px 10px; border-radius: 12px; border-left: 5px solid var(--c); background: var(--soft); margin: 6px 0; color: var(--text); text-decoration: none; }
+.morning .mrow.first { background: #FFF7E6; box-shadow: 0 0 0 1px #FCD9A0 inset; }
+.morning .mrow.past { opacity: .5; }
+.morning .mt { width: 62px; flex: none; font-weight: 700; font-size: 14px; }
+.morning .mb { flex: 1; min-width: 0; } .morning .mb small { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; }
+.today-bar .tb-t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
