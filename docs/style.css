@@ -664,3 +664,14 @@ button.mrow.pick.lock { opacity: .55; cursor: default; } button.mrow.pick.lock .
 /* while typing, buttons pinned to the bottom stay in the form instead of floating over the field (keyboard is up) */
 html.typing .sticky-actions { position: static; box-shadow: none; }
 html.typing .import .sticky-actions .btn { box-shadow: none; }
+
+/* Ask back (voice) */
+.ask-sum { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 8px 12px; display: flex; flex-direction: column; gap: 4px; font-size: 14px; }
+.ask-sum div { display: flex; gap: 8px; } .ask-sum span { width: 20px; flex: none; text-align: center; }
+.ask-q { font-size: 17px; font-weight: 700; margin: 14px 0 8px; }
+.ask-opts { display: flex; flex-wrap: wrap; gap: 8px; } .ask-opts .btn { flex: 1 1 40%; min-height: 46px; font-weight: 700; border: 1.5px solid var(--coral); }
+.ask-type { display: flex; gap: 8px; margin-top: 10px; } .ask-type input { flex: 1; min-width: 0; }
+.ask-busy { margin-top: 10px; color: var(--muted); font-size: 14px; display: flex; align-items: center; gap: 8px; }
+.ask-foot { margin-top: 14px; }
+button.confirm-bar { width: 100%; font: inherit; text-align: left; cursor: pointer; }
+.ask-bar { background: #FFF4D6; color: #7A5600; }

@@ -890,6 +890,41 @@ function fresh() {
   throws(() => h({op: 'besttime', token: a.token, ids: [b.me.id]}), 'leader_only', 'agents cannot run it');
 }
 
+/* ---------- smarter voice: names hint, careful re-read, ask back ---------- */
+{
+  const said = [];
+  const s = memStore({transcribe: (b64, mime) => 'Esok 10am kopi dengan Ali, Friday 8pm present Ms Ng at Queensbay (ask)'}); s.setNow(NOW);
+  const realT = s.transcribe; s.transcribe = (b64, mime, hint) => { said.push(hint); return realT(b64, mime, hint); };
+  const h = q => CORE.handle(q, s), join = (name, leader) => { s.resetFails(); return h({op: 'signin', code: leader ? 'test-leader-code' : 'test-team', name, pin: '1234', create: true}); };
+  const kj = join('Wong Kah Jian', true), ag = join('Lim Mei Ling');
+  h({op: 'save', token: ag.token, event: {title: 'Coffee', start: '2026-11-10T02:00:00Z', end: '2026-11-10T03:00:00Z', place: 'Gurney Paragon'}});
+  const audio = 'A'.repeat(2000);
+  const r = h({op: 'voice', token: ag.token, audio, mime: 'audio/webm', save: true, ask: true});
+  ok(/Wong Kah Jian/.test(said[0]) && /Gurney Paragon/.test(said[0]) && /陪访/.test(said[0]), 'speech-to-text is told the team names, the agent\'s places and REDEFINE terms');
+  ok(/KJ = Wong Kah Jian/.test(s.prompts.filter(p => /^VOICE BOOKING/.test(p.prompt))[0].prompt), 'the AI sees short and full names');
+  ok(s.voiceReads === 2 && s.prompts.filter(p => /^VOICE BOOKING/.test(p.prompt)).some(p => !p.quick), 'not sure after the quick read: read again carefully');
+  ok(r.events.length === 1 && /Coffee with Ali/.test(r.events[0].title), 'the clear appointment is saved straight away');
+  ok(r.asks.length === 1 && r.asks[0].question === 'Which Friday?' && r.asks[0].options.join() === 'This Fri,Next Fri' && /Ms Ng/.test(r.asks[0].draft.title), 'the unclear one is not saved: the AI asks, with answers to tap');
+  ok(!s.load('events').some(e => /Ms Ng/.test(e.title)), 'nothing saved for the unclear one yet');
+  // the agent answers
+  const a1 = h({op: 'voiceanswer', token: ag.token, heard: r.asks[0].heard, draft: r.asks[0].draft, question: r.asks[0].question, answer: 'Next Fri', round: 1});
+  ok(a1.event && /Ms Ng/.test(a1.event.title) && a1.event.start === '2026-11-20T12:00:00.000Z' && a1.event.place === 'Queensbay', 'answer used: saved on the right date, other details kept');
+  ok(/You said: .*→ Next Fri/.test(s.load('events').filter(e => e.id === a1.event.id)[0].notes), 'the note keeps what was said and the answer');
+  // still unclear after an answer: one more question, then it is saved anyway
+  const a2 = h({op: 'voiceanswer', token: ag.token, heard: r.asks[0].heard, draft: r.asks[0].draft, question: 'Which Friday?', answer: 'not sure', round: 1});
+  ok(a2.ask && a2.ask.round === 2 && a2.ask.question === 'Which date then?', 'still unclear: asks once more');
+  const a3 = h({op: 'voiceanswer', token: ag.token, heard: r.asks[0].heard, draft: a2.ask.draft, question: a2.ask.question, answer: 'not sure', round: 2});
+  ok(a3.event && /Not said: the date/.test(s.load('events').filter(e => e.id === a3.event.id)[0].notes), 'after the second answer it is saved with a please-check note');
+  // "save as it is": no AI, nothing counted
+  const before = s.prompts.length;
+  const k = h({op: 'voiceanswer', token: ag.token, heard: r.asks[0].heard, draft: r.asks[0].draft, keep: true});
+  ok(k.event && /Ms Ng/.test(k.event.title) && s.prompts.length === before, 'save as it is: no AI call');
+  // older phones (no ask flag): everything saved as before
+  const old = h({op: 'voice', token: ag.token, audio, mime: 'audio/webm', save: true});
+  ok(old.events.length === 2 && !old.asks.length, 'older app versions still get every appointment saved');
+  throws(() => h({op: 'voiceanswer', token: ag.token, heard: 'x', answer: 'y'}), 'bad_request', 'an answer needs the draft');
+}
+
 { const fs = require('fs'), v = JSON.parse(fs.readFileSync(__dirname + '/docs/version.json', 'utf8')).v, m = /APP_VERSION = '([0-9]+)'/.exec(fs.readFileSync(__dirname + '/docs/app.js', 'utf8'));
   ok(m && m[1] === v, 'docs/version.json (' + v + ') matches APP_VERSION (' + (m && m[1]) + ')'); }
 

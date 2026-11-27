@@ -31,6 +31,19 @@ module.exports = function memStore(opts = {}) {
       b64 = b64 || '';
       store.prompts.push({prompt, bytes: b64.length, quick: !!(opt && opt.quick)});
       if (opts.ai) return opts.ai(prompt, b64);
+      if (/^VOICE BOOKING/.test(prompt) && /\(ask\)/.test(prompt)) {   // stand-in for ask-back: one clear appointment, one unclear Friday
+        const today = /Today is (\d{4}-\d{2}-\d{2})/.exec(prompt)[1], plus = n => new Date(Date.parse(today + 'T00:00:00Z') + n * 864e5).toISOString().slice(0, 10);
+        if (/FOLLOW-UP\./.test(prompt)) {
+          const ans = (/The agent answered: "([^"]*)"/.exec(prompt) || [])[1] || '';
+          if (/not sure/i.test(ans)) return JSON.stringify({events: [{title: 'Present Ms Ng (sample)', type: 'present', date: '', start: '20:00', sure: false, question: 'Which date then?', options: ['Fri', 'Sat']}]});
+          return JSON.stringify({events: [{title: 'Present Ms Ng (sample)', type: 'present', date: plus(8), start: '20:00', end: '', place: 'Queensbay', people: [], sure: true, question: '', options: []}]});
+        }
+        store.voiceReads = (store.voiceReads || 0) + 1;
+        return JSON.stringify({events: [
+          {title: 'Coffee with Ali (sample)', type: 'approach', date: plus(1), start: '10:00', sure: true, question: '', options: []},
+          {title: 'Present Ms Ng (sample)', type: 'present', date: plus(1), start: '20:00', place: 'Queensbay', sure: false, question: 'Which Friday?', options: ['This Fri', 'Next Fri']}
+        ], clean: 'stand-in', unclear: ''});
+      }
       if (/^VOICE BOOKING/.test(prompt)) {   // stand-in: tomorrow 15:00 presentation
         const today = /Today is (\d{4}-\d{2}-\d{2})/.exec(prompt)[1], tm = new Date(Date.parse(today + 'T00:00:00Z') + 864e5).toISOString().slice(0, 10);
         return JSON.stringify({title: 'Present medical plan to Mr Lim (sample)', type: 'present', date: tm, start: '15:00', end: '', allDay: false, place: 'Gurney Plaza', notes: '', people: [], repeat: '', clean: 'Tomorrow 3pm present medical plan to Mr Lim at Gurney Plaza', unclear: ''});

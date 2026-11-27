@@ -7,7 +7,7 @@
   var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   var MONTH = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   var DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  var APP_VERSION = '79';
+  var APP_VERSION = '80';
   var H8 = 8 * 3600e3, DAY = 864e5, SELLING = {approach: 1, open: 1, present: 1, followup: 1, close: 1, joinfield: 1, recruit: 1};
 
   /* ---------- storage (each phone) ---------- */
@@ -993,13 +993,19 @@
     if (vqBusy || !VQ.length || !S.token || !navigator.onLine) return;
     var it = VQ[0]; if (it.next > Date.now()) return;
     vqBusy = true;
-    (it.to ? api('voicetodo', {audio: it.audio, mime: it.mime, kind: it.to.kind, q: it.to.q}) : api('voice', {audio: it.audio, mime: it.mime, save: true})).then(function (j) {
+    (it.to ? api('voicetodo', {audio: it.audio, mime: it.mime, kind: it.to.kind, q: it.to.q}) : api('voice', {audio: it.audio, mime: it.mime, save: true, ask: true})).then(function (j) {
       vqBusy = false; VQ = VQ.filter(function (x) { return x.id !== it.id; }); saveVQ();
       if (it.to) {
         var tdo = j.todo || {}; if (tdo.id && S.data) { S.data.todos = (S.data.todos || []).filter(function (x) { return x.id !== tdo.id; }).concat([tdo]); }
         render(); toast((it.to.kind === 'note' ? '📝 Note saved: ' : '✅ To-do added: ') + String(tdo.text || '').slice(0, 60), 'good'); quietSync(true); return runVoiceQ();
       }
       var got = (j.events && j.events.length ? j.events : j.event ? [j.event] : []).filter(function (x) { return x && x.id; });
+      if (j.asks && j.asks.length) {   // the AI was not sure about some: ask the agent before saving those
+        addAsks(j.asks);
+        if (got.length && S.data) { var gi = got.map(function (x) { return x.id; }); S.data.events = (S.data.events || []).filter(function (x) { return gi.indexOf(x.id) < 0; }).concat(got); }
+        if (got.length) toast('✅ Added ' + got.length + ' · 🤔 ' + j.asks.length + ' need' + (j.asks.length > 1 ? '' : 's') + ' a quick answer', 'good');
+        render(); openAsk(); quietSync(true); return runVoiceQ();
+      }
       if (got.length && S.data) { var ids = got.map(function (x) { return x.id; }); S.data.events = (S.data.events || []).filter(function (x) { return ids.indexOf(x.id) < 0; }).concat(got); render(); }
       if (got.length > 1) { toast('✅ Added ' + got.length + ' appointments: ' + got.map(function (x) { return x.title + ' · ' + (x.allDay ? dayLabel(String(x.start).slice(0, 10)) : dayLabel(dayKey(Date.parse(x.start))) + ' ' + hm(Date.parse(x.start))); }).join(' | ') + (got.some(function (x) { return /Not said/.test(x.notes || ''); }) ? ' · please check' : ''), 'good'); quietSync(true); return runVoiceQ(); }
       var e = j.event || {}, v = j.voice || {}, when = e.allDay ? dayLabel(String(e.start).slice(0, 10)) + ' (all day)' : dayLabel(dayKey(Date.parse(e.start))) + ' ' + hm(Date.parse(e.start));
@@ -1013,6 +1019,58 @@
     });
   }
   window.addEventListener('online', runVoiceQ);
+  /* ---------- Ask back: the AI was not sure about a voice appointment, so it asks one short question first ---------- */
+  function vAsks() { var a = LS.get('vAsk', []); return Array.isArray(a) ? a : []; }
+  function addAsks(list) { LS.set('vAsk', vAsks().concat(list.map(function (x) { return Object.assign({id: 'q' + Math.random().toString(36).slice(2), at: Date.now()}, x); }))); }
+  function dropAsk(id) { LS.set('vAsk', vAsks().filter(function (x) { return x.id !== id; })); }
+  function askSummary(d) {
+    var who = (d.with || []).map(function (id) { return shortName(mem(id)); }).join(', ');
+    var rows = [['📝', d.title || '–'], ['🗓️', d.date ? dayLabel(d.date, true) : '❓ date not clear'], ['⏰', d.start ? hm(Date.parse(d.date + 'T' + d.start + ':00+08:00')) + (d.end ? ' – ' + hm(Date.parse(d.date + 'T' + d.end + ':00+08:00')) : '') : d.allDay ? 'All day' : '❓ time not clear']];
+    if (d.place) rows.push(['📍', d.place]); if (who) rows.push(['👥', who]);
+    return '<div class="ask-sum">' + rows.map(function (x) { return '<div><span>' + x[0] + '</span>' + esc(x[1]) + '</div>'; }).join('') + '</div>';
+  }
+  var askBusy = false;
+  function openAsk() {
+    var it = vAsks()[0]; if (!it || document.getElementById('modal-root').className) return;
+    modal('<div class="ask-card"><div class="row between"><h3>🤔 Quick check</h3><span class="tiny muted">' + (vAsks().length > 1 ? '1 of ' + vAsks().length : '') + '</span></div>' +
+      '<p class="tiny muted">From your voice note: “' + esc(String(it.heard || '').slice(0, 160)) + '”</p>' +
+      '<p class="lbl">I understood</p>' + askSummary(it.draft || {}) +
+      '<p class="ask-q">' + esc(it.question) + '</p>' +
+      (it.options && it.options.length ? '<div class="ask-opts">' + it.options.map(function (o) { return '<button class="btn" data-ao="' + esc(o) + '">' + esc(o) + '</button>'; }).join('') + '</div>' : '') +
+      '<form class="ask-type"><input name="a" maxlength="300" autocomplete="off" placeholder="Or type your answer (or tap 🎤 on your keyboard)"><button class="btn primary">Send</button></form>' +
+      '<div class="ask-busy" hidden><span class="mini-spin"></span> Setting it up…</div>' +
+      '<div class="row between ask-foot"><button class="link" data-ax="keep">Save as it is</button><button class="link danger" data-ax="drop">Don’t add</button></div></div>', function (sh) {
+      var send = function (answer) {
+        if (askBusy || !answer) return; askBusy = true; sh.querySelector('.ask-busy').hidden = false;
+        Array.prototype.forEach.call(sh.querySelectorAll('button,input'), function (b) { b.disabled = true; });
+        api('voiceanswer', {heard: it.heard, draft: it.draft, question: it.question, answer: answer, round: it.round || 1}).then(function (j) {
+          askBusy = false; closeModal(); afterAsk(it, j);
+        }, function (e) {
+          askBusy = false; closeModal();
+          toast(e && e.code === 'network' ? '📴 No signal. Your question is kept: answer it when you are back online.' : 'Not added: ' + errText(e), 'bad');
+          if (!(e && e.code === 'network')) dropAsk(it.id);
+          render();
+        });
+      };
+      Array.prototype.forEach.call(sh.querySelectorAll('[data-ao]'), function (b) { b.onclick = function () { send(b.dataset.ao); }; });
+      sh.querySelector('.ask-type').onsubmit = function (ev) { ev.preventDefault(); send(sh.querySelector('[name=a]').value.trim()); };
+      sh.querySelector('[data-ax=keep]').onclick = function () {
+        if (askBusy) return; askBusy = true;
+        api('voiceanswer', {heard: it.heard, draft: it.draft, keep: true}).then(function (j) { askBusy = false; closeModal(); afterAsk(it, j); }, function (e) { askBusy = false; toast(errText(e), 'bad'); });
+      };
+      sh.querySelector('[data-ax=drop]').onclick = function () { dropAsk(it.id); closeModal(); toast('Not added.'); render(); setTimeout(openAsk, 300); };
+    });
+  }
+  function afterAsk(it, j) {
+    if (j.ask) {   // still not clear: one more question
+      LS.set('vAsk', vAsks().map(function (x) { return x.id === it.id ? Object.assign({}, x, j.ask) : x; }));
+      return setTimeout(openAsk, 200);
+    }
+    dropAsk(it.id);
+    var e = j.event; if (e && e.id && S.data) { S.data.events = (S.data.events || []).filter(function (x) { return x.id !== e.id; }).concat([e]); }
+    if (e) toast('✅ Added: ' + e.title + ' · ' + (e.allDay ? dayLabel(String(e.start).slice(0, 10)) : dayLabel(dayKey(Date.parse(e.start))) + ' ' + hm(Date.parse(e.start))), 'good');
+    render(); quietSync(true); setTimeout(openAsk, 400);
+  }
   /* entries made by voice that the agent has not checked yet */
   function voicePending(fn) { return VQ.filter(fn); }
   function pendRow(it) { return it.next > Date.now() ? '🎤 Waiting for signal, will save by itself…' : '🎤 Writing down what you said…'; }
@@ -1029,7 +1087,7 @@
   }
 
   function signOutLocal(reason) {
-    S.token = ''; S.data = null; LS.del('token'); LS.del('cache'); LS.del('pushToken'); LS.del('outbox');
+    S.token = ''; S.data = null; LS.del('token'); LS.del('cache'); LS.del('pushToken'); LS.del('outbox'); LS.del('vAsk');
     if (reason) toast(errText({code: reason}), 'bad');
     render();
   }
@@ -1191,6 +1249,7 @@
       '<div class="calhead-in">' + viewSwitch() + (S.view === 'day' ? '' : filterChips()) + head + countdown + '</div></div>' +
       '<main class="cal" id="calmain">' + celebrateBar() + (!me().photoV ? '<a class="confirm-bar photo-bar" href="#/me">📷 Add your photo so the team knows it’s you <span>›</span></a>' : '') +
       (upcomingTeam().length ? '<a class="confirm-bar team-bar" href="#/teamevents"><img class="tlogo" src="icons/team-mark.png" alt=""> Upcoming team events <b>(' + upcomingTeam().length + ')</b>' + (teamToAnswer() ? ' · <b class="ans">' + teamToAnswer() + ' to answer</b>' : '') + ' <span>›</span></a>' : '') +
+      (vAsks().length ? '<button class="confirm-bar ask-bar" data-act="open-ask">🤔 <b>' + vAsks().length + '</b> voice appointment' + (vAsks().length > 1 ? 's need' : ' needs') + ' a quick answer <span>›</span></button>' : '') +
       (myInvites().length ? '<a class="confirm-bar invite" href="#/invites">📩 <b>' + myInvites().length + '</b> invitation' + (myInvites().length > 1 ? 's' : '') + ' waiting for your answer <span>›</span></a>' : '') +
       (voiceToCheck().length ? '<a class="confirm-bar voicebar" href="#/voicecheck">🎤 <b>' + voiceToCheck().length + '</b> voice entr' + (voiceToCheck().length > 1 ? 'ies' : 'y') + ' to check <span>›</span></a>' : '') +
       (voicePending(function (x) { return !x.to; }).length ? '<div class="confirm-bar voicebar pend"><span class="mini-spin"></span> 🎤 Adding your voice note' + (voicePending(function (x) { return !x.to; }).length > 1 ? 's' : '') + ' to the calendar…</div>' : '') +
@@ -2384,6 +2443,7 @@
     if (a === 'btwhopick') { S.btOpt.who = 'pick'; return render(); }
     if (a === 'btwhonone') { S.btOpt.ids = []; return render(); }
     if (a === 'btwho') { var bi = S.btOpt.ids || (S.btOpt.ids = []), bx = bi.indexOf(b.dataset.id); if (bx >= 0) bi.splice(bx, 1); else bi.push(b.dataset.id); return render(); }
+    if (a === 'open-ask') return openAsk();
     if (a === 'vcheck') return send('checked', {id: b.dataset.id}, '✓ Checked');
     if (a === 'vdel') return confirmBox('Delete this entry?', 'It is removed from your calendar.', 'Delete', true).then(function (y) { if (y) send('del', {id: b.dataset.id}, 'Deleted'); });
     if (a === 'feedget' || a === 'feedreset' || a === 'feedoff') {
@@ -2727,6 +2787,7 @@
   document.addEventListener('focusout', function () { setTimeout(function () { if (!textField(document.activeElement)) document.documentElement.classList.remove('typing'); }, 80); });
   if (window.visualViewport) visualViewport.addEventListener('resize', function () { var el = document.activeElement; if (textField(el)) setTimeout(function () { keepInView(el); }, 30); });
   setInterval(fitFrame, 1000);
+  setTimeout(function () { if (S.token && vAsks().length) openAsk(); }, 3500);
   fitFrame();
   setTimeout(function () {   // iPhone in Safari: once, suggest the Home Screen app (full screen + pop-ups)
     try {

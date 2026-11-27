@@ -980,14 +980,15 @@ var CORE = (function () {
       'VOICE BOOKING. An insurance agent in Malaysia spoke a voice note to put one OR MORE appointments in their calendar.',
       'They may mix English, Mandarin, Cantonese, Hokkien and Malay ("rojak"). The text below is a speech-to-text transcript and may',
       'contain mistakes; read it the way a Malaysian colleague would. Today is ' + today + ' (' + dow + '), Malaysia time.',
-      'Team members (short names): ' + (names.join(', ') || 'none') + '.',
+      'Team members (short name = full name): ' + (names.join('; ') || 'none') + '. Any other person named is a client or friend (never ask who they are).',
       '',
       'Transcript: """' + heard + '"""',
       '',
       'Return ONLY a JSON object:',
       '{"events":[{"title":"short title in the language they used, e.g. Present medical plan to Mr Lim","type":"approach|present|followup|joinfield|recruit|meeting|service|crm|paperwork|personal|",',
       '   "date":"YYYY-MM-DD or empty","start":"HH:MM 24h or empty","end":"HH:MM or empty","allDay":false,"place":"or empty","notes":"or empty",',
-      '   "people":["team members to invite, only names from the list"],"repeat":"w|m|y|","jf":"present|followup (only for joinfield: is the client meeting a presentation or a follow-up?)","unclear":"what was not said or not clear for THIS one"}],',
+      '   "people":["team members to invite, only names from the list"],"repeat":"w|m|y|","jf":"present|followup (only for joinfield: is the client meeting a presentation or a follow-up?)","unclear":"what was not said or not clear for THIS one",',
+      '   "sure":true,"question":"","options":[]}],',
       ' "clean":"the whole voice note rewritten clearly in English","unclear":"anything you could not understand"}',
       'One item in "events" for EACH appointment, in the order said (at most 10). If the same thing happens on several dates',
       '("Mon and Wed 8pm training", "15, 16 and 17 Dec roadshow"), make one item per date. A detail said once for a group',
@@ -999,10 +1000,44 @@ var CORE = (function () {
       'If only a start time is said, leave end empty. type: approach = meeting/calling new friends;',
       'present = presentation / first meeting / fact-find with a client; followup = follow-up, including a signing / closing meeting (closing a case is ALWAYS present or followup: present only if they say it closed at the first presentation, otherwise followup; never meeting or training); joinfield = join field (陪访): a leader / senior goes along to a client meeting; recruit = recruitment / interview / career talk; meeting = team meeting / training;',
       'service = claims / servicing; crm = client birthday / gift / visit; paperwork = forms / admin; personal = family / gym / private.',
-      'If the transcript is not about an appointment, return empty title and explain in "unclear".'
+      'If the transcript is not about an appointment, return empty title and explain in "unclear".',
+      '',
+      'ASK BACK. For EACH appointment set "sure". sure=false ONLY when a detail needed to book it is really missing or could mean two',
+      'different things: no date at all; a day that could be two dates (e.g. "Friday" said on a Friday); no time for a meeting that clearly',
+      'has one; am/pm truly unclear; a team-member name that fits two people on the list; or you cannot tell what the appointment is.',
+      'Do NOT ask about things that were said clearly, about client names, about place or notes, or about end time. Events that are',
+      'normally all day (roadshow, holiday, birthday, leave, trip) with no time said: allDay=true and sure=true.',
+      'When sure=false: "question" = ONE short question in the language the agent mostly used (e.g. "Which Friday?", "几点开始?", "Pukul berapa?"),',
+      'and "options" = 2-3 short likely answers to tap (e.g. ["This Fri, 4 Dec","Next Fri, 11 Dec"], ["3pm","8pm"]). Still fill in your best guess',
+      'for every field. When sure=true leave question empty and options [].'
     ].join('\n');
   }
   var DOW_EN = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  function voiceNames(team, me) { return team.filter(function (m) { return String(m.active) !== 'false' && m.id !== me.id; }).map(function (m) { return shortOf(m) + ' = ' + str(m.name, 40); }); }
+  /* words the speech-to-text should expect: the team's names, this agent's usual places, REDEFINE terms */
+  var VOICE_TERMS = 'present, presentation, follow up, FF, fact find, join field, 陪访, roadshow, recruit, interview, ANP, NOC, Great Eastern, GE, medical card, CI, ILP, savings plan, 签单, 跟进, 定联, Gurney, Queensbay, SG Farlim';
+  function voiceHint(team, events, me) {
+    var names = [], seen = {};
+    team.forEach(function (m) { if (String(m.active) === 'false') return; [shortOf(m), str(m.name, 40)].forEach(function (n) { if (n && !seen[n]) { seen[n] = 1; names.push(n); } }); });
+    var cut = Date.now() - 120 * 864e5, count = {};
+    events.forEach(function (e) { if (e.ownerId !== me.id || !e.place || Date.parse(e.created || e.start) < cut) return; var p = str(e.place, 40); count[p] = (count[p] || 0) + 1; });
+    var places = Object.keys(count).sort(function (x, y) { return count[y] - count[x]; }).slice(0, 12);
+    return str('Malaysian insurance agent booking appointments. Mixed English, 华语, 广东话, Hokkien, Bahasa Melayu. Team: ' + names.join(', ') +
+      (places.length ? '. Places: ' + places.join(', ') : '') + '. Terms: ' + VOICE_TERMS + '.', 900);
+  }
+  function countAsk(store, me) {   // answers to the AI's questions: their own allowance, so they never eat into voice notes
+    var day = mytDay(store.now().getTime()), key = 'asks_' + day + '_' + me.id, s = store.load('settings');
+    var row = s.filter(function (x) { return x.key === key; })[0], n = row ? +row.value : 0;
+    if (n >= (+store.prop('DAILY_ASKS') || 80)) fail('daily_limit');
+    s = s.filter(function (x) { return x.key.indexOf('asks_') !== 0 || x.key.indexOf('asks_' + day) === 0; }).filter(function (x) { return x.key !== key; });
+    s.push({key: key, value: String(n + 1)}); store.save('settings', s);
+  }
+  function draftBack(d, team) {   // a draft sent back by the phone, in the AI's own shape (people as names)
+    var ids = Array.isArray(d.with) ? d.with : [];
+    return {title: str(d.title, 120), type: str(d.type, 20), date: isDate(str(d.date, 10)) ? str(d.date, 10) : '', start: hhmm(d.start), end: hhmm(d.end), allDay: d.allDay === true,
+      place: str(d.place, 120), notes: str(d.notes, 500), repeat: /^[wmy]$/.test(d.rep) ? d.rep : '', jf: str(d.jfKind, 10),
+      people: team.filter(function (m) { return ids.indexOf(m.id) >= 0; }).map(shortOf), sure: true};
+  }
   /* One voice note may hold several appointments ("events":[...]); an older single-object reply still works.
      The reply keeps .event / .missing / .complete for the first one and adds .events for all of them. */
   function parseVoice(text, heard, members) {
@@ -1022,7 +1057,12 @@ var CORE = (function () {
     members.forEach(function (m) { if (String(m.active) !== 'false' && (want.indexOf(normName(shortOf(m))) >= 0 || want.indexOf(normName(m.name)) >= 0)) ids.push(m.id); });
     var missing = [];
     if (!title) missing.push('what'); if (!date) missing.push('date'); if (!start && !allDay) missing.push('time');
-    return {missing: missing, complete: !missing.length, unclear: str(j.unclear, 200),
+    var opts = (Array.isArray(j.options) ? j.options : []).map(function (o) { return str(o, 40); }).filter(Boolean).slice(0, 3);
+    var q = str(j.question, 140), ask = null;
+    if (title && (j.sure === false || missing.length)) {   // not sure: ask the agent instead of guessing
+      ask = {question: q || (missing.indexOf('date') >= 0 ? 'Which date is "' + title + '"?' : missing.indexOf('time') >= 0 ? 'What time is "' + title + '"?' : 'Can you say a bit more about "' + title + '"?'), options: opts};
+    }
+    return {missing: missing, complete: !missing.length, unclear: str(j.unclear, 200), ask: ask,
       event: {jfKind: type === 'joinfield' ? (j.jf === 'followup' ? 'followup' : j.jf === 'present' ? 'present' : '') : '', title: title, type: type || 'meeting', date: date, start: start, end: end, allDay: allDay, place: str(j.place, 120), notes: str(j.notes, 500), with: ids, rep: /^[wmy]$/.test(j.repeat) ? j.repeat : ''}};
   }
   /* Voice note -> calendar entry, saved straight away (the agent checks it later). Nothing said is never invented:
@@ -1521,19 +1561,43 @@ var CORE = (function () {
     if (q.op === 'voice') {   // counted with the photo readings; speech-to-text + AI run outside the lock. The recording is not kept.
       if (!b64ok(q.audio, MAX_AUDIO_B64) || !AUDIO_OK[str(q.mime, 30).split(';')[0]]) fail('bad_audio');
       var vm = store.withLock(function () { var w0 = who(q, store); countRead(store, w0.me); return w0.me; });
-      var heard = str(store.transcribe(q.audio, str(q.mime, 30).split(';')[0], 'Malaysian insurance agent booking an appointment. Mixed English, 华语, 广东话, Hokkien, Bahasa Melayu.'), 1000);
+      var team = store.load('members');
+      var heard = str(store.transcribe(q.audio, str(q.mime, 30).split(';')[0], voiceHint(team, store.load('events'), vm)), 1000);
       if (!heard) fail('nothing_heard');
-      var nowMs = store.now().getTime(), team = store.load('members');
+      var nowMs = store.now().getTime();
       var today = mytDay(nowMs), dow = DOW_EN[new Date(nowMs + 8 * 3600e3).getUTCDay()];
-      var vv = parseVoice(store.ai(voicePrompt(today, dow, team.filter(function (m) { return String(m.active) !== 'false' && m.id !== vm.id; }).map(shortOf), heard), '', {quick: true}), heard, team);
+      var prompt = voicePrompt(today, dow, voiceNames(team, vm), heard);
+      var vv = parseVoice(store.ai(prompt, '', {quick: true}), heard, team);
+      if (vv.events.some(function (o) { return o.ask; })) {   // the quick read is not sure: read it again carefully before asking the agent
+        try { vv = parseVoice(store.ai(prompt + '\n\nRead this one carefully: a first quick read was not sure about some details.', '', {}), heard, team); vv.careful = true; } catch (e) {}
+      }
       if (!q.save) return {ok: true, voice: vv};
       var real = vv.events.filter(function (o) { return o.event.title || o.event.date || o.event.start; });
       if (!real.length) fail('not_an_appointment');
-      var savedAll = store.withLock(function () {
+      var sure = q.ask ? real.filter(function (o) { return !o.ask; }) : real, unsure = q.ask ? real.filter(function (o) { return o.ask; }) : [];
+      var savedAll = sure.length ? store.withLock(function () {
         var w2 = who(q, store), t0 = store.now().getTime();
-        return real.map(function (o) { return saveEvent({event: voiceToEvent(vv, t0, o, real.length)}, store, w2.me, w2.leader).event; });
-      });
-      return {ok: true, voice: vv, event: savedAll[0], events: savedAll};
+        return sure.map(function (o) { return saveEvent({event: voiceToEvent(vv, t0, o, real.length)}, store, w2.me, w2.leader).event; });
+      }) : [];
+      return {ok: true, voice: vv, event: savedAll[0] || null, events: savedAll,
+        asks: unsure.map(function (o) { return {heard: vv.heard, draft: o.event, question: o.ask.question, options: o.ask.options, round: 1}; })};
+    }
+    if (q.op === 'voiceanswer') {   // the agent answered the AI's question (tap / type / keyboard dictation): finish that appointment
+      var d0 = q.draft && typeof q.draft === 'object' ? q.draft : null; if (!d0) fail('bad_request');
+      var said0 = str(q.heard, 1000), answer = str(q.answer, 300), round = Math.max(1, Math.min(3, Math.floor(+q.round) || 1));
+      var am = store.withLock(function () { var w3 = who(q, store); if (!q.keep) countAsk(store, w3.me); return w3.me; });
+      var team2 = store.load('members'), one;
+      if (q.keep || !answer) one = voiceOne(draftBack(d0, team2), team2, said0);   // "save as it is": no AI
+      else {
+        var t1 = store.now().getTime(), p2 = voicePrompt(mytDay(t1), DOW_EN[new Date(t1 + 8 * 3600e3).getUTCDay()], voiceNames(team2, am), said0) +
+          '\n\nFOLLOW-UP. You first understood ONE of these appointments as: ' + JSON.stringify(draftBack(d0, team2)) + '\nYou asked the agent: "' + str(q.question, 140) + '"\nThe agent answered: "' + answer + '"' +
+          '\nReturn the same JSON with exactly ONE item in "events": that appointment, corrected with the answer (keep everything else). Set sure=false only if it is still not clear.';
+        one = parseVoice(store.ai(p2, '', {quick: true}), said0, team2).events[0];
+        if (one.ask && round < 2) return {ok: true, ask: {heard: said0, draft: one.event, question: one.ask.question, options: one.ask.options, round: round + 1}};
+      }
+      var vv2 = {heard: said0 + (answer ? ' → ' + answer : '')};
+      var saved = store.withLock(function () { var w4 = who(q, store); return saveEvent({event: voiceToEvent(vv2, store.now().getTime(), one, 1)}, store, w4.me, w4.leader).event; });
+      return {ok: true, event: saved};
     }
     if (q.op === 'voicetodo') {   // same limits as voice booking; speech-to-text outside the lock
       if (!b64ok(q.audio, MAX_AUDIO_B64) || !AUDIO_OK[str(q.mime, 30).split(';')[0]]) fail('bad_audio');
