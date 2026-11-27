@@ -733,3 +733,16 @@ button.confirm-bar { width: 100%; font: inherit; text-align: left; cursor: point
 .grid.z3 .bar { white-space: normal; font-size: 10.5px; line-height: 13px; padding: 2px 3px; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; }
 .grid.z3 .bar .bt { font-size: 9.5px; }
 @media (min-width: 560px) { .grid.z2 .gd { min-height: 140px; } .grid.z2 .gd-evs { max-height: 118px; } .grid.z3 .gd { min-height: 230px; } .grid.z3 .bar { font-size: 12px; line-height: 15px; } }
+
+/* search */
+.srch-btn { display: inline-flex; align-items: center; justify-content: center; }
+.search .sbox { position: sticky; top: 0; z-index: 3; display: flex; gap: 6px; align-items: center; background: var(--bg); padding: 4px 0 10px; }
+.search .sbox input { flex: 1; min-width: 0; font-size: 17px; padding: 11px 14px; border-radius: 12px; }
+.search mark { background: #FFE58A; color: inherit; border-radius: 3px; padding: 0 1px; }
+/* Agenda: live "now" line */
+.nowline { position: relative; display: flex; align-items: center; gap: 6px; margin: 3px 0; height: 14px; }
+.nowline i { width: 9px; height: 9px; border-radius: 50%; background: #E5484D; flex: none; box-shadow: 0 0 0 3px rgba(229,72,77,.18); }
+.nowline span { font-size: 11px; font-weight: 800; color: #E5484D; flex: none; }
+.nowline b { flex: 1; height: 2px; background: #E5484D; border-radius: 2px; }
+.nowline.pulse i { animation: nowpulse 1.2s ease-out 2; }
+@keyframes nowpulse { 0% { box-shadow: 0 0 0 0 rgba(229,72,77,.6); } 100% { box-shadow: 0 0 0 12px rgba(229,72,77,0); } }

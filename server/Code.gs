@@ -1524,9 +1524,34 @@ var CORE = (function () {
     return {members: list.length, changed: n};
   }
 
-  var READ_ONLY = {sync: 1, teamtotals: 1, photos: 1, progress: 1, file: 1, themes: 1, besttime: 1};
+  /* Search: every event I may see in full (title, place, notes, whose it is), any date. Private ones of others never match.
+     Repeating events show their next date. Upcoming first (soonest), then past (latest first). */
+  /* a search word matches the START of a word ("ali" finds Ali, not Kh-ali-d); Chinese matches anywhere. A person's name only by whole word. */
+  function wordHit(hay, w) { if (/[㐀-鿿]/.test(w)) return hay.indexOf(w) >= 0; var i = -1; while ((i = hay.indexOf(w, i + 1)) >= 0) { if (i === 0 || !/[a-z0-9]/.test(hay.charAt(i - 1))) return true; } return false; }
+  function searchHit(words, text, person) { var pw = (' ' + person.replace(/[^a-z0-9㐀-鿿]+/g, ' ') + ' '); return words.every(function (w) { return wordHit(text, w) || pw.indexOf(' ' + w + ' ') >= 0; }); }
+  function searchOp(q, store, me) {
+    var text = str(q.text, 60).toLowerCase().replace(/\s+/g, ' ').trim(); if (text.length < 2) return {results: [], more: false};
+    var words = text.split(' '), now = store.now().getTime(), names = {};
+    store.load('members').forEach(function (m) { names[m.id] = (str(m.name, 60) + ' ' + shortOf(m)).toLowerCase(); });
+    var hits = [];
+    store.load('events').forEach(function (e) {
+      if (!canSeeDetails(e, me)) return;
+      var hay = [e.title, e.place, e.notes, TYPES[e.type] ? TYPES[e.type].label : ''].join(' ').toLowerCase();
+      if (!searchHit(words, hay, names[e.ownerId] || '')) return;
+      var v = viewEvent(e, me), s = startMs(e), en = endMs(e);
+      if (e.rep) {
+        var nx = occurrences(e, now, now + 400 * 864e5)[0], last = occurrences(e, now - 400 * 864e5, now);
+        var o = nx || last[last.length - 1]; if (o) { s = o.s; en = o.e; }
+        if (o && o.n) { v.start = v.allDay ? new Date(s + 8 * 3600e3).toISOString().slice(0, 10) : new Date(s).toISOString(); v.end = v.allDay ? new Date(en - 1 + 8 * 3600e3).toISOString().slice(0, 10) : new Date(en).toISOString(); }
+      }
+      hits.push({v: v, s: s, up: en > now});
+    });
+    hits.sort(function (a, b) { return a.up !== b.up ? (a.up ? -1 : 1) : a.up ? a.s - b.s : b.s - a.s; });
+    return {results: hits.slice(0, 80).map(function (h) { return h.v; }), more: hits.length > 80};
+  }
+  var READ_ONLY = {sync: 1, teamtotals: 1, photos: 1, progress: 1, file: 1, themes: 1, besttime: 1, search: 1};
   var OPS = {sync: sync, save: saveEvent, del: delEvent, repone: repOne, outcome: outcome, import: importEvents, send: send, delmsg: delMsg,
-    pushreg: pushReg, pushoff: pushOff, pushtest: pushTest, teamtotals: teamTotals, rsvp: rsvp, member: member, myunit: myUnit, partner: partner, profile: profile, todo: todo, tododel: todoDel, goal: goal, changepin: changePin, progress: progress, feed: feedOp, checked: checkedOp, postpone: postpone, besttime: bestTime, themes: themesList, theme: themeSave, themedel: themeDel, themeson: themesSwitch, file: getFile, photo: setPhoto, photos: getPhotos, signout: signOut};
+    pushreg: pushReg, pushoff: pushOff, pushtest: pushTest, teamtotals: teamTotals, rsvp: rsvp, member: member, myunit: myUnit, partner: partner, profile: profile, todo: todo, tododel: todoDel, goal: goal, changepin: changePin, progress: progress, feed: feedOp, checked: checkedOp, postpone: postpone, besttime: bestTime, themes: themesList, theme: themeSave, themedel: themeDel, themeson: themesSwitch, file: getFile, photo: setPhoto, photos: getPhotos, search: searchOp, signout: signOut};
   function handle(q, store) {
     if (!q || typeof q !== 'object') fail('bad_request');
     if (q.op === 'prlink' || q.op === 'prpull') {   // REDEFINE Prospecting: fetch outside the lock, save inside
@@ -1634,7 +1659,7 @@ var CORE = (function () {
   }
 
   return {TABLES: TABLES, TYPES: TYPES, TYPE_ORDER: TYPE_ORDER, PROSPECT: PROSPECT, COLORS: COLORS, REMIND: REMIND,
-    handle: handle, prApply: prApply, prCollectAll: prCollectAll, msApply: msApply, msCollectAll: msCollectAll, voiceToEvent: voiceToEvent, feedIcs: feedIcs, parseVoice: parseVoice, voicePrompt: voicePrompt, parseThemeAI: parseThemeAI, isOwner: isOwner, rankOf: rankOf, mytDay: mytDay, todoWhen: todoWhen, salesKind: salesKind, ONFIELD_URL: ONFIELD_URL, prospectReminders: prospectReminders, OCCASIONS: OCCASIONS, ANIMS: ANIMS, tick: tick, occurrences: occurrences, holidaysOn: holidaysOn, schoolHoliday: schoolHoliday, HOLIDAYS: HOLIDAYS, defaultShort: defaultShort, answers: answers, attendance: attendance, TEAM_REMIND: TEAM_REMIND, cents: cents, MODES: MODES, casesOf: casesOf, commentTargets: commentTargets, isAll: isAll, MAX_NOC: MAX_NOC, morning: morning, evening: evening, detectType: detectType, stats: stats, addStats: addStats,
+    handle: handle, searchHit: searchHit, prApply: prApply, prCollectAll: prCollectAll, msApply: msApply, msCollectAll: msCollectAll, voiceToEvent: voiceToEvent, feedIcs: feedIcs, parseVoice: parseVoice, voicePrompt: voicePrompt, parseThemeAI: parseThemeAI, isOwner: isOwner, rankOf: rankOf, mytDay: mytDay, todoWhen: todoWhen, salesKind: salesKind, ONFIELD_URL: ONFIELD_URL, prospectReminders: prospectReminders, OCCASIONS: OCCASIONS, ANIMS: ANIMS, tick: tick, occurrences: occurrences, holidaysOn: holidaysOn, schoolHoliday: schoolHoliday, HOLIDAYS: HOLIDAYS, defaultShort: defaultShort, answers: answers, attendance: attendance, TEAM_REMIND: TEAM_REMIND, cents: cents, MODES: MODES, casesOf: casesOf, commentTargets: commentTargets, isAll: isAll, MAX_NOC: MAX_NOC, morning: morning, evening: evening, detectType: detectType, stats: stats, addStats: addStats,
     ratios: ratios, parseRead: parseRead, parseICS: parseICS, similarTitle: similarTitle, textPrompt: textPrompt, creditId: creditId, jfKindOf: jfKindOf, readPrompt: readPrompt, startMs: startMs, endMs: endMs, myt: myt, whenText: whenText};
 })();
 

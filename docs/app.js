@@ -7,7 +7,7 @@
   var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   var MONTH = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   var DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  var APP_VERSION = '85';
+  var APP_VERSION = '86';
   var H8 = 8 * 3600e3, DAY = 864e5, SELLING = {approach: 1, open: 1, present: 1, followup: 1, close: 1, joinfield: 1, recruit: 1};
 
   /* ---------- storage (each phone) ---------- */
@@ -1251,6 +1251,50 @@
       }).join('') : '<p class="empty">All checked 👍</p>') + '</main>' + tabs('cal');
   }
 
+  /* ---------- Search (like the iPhone Calendar): type, results come as you type. Tap one to open it. ---------- */
+  var SR = {q: LS.get('searchQ', ''), res: null, busy: false, seq: 0, off: false};
+  function searchScreen() {
+    return topbar('🔍 Search', {back: '#/'}) + '<main class="search"><div class="sbox"><input id="sq" type="search" enterkeyhint="search" autocomplete="off" maxlength="60" placeholder="Name, client, place, e.g. Ali, Gurney, medical" value="' + esc(SR.q) + '"><button class="link" data-act="sclear" aria-label="Clear">✕</button></div>' +
+      '<div id="sres">' + searchResults() + '</div></main>' + tabs('cal');
+  }
+  function searchLocal(text) {   // instant: what is already on the phone
+    var words = text.toLowerCase().split(/\s+/).filter(Boolean), seen = {};
+    return events().filter(function (e) {
+      if (e.busy || e.bday) return false;
+      var o = mem(e.ownerId), hay = [e.title, e.place, e.notes].join(' ').toLowerCase(), b = e.base || e.id;
+      if (!C.searchHit(words, hay, (String(o.name || '') + ' ' + shortName(o)).toLowerCase()) || seen[b]) return false; seen[b] = 1; return true;
+    });
+  }
+  function searchResults() {
+    var q = SR.q.trim();
+    if (q.length < 2) return '<p class="empty small">Type at least 2 letters. Searches titles, places, notes and people, on any date.</p>';
+    var list = SR.res && SR.res.q === q ? SR.res.list : searchLocal(q), now = Date.now();
+    var up = list.filter(function (e) { return eMs(e) > now; }).sort(function (a, b) { return sMs(a) - sMs(b); }), past = list.filter(function (e) { return eMs(e) <= now; }).sort(function (a, b) { return sMs(b) - sMs(a); });
+    var hl = function (html) { q.split(/\s+/).filter(function (w) { return w.length > 1; }).forEach(function (w) { html = html.replace(new RegExp('(' + esc(w).replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')(?![^<]*>)', 'gi'), '<mark>$1</mark>'); }); return html; };
+    var part = function (title, arr) { return arr.length ? '<h4 class="sub">' + title + ' · ' + arr.length + '</h4>' + arr.map(function (e) { return hl(evRow(e, true)); }).join('') : ''; };
+    var wait = SR.busy ? '<p class="tiny muted"><span class="mini-spin"></span> Searching all dates…</p>' : SR.off ? '<p class="tiny muted">📴 No signal: showing only what is on this phone.</p>' : '';
+    if (!up.length && !past.length) return wait + (SR.busy ? '' : '<p class="empty">Nothing found for “' + esc(q) + '”.</p>');
+    return wait + part('Upcoming', up) + part('Past', past) + (SR.res && SR.res.more ? '<p class="tiny muted">Showing the first 80. Type more words to narrow it down.</p>' : '');
+  }
+  var srT = 0;
+  function searchRun() {
+    var q = SR.q.trim(), box = document.getElementById('sres'); LS.set('searchQ', SR.q);
+    clearTimeout(srT); SR.busy = q.length >= 2; SR.off = false; if (box) box.innerHTML = searchResults();
+    if (q.length < 2) return;
+    var my = ++SR.seq;
+    srT = setTimeout(function () {
+      api('search', {text: q}).then(function (j) {
+        if (my !== SR.seq) return; SR.busy = false; SR.res = {q: q, list: j.results || [], more: !!j.more};
+        var b2 = document.getElementById('sres'); if (b2) b2.innerHTML = searchResults();
+      }, function () { if (my !== SR.seq) return; SR.busy = false; SR.off = true; var b2 = document.getElementById('sres'); if (b2) b2.innerHTML = searchResults(); });
+    }, 300);
+  }
+  function searchMount() {
+    var i = document.getElementById('sq'); if (!i || i.dataset.on) return; i.dataset.on = '1';
+    i.addEventListener('input', function () { SR.q = i.value; searchRun(); });
+    i.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') i.blur(); });
+    if (!SR.q) i.focus(); else if (!SR.res || SR.res.q !== SR.q.trim()) searchRun();
+  }
   function signOutLocal(reason) {
     S.token = ''; S.data = null; LS.del('token'); LS.del('cache'); LS.del('pushToken'); LS.del('outbox'); LS.del('vAsk');
     if (reason) toast(errText({code: reason}), 'bad');
@@ -1343,10 +1387,28 @@
         evs.map(function (e) {
           var o = mem(e.ownerId), startsToday = dayKey(sMs(e)) === k;
           var t = e.allDay || !startsToday ? 'All-day' : hmLong(sMs(e));
-          return '<a class="ag-ev' + (faded(e, my) ? ' pend' : '') + (e.out === 'cancel' ? ' x' : '') + (e.all ? ' team' : '') + (e.busy ? ' busy' : '') + '" href="#/e/' + e.id + '"><span class="ag-t" style="color:' + (evColor(e) === '#F2C200' ? '#A87D00' : evColor(e)) + '">' + t + '</span><span class="ag-ti">' + (S.filter === 'all' || S.filter.indexOf('me+') === 0 ? '<b class="ag-sn" style="color:' + esc(o.color || '#14213D') + '">' + esc(shortName(o)) + '</b>' + avatar(o, 'xxs') : '') + (e.all ? '<img class="tlogo" src="icons/team-mark.png" alt="">' : '') + esc(e.busy ? 'Busy · ' + shortName(o) : e.title) + '</span></a>';
-        }).join('') + '</div></div>';
+          return '<a data-s="' + (e.allDay || !startsToday ? 0 : sMs(e)) + '" class="ag-ev' + (faded(e, my) ? ' pend' : '') + (e.out === 'cancel' ? ' x' : '') + (e.all ? ' team' : '') + (e.busy ? ' busy' : '') + '" href="#/e/' + e.id + '"><span class="ag-t" style="color:' + (evColor(e) === '#F2C200' ? '#A87D00' : evColor(e)) + '">' + t + '</span><span class="ag-ti">' + (S.filter === 'all' || S.filter.indexOf('me+') === 0 ? '<b class="ag-sn" style="color:' + esc(o.color || '#14213D') + '">' + esc(shortName(o)) + '</b>' + avatar(o, 'xxs') : '') + (e.all ? '<img class="tlogo" src="icons/team-mark.png" alt="">' : '') + esc(e.busy ? 'Busy · ' + shortName(o) : e.title) + '</span></a>';
+        }).join('') + (k === today ? nowLineHtml() : '') + '</div></div>';
     }
     return html + '</div>';
+  }
+  /* the red line at the current time, among today's events (moves every 30 seconds) */
+  function nowLineHtml() { return '<div class="nowline" aria-label="Now"><i></i><span>' + hmLong(Date.now()) + '</span><b></b></div>'; }
+  function placeNowLine() {
+    document.querySelectorAll('.page:not(.side) .ag-day.today .ag-evs, #ptrack > .page:first-child .ag-day.today .ag-evs').forEach(function (box) {
+      var line = box.querySelector('.nowline'); if (!line) return;
+      var now = Date.now(), after = null;
+      Array.prototype.some.call(box.querySelectorAll('.ag-ev'), function (a) { if (+a.dataset.s > now) { after = a; return true; } return false; });
+      line.querySelector('span').textContent = hmLong(now);
+      if (after) { if (line.nextElementSibling !== after) box.insertBefore(line, after); } else if (box.lastElementChild !== line) box.appendChild(line);
+    });
+  }
+  function scrollToNow() {
+    var line = document.querySelector('#ptrack > .page:not(.side) .ag-day.today .nowline') || document.querySelector('.ag-day.today'); if (!line) return;
+    var h = document.querySelector('.calhead'), top = line.getBoundingClientRect().top - $scroll.getBoundingClientRect().top + $scroll.scrollTop;
+    var room = $scroll.clientHeight - (h ? h.offsetHeight : 0);
+    $scroll.scrollTop = Math.max(0, top - (h ? h.offsetHeight : 0) - room * 0.3);
+    if (!line.classList.contains('pulse')) line.classList.add('pulse');
   }
   function calBody() {
     return S.view === 'day' ? (isLeader() ? '<a class="btn primary big bt-link" href="#/besttime">🔎 Best date for a team activity</a>' : '') + teamDay() : S.view === 'agenda' ? agendaView() : monthGrid() + '<p class="tiny muted hint">Tap a day to choose it (scroll inside to see all). Tap it again to open that day’s events.</p>';
@@ -1410,7 +1472,7 @@
     var body = S.view === 'list' ? calBody() : '<div class="pager"><div class="ptrack" id="ptrack"><div class="page">' + calBody() + '</div></div></div>';
     var nowP = P(Date.now()), yLeft = Math.round((Date.UTC(nowP.y, 11, 31) - Date.UTC(nowP.y, nowP.m, nowP.d)) / DAY), mLeft = new Date(Date.UTC(nowP.y, nowP.m + 1, 0)).getUTCDate() - nowP.d;
     var countdown = '<div class="countdown"><span>⏳ <b>' + yLeft + '</b> days left in ' + nowP.y + ' · <b>' + mLeft + '</b> days left in ' + MONTH[nowP.m] + '</span>' + wxChip() + '</div>';
-    return '<div class="calhead">' + topbar('REDEFINE Calendar', {right: '<a class="icon-btn" href="#/import" aria-label="Import calendar">⤓</a>'}) +
+    return '<div class="calhead">' + topbar('REDEFINE Calendar', {right: '<a class="icon-btn srch-btn" href="#/search" aria-label="Search"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="currentColor" stroke-width="2.2"/><path d="M15.5 15.5l5 5" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg></a><a class="icon-btn" href="#/import" aria-label="Import calendar">⤓</a>'}) +
       '<div class="calhead-in">' + viewSwitch() + (S.view === 'day' ? '' : filterChips() + kindRow()) + head + countdown + '</div></div>' +
       '<main class="cal" id="calmain">' + celebrateBar() + morningBar() + (!me().photoV ? '<a class="confirm-bar photo-bar" href="#/me">📷 Add your photo so the team knows it’s you <span>›</span></a>' : '') +
       (upcomingTeam().length ? '<a class="confirm-bar team-bar" href="#/teamevents"><img class="tlogo" src="icons/team-mark.png" alt=""> Upcoming team events <b>(' + upcomingTeam().length + ')</b>' + (teamToAnswer() ? ' · <b class="ans">' + teamToAnswer() + ' to answer</b>' : '') + ' <span>›</span></a>' : '') +
@@ -2574,6 +2636,7 @@
     else if (parts[0] === 'teamevents') html = teamEventsScreen();
     else if (parts[0] === 'todo') html = todoScreen();
     else if (parts[0] === 'voicecheck') html = voiceCheckScreen();
+    else if (parts[0] === 'search') { html = searchScreen(); setTimeout(searchMount, 0); }
     else if (parts[0] === 'besttime') html = bestTimeScreen();
     else if (parts[0] === 'themes') html = themesScreen();
     else if (parts[0] === 'report') html = reportScreen(parts[1]);
@@ -2582,7 +2645,7 @@
     var chipsEl = $app.querySelector('.chips'), chipsX = chipsEl ? chipsEl.scrollLeft : 0;
     $app.innerHTML = html; lastRoute = r;
     if (chipsX) { var ch2 = $app.querySelector('.chips'); if (ch2) ch2.scrollLeft = chipsX; }
-    $scroll.scrollTop = y; markMicBusy();
+    $scroll.scrollTop = y; markMicBusy(); if (S.view === 'agenda' && !parts[0]) { placeNowLine(); if (S.wantNow > Date.now()) scrollToNow(); }
     if (parts[0] === 'e' && parts[2] === 'c' && y === 0) { var cm = $app.querySelector('.comments'); if (cm) setTimeout(function () { cm.scrollIntoView({block: 'start'}); }, 30); }
   }
 
@@ -2591,6 +2654,7 @@
     var b = ev.target.closest('[data-act]'); if (!b || b.tagName === 'FORM' || b.tagName === 'INPUT') return;
     var a = b.dataset.act, today = dayKey(Date.now());
     if (a === 'close-modal') return closeModal();
+    if (a === 'sclear') { SR.q = ''; SR.res = null; LS.set('searchQ', ''); var si = document.getElementById('sq'); if (si) { si.value = ''; si.focus(); } var sb = document.getElementById('sres'); if (sb) sb.innerHTML = searchResults(); return; }
     if (a === 'btquick') { var tq = dayKey(Date.now()); S.btOpt.from = tq; S.btOpt.to = addDays(tq, +b.dataset.n); return render(); }
     if (a === 'btopt') { S.btOpt[b.dataset.k] = b.dataset.k === 'when' ? b.dataset.v : +b.dataset.v; return render(); }
     if (a === 'btset') {
@@ -2664,7 +2728,7 @@
     if (a === 'month') return slideTo(+b.dataset.d);
     if (a === 'day') return slideTo(+b.dataset.d);
     if (a === 'week') return slideTo(+b.dataset.d);
-    if (a === 'today') { var t = P(Date.now()); S.cursor = {y: t.y, m: t.m}; S.sel = today; S.agWeek = mondayOf(today); S.dayView = today; render(); return quietSync(); }
+    if (a === 'today') { var t = P(Date.now()); S.cursor = {y: t.y, m: t.m}; S.sel = today; S.agWeek = mondayOf(today); S.dayView = today; render(); if (S.view === 'agenda') { placeNowLine(); S.wantNow = Date.now() + 2500; scrollToNow(); } return quietSync(); }
     if (a === 'new') return editor(null);
     if (a === 'ag-new') { closeModal(); S.sel = b.dataset.k; return editor(null); }
     if ((a === 'edit' || a === 'out' || a === 'cheer' || a === 'invite' || a === 'rsvp') && /^tmp/.test(b.dataset.id || '')) return toast('Still saving… one moment.');
@@ -2987,6 +3051,7 @@
   document.addEventListener('focusout', function () { setTimeout(function () { if (!textField(document.activeElement)) document.documentElement.classList.remove('typing'); }, 80); });
   if (window.visualViewport) visualViewport.addEventListener('resize', function () { var el = document.activeElement; if (textField(el)) setTimeout(function () { keepInView(el); }, 30); });
   setInterval(fitFrame, 1000);
+  setInterval(placeNowLine, 30e3);
   setTimeout(function () { loadWeather(); morningCheck(); }, 1200);
   setInterval(function () { loadWeather(); morningCheck(); if (!route().replace(/^[/]+/, '') && !document.getElementById('modal-root').className) render(); }, 5 * 60e3);
   document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'hidden') S.mornShown = false; if (document.visibilityState === 'visible') setTimeout(function () { loadWeather(); morningCheck(); }, 600); });

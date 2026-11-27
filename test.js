@@ -890,6 +890,26 @@ function fresh() {
   throws(() => h({op: 'besttime', token: a.token, ids: [b.me.id]}), 'leader_only', 'agents cannot run it');
 }
 
+/* ---------- search ---------- */
+{
+  const s = memStore(); s.setNow(NOW);
+  const h = q => CORE.handle(q, s), join = (name, leader) => { s.resetFails(); return h({op: 'signin', code: leader ? 'test-leader-code' : 'test-team', name, pin: '1234', create: true}); };
+  const kj = join('Wong Kah Jian', true), ag = join('Lim Mei Ling');
+  h({op: 'save', token: ag.token, event: {title: 'Present Mr Ali medical', type: 'present', start: '2026-12-20T02:00:00Z', end: '2026-12-20T03:00:00Z', place: 'Gurney Plaza'}});
+  h({op: 'save', token: ag.token, event: {title: 'FU Ali secret', type: 'followup', start: '2026-12-21T02:00:00Z', end: '2026-12-21T03:00:00Z', vis: 'private'}});
+  h({op: 'save', token: ag.token, event: {title: 'Coffee Ali', type: 'approach', start: '2025-01-05T02:00:00Z', end: '2025-01-05T03:00:00Z'}});
+  h({op: 'save', token: kj.token, event: {title: 'Gym', type: 'personal', start: '2026-11-02T10:00:00Z', end: '2026-11-02T11:00:00Z', rep: 'w'}});
+  const r = h({op: 'search', token: kj.token, text: 'ali'});
+  ok(r.results.length === 2 && /Present Mr Ali/.test(r.results[0].title) && /Coffee Ali/.test(r.results[1].title), 'search finds any date, upcoming first, then past');
+  ok(!r.results.some(e => /secret/.test(e.title || '')), 'private events of others event never shows in search');
+  ok(h({op: 'search', token: ag.token, text: 'secret'}).results.length === 1, 'my own private event does');
+  ok(h({op: 'search', token: kj.token, text: 'gurney medical'}).results.length === 1, 'all words must match (place + title)');
+  ok(h({op: 'search', token: kj.token, text: 'mei ling'}).results.length === 2, 'search by whose event it is');
+  const g = h({op: 'search', token: kj.token, text: 'gym'}).results[0];
+  ok(g && Date.parse(g.start) > NOW, 'a repeating event shows its next date');
+  ok(h({op: 'search', token: kj.token, text: 'a'}).results.length === 0, 'one letter: nothing');
+}
+
 /* ---------- same short name: the newer one must change ---------- */
 {
   const s = memStore(); s.setNow(NOW);
