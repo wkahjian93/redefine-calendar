@@ -7,7 +7,7 @@
   var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   var MONTH = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   var DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  var APP_VERSION = '75';
+  var APP_VERSION = '76';
   var H8 = 8 * 3600e3, DAY = 864e5, SELLING = {approach: 1, open: 1, present: 1, followup: 1, close: 1, joinfield: 1, recruit: 1};
 
   /* ---------- storage (each phone) ---------- */
@@ -1483,12 +1483,28 @@
   function attendOf(e) { var a = ansOf(e), o = {yes: [], no: [], none: []}; members().forEach(function (m) { if (m.active === false) return; o[a[m.id] === 'yes' ? 'yes' : a[m.id] === 'no' ? 'no' : 'none'].push(m.id); }); return o; }
   function myAnswer(e) { var at = attendOf(e), my = me().id; return at.yes.indexOf(my) >= 0 ? 'yes' : at.no.indexOf(my) >= 0 ? 'no' : ''; }
   /* WhatsApp message with the event details and who is going (short names, no client details) */
+  /* ---------- WhatsApp messages: one tidy style (bold heading, dividers, one item per line, names in rows) ---------- */
+  var WA_LINE = '━━━━━━━━━━━━━━━';
+  function waName(m) { return String((m && m.name) || shortName(m)).replace(/\s+/g, ' ').trim(); }   // full name, as the person signed in
+  function waNames(ids) {   // one full name per line, A to Z, numbered
+    return ids.map(function (id) { return waName(mem(id)); }).sort(function (x, y) { return x.localeCompare(y); }).map(function (n, i) { return (i + 1) + '. ' + n; });
+  }
+  function waDate(k) {   // Fri, 8 Jan 2027 (year only when it is not this year)
+    var p = P(keyMs(k)), y = P(Date.now()).y;
+    return DOW[p.w] + ', ' + p.d + ' ' + MON[p.m] + (p.y !== y ? ' ' + p.y : '');
+  }
+  function waMoney(v) { return 'RM' + money(Math.round(+v * 100) / 100); }
   function teamShareText(e) {
-    var at = attendOf(e), nm = function (ids) { return ids.map(function (id) { return shortName(mem(id)); }).join(', ') || '-'; };
-    var link = (CFG.appUrl || (location.origin + location.pathname)) + '#/e/' + e.id;
-    return ['📣 *REDEFINE team event*', '*' + e.title + '*', '📅 ' + dayLabel(dayKey(sMs(e)), true) + ' · ' + evTime(e)]
-      .concat(e.place ? ['📍 ' + e.place] : []).concat(e.notes ? ['', e.notes] : [])
-      .concat(['', '✅ Going (' + at.yes.length + '): ' + nm(at.yes), '❌ Can\'t go (' + at.no.length + '): ' + nm(at.no), '⏳ No reply (' + at.none.length + '): ' + nm(at.none), '', 'Answer in REDEFINE Calendar 👉 ' + link]).join('\n');
+    var at = attendOf(e), link = (CFG.appUrl || (location.origin + location.pathname)) + '#/e/' + e.id;
+    var L = ['📣 *REDEFINE TEAM EVENT*', WA_LINE, '🎯 *' + e.title + '*', '',
+      '🗓️ *Date:* ' + waDate(dayKey(sMs(e))), '⏰ *Time:* ' + evTime(e)];
+    if (e.place) L.push('📍 *Venue:* ' + e.place);
+    if (e.notes) L.push('', '📝 ' + String(e.notes).trim().replace(/\n{2,}/g, '\n'));
+    L.push(WA_LINE, '👥 *ATTENDANCE*  ✅ ' + at.yes.length + '  ·  ❌ ' + at.no.length + '  ·  ⏳ ' + at.none.length);
+    var group = function (icon, title, ids) { if (!ids.length) return; L.push('', icon + ' *' + title + ' (' + ids.length + ')*'); waNames(ids).forEach(function (r) { L.push(r); }); };
+    group('✅', 'Going', at.yes); group('❌', 'Can\'t go', at.no); group('⏳', 'Waiting for reply', at.none);
+    L.push(WA_LINE, '🙏 Please reply *Going* or *Can\'t go* here:', '👉 ' + link);
+    return L.join('\n');
   }
   /* Open WhatsApp with the message typed in; the person picks the group and taps send (WhatsApp does not let apps post by themselves). */
   function waSend(text) { var u = 'https://wa.me/?text=' + encodeURIComponent(text); var w = window.open(u, '_blank'); if (!w) location.href = u; }
@@ -1836,17 +1852,24 @@
      One line per policy, in date order. Name = the agent's first name. ANP not entered yet shows as "ANP?". */
   function closeList(evs, r, sc) {
     var list = evs.filter(function (e) { return e.out === 'closed' && sMs(e) >= r.from && sMs(e) < r.to && members().some(function (m) { return m.id === C.creditId(e) && m.active !== false && inScope(m, sc || 'all'); }); })
-      .sort(function (x, y) { return sMs(x) - sMs(y); }), lines = [], total = 0;
+      .sort(function (x, y) { return sMs(x) - sMs(y); }), lines = [], total = 0, byWho = {}, missing = 0;
+    var MODE = {M: 'Monthly', Q: 'Quarterly', HY: 'Half-yearly', Y: 'Yearly'};
     list.forEach(function (e) {
-      var p = P(sMs(e)), who = shortName(mem(C.creditId(e))), cs = e.cases && e.cases.length ? e.cases : [{plan: '(plan not entered)', anp: e.anp || '', mode: '?'}];
+      var p = P(sMs(e)), who = waName(mem(C.creditId(e))), cs = e.cases && e.cases.length ? e.cases : [{plan: '(plan not entered)', anp: e.anp || '', mode: '?'}];
       if (!(e.cases && e.cases.length) && (e.noc || 1) > 1) for (var k = 1; k < e.noc; k++) cs.push({plan: '(plan not entered)', anp: '', mode: '?'});
       cs.forEach(function (c) {
-        var has = c.anp !== '' && c.anp != null && +c.anp > 0; if (has) total += +c.anp;
-        lines.push((lines.length + 1) + '. ' + p.d + '/' + (p.m + 1) + ' ' + who + ' ' + c.plan + ' ' + (has ? String(Math.round(+c.anp * 100) / 100) : 'ANP?') + '/' + (c.mode || '?'));
+        var has = c.anp !== '' && c.anp != null && +c.anp > 0; if (has) total += +c.anp; else missing++;
+        byWho[who] = (byWho[who] || 0) + (has ? +c.anp : 0);
+        var md = String(c.mode || '').toUpperCase();
+        lines.push((lines.length + 1) + '. ' + p.d + '/' + (p.m + 1) + ' · *' + who + '* · ' + c.plan + ' · ' + (has ? waMoney(c.anp) : 'ANP ?') + (MODE[md] ? ' (' + MODE[md] + ')' : md && md !== '?' ? ' (' + md + ')' : ''));
       });
     });
-    var head = /^(This|Last) /.test(r.label) ? r.label.toUpperCase() : r.label.toUpperCase();
-    return {lines: lines, text: '🔥' + head + ' CLOSE CASE LIST🔥\n\n' + lines.join('\n') + '\n\n\nTotal ANP: ' + money(total)};
+    var head = r.label.toUpperCase(), top = Object.keys(byWho).sort(function (a, b) { return byWho[b] - byWho[a]; }).filter(function (w) { return byWho[w] > 0; }).slice(0, 3), medal = ['🥇', '🥈', '🥉'];
+    var T = ['🔥 *' + head + ' CLOSE CASE LIST* 🔥', WA_LINE].concat(lines).concat([WA_LINE,
+      '✍️ *Cases closed:* ' + lines.length, '💰 *Total ANP:* ' + waMoney(total) + (missing ? '  (' + missing + ' without ANP yet)' : '')]);
+    if (top.length) { T.push('', '🏆 *Top ANP*'); top.forEach(function (w, i) { T.push(medal[i] + ' ' + w + ' · ' + waMoney(byWho[w])); }); }
+    T.push('', '👏 Well done, team! Keep closing 💪');
+    return {lines: lines, text: T.join('\n')};
   }
   function actTotal(s) { return s.A + s.O + s.P + s.F + s.recruit; }   // selling activities; NOC (results) shown separately
   /* ---------- goals: required weekly activity from my own ratios (last 90 days), or the team’s if I have too little history ---------- */
@@ -1917,12 +1940,24 @@
   function copyReport() {
     var x = reportRows(); if (!x) return;
     var tot = C.addStats(x.rows.map(function (r) { return r.s; })), tq = C.ratios(tot);
-    var line = function (s) { return 'A' + s.A + ' O' + s.O + ' P' + s.P + ' F' + s.F + ' R' + s.recruit + ' = ' + actTotal(s) + ' · NOC ' + s.C + ' · ' + (s.anp ? rm(s.anp) : 'RM0'); };
     var rows = x.rows.slice().sort(function (p, q) { return actTotal(q.s) - actTotal(p.s) || q.s.anp - p.s.anp; });
-    var lines = ['📊 *REDEFINE ' + (x.sc === 'all' ? 'Team Board' : unitTitle(x.sc)) + ' · ' + x.d.r.label + '*', 'Activities ' + actTotal(tot) + ' · NOC ' + tot.C + ' · ANP ' + rm(tot.anp) + ' · Avg case ' + (tq.M == null ? '–' : rm(tq.M)), ''];
-    rows.forEach(function (r, n) { lines.push((n + 1) + '. ' + shortName(r.m) + ': ' + line(r.s) + (r.s.unconfirmed ? ' · ⚠️' + r.s.unconfirmed + ' unconfirmed' : '')); });
-    lines.push('', '*' + totLabel(x.sc) + ': ' + line(tot) + '*', '', 'A approach · O open · P present · F follow-up · R recruit', 'Confirmed activities only. Keep your calendar updated 💪');
-    copyText(lines.join('\n'));
+    var active = rows.filter(function (r) { return actTotal(r.s) || r.s.C; }), idle = rows.filter(function (r) { return !actTotal(r.s) && !r.s.C; });
+    var medal = ['🥇', '🥈', '🥉'];
+    var L = ['📊 *REDEFINE ' + (x.sc === 'all' ? 'TEAM BOARD' : unitTitle(x.sc).toUpperCase()) + '*', '🗓️ ' + x.d.r.label, WA_LINE,
+      '*' + totLabel(x.sc).toUpperCase() + '*',
+      '🔥 Activities: *' + actTotal(tot) + '*',
+      '✍️ Cases closed: *' + tot.C + '*',
+      '💰 ANP: *' + rm(tot.anp) + '*',
+      '📈 Avg case: *' + (tq.M == null ? '–' : rm(tq.M)) + '*', WA_LINE, '🏆 *RANKING* (by activities)'];
+    active.forEach(function (r, n) {
+      var s = r.s;
+      L.push('', (medal[n] || (n + 1) + '.') + ' *' + waName(r.m) + '* · ' + actTotal(s) + ' activit' + (actTotal(s) === 1 ? 'y' : 'ies'),
+        '      A ' + s.A + ' · O ' + s.O + ' · P ' + s.P + ' · F ' + s.F + ' · R ' + s.recruit,
+        '      ✍️ ' + s.C + ' case' + (s.C === 1 ? '' : 's') + ' · 💰 ' + (s.anp ? rm(s.anp) : 'RM0') + (s.unconfirmed ? ' · ⚠️ ' + s.unconfirmed + ' to confirm' : ''));
+    });
+    if (idle.length) { L.push('', '💤 *No activity yet (' + idle.length + ')*'); waNames(idle.map(function (r) { return r.m.id; })).forEach(function (l) { L.push(l); }); }
+    L.push(WA_LINE, 'A = Approach · O = Open · P = Present', 'F = Follow-up · R = Recruit', '✅ Confirmed activities only. Keep your calendar updated 💪');
+    copyText(L.join('\n'));
   }
   function downloadCsv() {
     var x = reportRows(); if (!x) return;
