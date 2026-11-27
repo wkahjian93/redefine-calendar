@@ -7,7 +7,7 @@
   var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   var MONTH = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   var DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  var APP_VERSION = '81';
+  var APP_VERSION = '82';
   var H8 = 8 * 3600e3, DAY = 864e5, SELLING = {approach: 1, open: 1, present: 1, followup: 1, close: 1, joinfield: 1, recruit: 1};
 
   /* ---------- storage (each phone) ---------- */
@@ -264,6 +264,7 @@
       notifyNew(old, j);
       setTimeout(loadPhotos, 0);
       if (j.me.mustChange) setTimeout(askNewPin, 300);
+      else if (j.me.shortClash && j.me.shortClash.length) setTimeout(askNewShort, 300);
       if (pushOn() && j.me.devices === 0 && !S.repairTried) { S.repairTried = true; repairPush(false); }   // server lost this phone: reconnect quietly
       if (LS.get('mslink', '')) setTimeout(function () { linkMs(LS.get('mslink', '')); }, 0);
       else if (j.me.msLinked && !S.msPulled) { S.msPulled = true; api('mspull').then(function (x) { if (x.changed) quietSync(true); }, function () {}); }   // REDEFINE Meeting App: collect Kick Start appointments now
@@ -566,6 +567,32 @@
     var el = ev.target; if (!el || !el.dataset || el.dataset.act !== 'musicvol') return;
     var v = +el.value; LS.set('musicVol', v); if (MUS.audio) MUS.audio.volume = v; if (MUS.master && MUS.ctx) MUS.master.gain.setTargetAtTime(v, MUS.ctx.currentTime, 0.2);
   });
+  /* Same short name as someone else (e.g. two "WX"): the team could not tell them apart, so this one must pick a new one. Cannot be skipped. */
+  function askNewShort() {
+    var c = S.data && S.data.me && S.data.me.shortClash; if (!c || !c.length) return;
+    if (document.getElementById('modal-root').className) return setTimeout(askNewShort, 1500);   // another window is open: ask right after
+    modal('<h3>✏️ Choose a new short name</h3><p><b>' + esc(me().short) + '</b> is already used by <b>' + esc(c.join(', ')) + '</b>, so the team cannot tell you apart on chips, Team day, attendance and the close case list.</p>' +
+      '<p class="tiny muted">Pick one only you have, e.g. ' + esc(shortIdeas().join(', ')) + '.</p>' +
+      '<form id="nsform"><input id="nsin" maxlength="12" autocomplete="off" placeholder="New short name"><div class="row end" style="margin-top:12px"><button class="btn primary">Save</button></div></form>', function (sh) {
+      var scrim = document.querySelector('#modal-root .scrim'); if (scrim) scrim.removeAttribute('data-act');   // must answer: no tap-outside to close
+      sh.querySelector('#nsform').onsubmit = function (ev) {
+        ev.preventDefault(); var v = sh.querySelector('#nsin').value.trim().replace(/\s+/g, ' ');
+        if (!v) return toast('Type a short name first.', 'bad');
+        api('profile', {short: v}).then(function (j) {
+          closeModal(); if (S.data) { S.data.me.short = j.short || v; S.data.me.shortSet = true; S.data.me.shortClash = []; (S.data.members || []).forEach(function (m) { if (m.id === S.data.me.id) m.short = j.short || v; }); }
+          toast('Saved: the team now sees you as ' + (j.short || v), 'good'); render(); quietSync(true);
+        }, function (e) { toast(errText(e), 'bad'); });
+      };
+    });
+  }
+  function shortIdeas() {   // a few free suggestions from my own name, e.g. Tan Wen Xuan -> WXuan, Xuan, Wen Xuan
+    var w = String(me().name || '').split(/\s+/).filter(Boolean), g = w.length >= 3 ? w.slice(1) : w, out = [];
+    var taken = (S.data.members || []).filter(function (m) { return m.id !== S.data.me.id && m.active !== false; }).map(function (m) { return String(m.short || '').toLowerCase(); });
+    [g.length > 1 ? g[0][0] + g[g.length - 1] : '', g[g.length - 1], g.join(' '), g.map(function (x) { return x[0]; }).join('') + (w[0] ? w[0][0] : '')].forEach(function (s) {
+      s = String(s || '').slice(0, 12); if (s && taken.indexOf(s.toLowerCase()) < 0 && out.indexOf(s) < 0 && s.toLowerCase() !== String(me().short).toLowerCase()) out.push(s.length <= 3 ? s.toUpperCase() : s);
+    });
+    return out.slice(0, 3).length ? out.slice(0, 3) : ['Rex', 'MJ'];
+  }
   function askNewPin(force) {
     if (!force && !(S.data && S.data.me && S.data.me.mustChange)) return;
     if (S.pinAsked && !force) return; S.pinAsked = !force;

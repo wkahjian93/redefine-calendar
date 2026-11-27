@@ -890,6 +890,30 @@ function fresh() {
   throws(() => h({op: 'besttime', token: a.token, ids: [b.me.id]}), 'leader_only', 'agents cannot run it');
 }
 
+/* ---------- same short name: the newer one must change ---------- */
+{
+  const s = memStore(); s.setNow(NOW);
+  const h = q => CORE.handle(q, s), join = (name, leader) => { s.resetFails(); return h({op: 'signin', code: leader ? 'test-leader-code' : 'test-team', name, pin: '1234', create: true}); };
+  const sync = tk => h({op: 'sync', token: tk, from: '2026-11-01', to: '2026-11-30'});
+  const kj = join('Wong Kah Jian', true), wx1 = join('Tan Wen Xi');
+  s.setNow(NOW + 60e3); const wx2 = join('Lee Wen Xuan');
+  ok(!sync(wx1.token).me.shortClash.length, 'the first "WX" keeps it');
+  ok(sync(wx2.token).me.shortClash.join() === 'Tan Wen Xi', 'the second "WX" is told to change, and with whom it clashes');
+  throws(() => h({op: 'profile', token: wx2.token, short: 'wx'}), 'short_taken', 'cannot pick the taken one again');
+  h({op: 'profile', token: wx2.token, short: 'Xuan'});
+  ok(!sync(wx2.token).me.shortClash.length && !sync(wx1.token).me.shortClash.length, 'after the change nobody is asked');
+  throws(() => h({op: 'profile', token: wx2.token, short: ''}), 'short_taken', 'clearing it back to a taken suggestion is blocked');
+  // someone who chose a short name keeps it over a newer member whose suggested one is the same, even if they joined later
+  const s2 = memStore(); s2.setNow(NOW);
+  const h2 = q => CORE.handle(q, s2), j2 = name => { s2.resetFails(); return h2({op: 'signin', code: 'test-team', name, pin: '1234', create: true}); };
+  const a = j2('Tan Wen Xi'), b = j2('Ong Wei Xiang');
+  s2.save('members', s2.load('members').map(m => m.name === 'Ong Wei Xiang' ? Object.assign(m, {short: 'WX'}) : m));
+  const sy2 = tk => h2({op: 'sync', token: tk, from: '2026-11-01', to: '2026-11-30'});
+  ok(sy2(a.token).me.shortClash.length === 1 && !sy2(b.token).me.shortClash.length, 'the one who chose "WX" keeps it; the suggested one changes');
+  s2.save('members', s2.load('members').map(m => m.name === 'Ong Wei Xiang' ? Object.assign(m, {active: 'false'}) : m));
+  ok(!sy2(a.token).me.shortClash.length, 'a member who left does not count');
+}
+
 /* ---------- smarter voice: names hint, careful re-read, ask back ---------- */
 {
   const said = [];

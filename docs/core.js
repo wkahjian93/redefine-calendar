@@ -318,7 +318,7 @@ var CORE = (function () {
       todos: store.load('todos').filter(function (t) { return t.ownerId === me.id; }).slice(-1000),
       goals: store.load('goals').filter(function (g) { return g.memberId === me.id; }),
       themesOn: themesOn(store), themes: liveThemes(store),
-      me: {id: me.id, name: me.name, prLinked: !!me.prCode, prSince: me.prSince || '', msLinked: !!me.msCode, owner: isOwner(me, store), merges: str(me.merges, 400), chipOrder: str(me.chipOrder, 1500), short: shortOf(me), bday: me.bday || '', bdayYear: me.bdayYear || '', mustChange: me.pinTemp === 'true', shortSet: !!me.short, photoV: me.photoV || '', role: me.role, rank: myRank, unit: me.unit || '', color: me.color, leader: leader, devices: myDevices, partner: me.partner || '', partnerReq: me.partnerReq || '',
+      me: {id: me.id, name: me.name, prLinked: !!me.prCode, prSince: me.prSince || '', msLinked: !!me.msCode, owner: isOwner(me, store), merges: str(me.merges, 400), chipOrder: str(me.chipOrder, 1500), short: shortOf(me), bday: me.bday || '', bdayYear: me.bdayYear || '', mustChange: me.pinTemp === 'true', shortSet: !!me.short, shortClash: shortClash(me, store.load('members')), photoV: me.photoV || '', role: me.role, rank: myRank, unit: me.unit || '', color: me.color, leader: leader, devices: myDevices, partner: me.partner || '', partnerReq: me.partnerReq || '',
         partnerAsks: members.filter(function (m) { return m.partnerReq === me.id && String(m.active) !== 'false'; }).map(function (m) { return m.id; })},
       members: members.filter(function (m) { return String(m.active) !== 'false' || leader; }).map(function (m) {
         var o = {id: m.id, name: m.name, short: shortOf(m), role: m.role, color: m.color, active: String(m.active) !== 'false', partner: m.partner || '', photoV: m.photoV || '', bday: m.bday || '', rank: rankOf(m, oid), unit: m.unit || ''}; if (seeSeen(m)) o.seen = seen[m.id] || ''; return o;
@@ -767,6 +767,15 @@ var CORE = (function () {
     return w[0] || '?';
   }
   function shortOf(m) { return m.short || defaultShort(m.name); }
+  /* Two active members with the same short name (e.g. Tan Wen Xi and Lee Wen Xuan are both "WX"): one of them must change.
+     Who keeps it: the one who chose it themselves; if both (or neither) chose it, the one who joined first.
+     Returns the names of the people I clash with when it is ME who must change, else []. */
+  function shortClash(me, members) {
+    var mine = normName(shortOf(me)), key = function (m) { return [m.short ? 0 : 1, String(m.created || ''), String(m.id)].join('|'); };
+    var same = members.filter(function (m) { return m.id !== me.id && String(m.active) !== 'false' && normName(shortOf(m)) === mine; });
+    if (String(me.active) === 'false' || !same.some(function (m) { return key(m) < key(me); })) return [];
+    return same.map(function (m) { return str(m.name, 40); });
+  }
   /* Portraits: a small square JPEG per member (about 10 KB), kept in its own table so the calendar refresh stays light.
      Phones only download a photo when its version (photoV) changes. */
   var MAX_PHOTO = 60000;
@@ -801,7 +810,8 @@ var CORE = (function () {
     if (q.short != null) {
       var sh = str(q.short, 12).replace(/\s+/g, ' ');
       if (sh && !/^[\p{L}\p{N} .'&-]+$/u.test(sh)) fail('bad_short');
-      if (sh && rows.some(function (m) { return m.id !== my.id && String(m.active) !== 'false' && normName(shortOf(m)) === normName(sh); })) fail('short_taken');
+      var want = sh || defaultShort(my.name);   // clearing it goes back to the suggested one, which must be free too
+      if (rows.some(function (m) { return m.id !== my.id && String(m.active) !== 'false' && normName(shortOf(m)) === normName(want); })) fail('short_taken');
       my.short = sh; out.short = shortOf(my);
     }
     store.save('members', rows); store.version(true);

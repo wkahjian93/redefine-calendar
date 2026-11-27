@@ -10,7 +10,7 @@
 3. **Me → Turn on notifications** (iPhone: open the app from the home screen first).
 4. **Me → Import calendar** to move your old appointments in (see below).
 
-**Set your short name:** Me → **My short name** (e.g. KJ, MJ, Rex). The team sees it on chips, Team day, attendance and the close case list, so no surnames get mixed up. Until you set it, the app suggests your given-name initials (WONG KAH JIAN → KJ).
+**Set your short name:** Me → **My short name** (e.g. KJ, MJ, Rex). The team sees it on chips, Team day, attendance and the close case list, so no surnames get mixed up. Until you set it, the app suggests your given-name initials (WONG KAH JIAN → KJ). **No two people can share a short name.** If yours is the same as someone else's (e.g. Tan Wen Xi and Lee Wen Xuan are both WX), the app asks you to pick a new one when you open it and will not let you skip. The one who keeps it is whoever chose it themselves, or else whoever joined first.
 
 **Your photo:** Me → **My photo** → pick a photo. A round frame opens: **drag** to move it and **pinch** (or use the slider) to zoom until your face fills the circle, then tap **Save photo**.
 
