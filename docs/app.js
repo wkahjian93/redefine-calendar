@@ -7,7 +7,7 @@
   var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   var MONTH = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   var DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  var APP_VERSION = '84';
+  var APP_VERSION = '85';
   var H8 = 8 * 3600e3, DAY = 864e5, SELLING = {approach: 1, open: 1, present: 1, followup: 1, close: 1, joinfield: 1, recruit: 1};
 
   /* ---------- storage (each phone) ---------- */
@@ -1439,7 +1439,7 @@
   }
   function monthGrid() {
     var c = S.cursor, first = Date.UTC(c.y, c.m, 1), dow = (new Date(first).getUTCDay() + 6) % 7, start = dayKey(first - H8 - dow * DAY + 3600e3), today = dayKey(Date.now());
-    var list = filtered(), html = '<div class="grid"><div class="gh">' + ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(function (d) { return '<span>' + d + '</span>'; }).join('') + '</div>';
+    var list = filtered(), html = '<div class="grid z' + zoomLv() + '"><div class="gh">' + ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(function (d) { return '<span>' + d + '</span>'; }).join('') + '</div>';
     for (var w = 0; w < 6; w++) {
       var rowStart = addDays(start, w * 7); if (w >= 4 && P(keyMs(rowStart)).m !== c.m) break;
       html += '<div class="gw">';
@@ -1447,7 +1447,7 @@
         var k = addDays(start, w * 7 + d), p = P(keyMs(k)), evs = onDay(list, k).sort(function (x, y) { return (y.all ? 1 : 0) - (x.all ? 1 : 0); });   // team events always visible first
         var lun = lunarLabel(k), showOwner = S.filter === 'all' || S.filter.indexOf('me+') === 0, hs = C.holidaysOn(k), isPh = hs.some(function (h) { return h.kind === 'ph'; });
         html += '<div role="button" tabindex="0" class="gd' + (C.schoolHoliday(k) ? ' school' : '') + (p.m !== c.m ? ' dim' : '') + (k === today ? ' today' : '') + (k === S.sel ? ' sel' : '') + (evs.length > 3 ? ' many' : '') + '" data-act="sel" data-k="' + k + '"><span class="dn' + (isPh ? ' ph' : '') + '">' + p.d + (lun ? '<em class="lun">' + lun + '</em>' : '') + '</span>' + wxDay(k) + (hs.length ? '<span class="hol' + (isPh ? ' ph' : '') + '">' + hs[0].icon + ' ' + esc(hs[0].name) + '</span>' : '') + '<div class="gd-evs">' +
-          evs.map(function (e) { var o = mem(e.ownerId); return '<span class="bar' + (e.busy ? ' busy' : '') + (faded(e, me().id) ? ' pend' : '') + (e.out === 'cancel' ? ' x' : '') + (e.all ? ' team' : '') + '" style="' + evStyle(e) + '">' + (showOwner ? avatar(o, 'xxs') : '') + (e.all ? '<img class="tlogo" src="icons/team-mark.png" alt="">' : '') + esc(e.busy ? 'Busy' : e.title) + '</span>'; }).join('') +
+          evs.map(function (e) { var o = mem(e.ownerId); return '<span class="bar' + (e.busy ? ' busy' : '') + (faded(e, me().id) ? ' pend' : '') + (e.out === 'cancel' ? ' x' : '') + (e.all ? ' team' : '') + '" style="' + evStyle(e) + '">' + (showOwner ? avatar(o, 'xxs') : '') + (e.all ? '<img class="tlogo" src="icons/team-mark.png" alt="">' : '') + (e.allDay ? '' : '<i class="bt">' + hm(sMs(e)) + '</i>') + esc(e.busy ? 'Busy' : e.title) + '</span>'; }).join('') +
           '</div>' + (evs.length > 3 ? '<span class="more">+' + (evs.length - 3) + '</span>' : '') + '</div>';
       }
       html += '</div>';
@@ -2861,6 +2861,43 @@
     pgSet(-step * s.w, true); s.track.addEventListener('transitionend', fin, {once: true}); setTimeout(fin, 400);
   }
   document.addEventListener('touchend', swipeEnd, {passive: true});
+  /* ---------- Pinch the Month view, like the iPhone Calendar: pinch out = more detail, pinch in = less.
+     0 Compact (dots) · 1 Stacked (default) · 2 Details (times, full titles) · 3 Expanded (big days, everything). ---------- */
+  var ZOOM_MAX = 3, PZ = null;
+  function zoomLv() { var z = LS.get('zoom', 1); return z >= 0 && z <= ZOOM_MAX ? z : 1; }
+  function setZoomClass(z, anchor) {
+    var before = anchor ? anchor.getBoundingClientRect().top : 0;
+    document.querySelectorAll('.grid').forEach(function (g) { g.className = g.className.replace(/\bz\d\b/, 'z' + z); });
+    if (anchor) $scroll.scrollTop += anchor.getBoundingClientRect().top - before;   // keep the pinched day where the fingers are
+  }
+  function pinchDist(ev) { var a = ev.touches[0], b = ev.touches[1]; return Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY); }
+  document.addEventListener('touchstart', function (ev) {
+    if (ev.touches.length !== 2 || S.view !== 'month' || route().replace(/^[/]+/, '') || !ev.target.closest || !ev.target.closest('.grid')) return;
+    if (sw0 && sw0.mode === 'h') { pgSet(0, true); setTimeout(function () { PG.drag = false; }, 260); }
+    sw0 = null;
+    var mx = (ev.touches[0].clientX + ev.touches[1].clientX) / 2, my = (ev.touches[0].clientY + ev.touches[1].clientY) / 2, el = document.elementFromPoint(mx, my);
+    PZ = {d0: pinchDist(ev), z0: zoomLv(), z: zoomLv(), anchor: el && el.closest ? el.closest('.gd') : null};
+  }, {passive: true});
+  document.addEventListener('touchmove', function (ev) {
+    if (!PZ || ev.touches.length !== 2) return;
+    ev.preventDefault();   // the app zooms its calendar, not the whole page
+    var r = pinchDist(ev) / Math.max(1, PZ.d0), step = r >= 1 ? Math.floor(Math.log(r) / Math.log(1.32)) : -Math.floor(Math.log(1 / r) / Math.log(1.32));
+    var z = Math.max(0, Math.min(ZOOM_MAX, PZ.z0 + step));
+    if (z !== PZ.z) { PZ.z = z; setZoomClass(z, PZ.anchor); if (navigator.vibrate) try { navigator.vibrate(8); } catch (x) {} }
+  }, {passive: false});
+  function pinchEnd(ev) { if (!PZ || (ev.touches && ev.touches.length >= 2)) return; var z = PZ.z; PZ = null; LS.set('zoom', z); }
+  document.addEventListener('touchend', pinchEnd, {passive: true});
+  document.addEventListener('touchcancel', pinchEnd, {passive: true});
+  ['gesturestart', 'gesturechange'].forEach(function (n) { document.addEventListener(n, function (ev) { if (ev.target && ev.target.closest && ev.target.closest('.grid')) ev.preventDefault(); }, {passive: false}); });   // iPhone Safari: no page zoom on the calendar
+  // computer: trackpad pinch (or Ctrl + mouse wheel) on the Month view
+  var wheelAcc = 0, wheelT = 0;
+  document.addEventListener('wheel', function (ev) {
+    if (!ev.ctrlKey || S.view !== 'month' || !ev.target.closest || !ev.target.closest('.grid')) return;
+    ev.preventDefault(); if (Date.now() - wheelT > 400) wheelAcc = 0; wheelT = Date.now(); wheelAcc -= ev.deltaY;
+    if (Math.abs(wheelAcc) < 40) return;
+    var z = Math.max(0, Math.min(ZOOM_MAX, zoomLv() + (wheelAcc > 0 ? 1 : -1))); wheelAcc = 0;
+    if (z !== zoomLv()) { LS.set('zoom', z); var el = document.elementFromPoint(ev.clientX, ev.clientY); setZoomClass(z, el && el.closest ? el.closest('.gd') : null); }
+  }, {passive: false});
   document.addEventListener('touchcancel', swipeEnd, {passive: true});
   window.addEventListener('hashchange', function () { closeModal(); render(); });
   /* Phones keep home-screen apps paused in memory, so an update would only arrive after swiping the app away.

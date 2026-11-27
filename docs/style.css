@@ -713,3 +713,23 @@ button.confirm-bar { width: 100%; font: inherit; text-align: left; cursor: point
 .morning .mt { width: 62px; flex: none; font-weight: 700; font-size: 14px; }
 .morning .mb { flex: 1; min-width: 0; } .morning .mb small { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; }
 .today-bar .tb-t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Month pinch levels: z0 Compact (dots) · z1 Stacked (default) · z2 Details · z3 Expanded */
+.gd { transition: min-height .18s ease; }
+.grid { touch-action: pan-x pan-y; }
+.bar .bt { display: none; font-style: normal; font-weight: 700; margin-right: 3px; opacity: .9; }
+.grid.z0 .gd { min-height: 46px; }
+.grid.z0 .gd-evs { flex-direction: row; flex-wrap: wrap; gap: 2px; padding: 2px 3px 0; max-height: 24px; }
+.grid.z0 .gd-evs > .bar { width: 6px; height: 6px; padding: 0; border-radius: 50%; font-size: 0; line-height: 0; }
+.grid.z0 .gd-evs > .bar > * { display: none; }
+.grid.z0 .gd .more, .grid.z0 .gd .hol { display: none; }
+.grid.z2 .gd { min-height: 118px; }
+.grid.z2 .gd-evs, .grid.z2 .gd.sel .gd-evs { max-height: 96px; gap: 2px; }
+.grid.z2 .bar { white-space: normal; line-height: 12px; padding: 1px 3px; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.grid.z2 .bar .bt, .grid.z3 .bar .bt { display: inline; }
+.grid.z3 .gd { min-height: 190px; }
+.grid.z3 .gd-evs { max-height: 168px; gap: 2px; } .grid.z3 .gd.sel .gd-evs { max-height: 168px; overflow-y: auto; }
+.grid.z2 .gd .more, .grid.z3 .gd .more { display: none; }
+.grid.z3 .bar { white-space: normal; font-size: 10.5px; line-height: 13px; padding: 2px 3px; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; }
+.grid.z3 .bar .bt { font-size: 9.5px; }
+@media (min-width: 560px) { .grid.z2 .gd { min-height: 140px; } .grid.z2 .gd-evs { max-height: 118px; } .grid.z3 .gd { min-height: 230px; } .grid.z3 .bar { font-size: 12px; line-height: 15px; } }
