@@ -24,7 +24,7 @@ You stay signed in on that phone for good, like WhatsApp. Only two things sign y
 - Signing out of a phone throws away any changes still waiting to send on it.
 
 ## Every day (agents)
-- **Morning reminder:** from 6am, the first time you open the app that day, a pop-up shows today's events: ⭐ first up, then the rest, with today's weather. After you close it, a blue **📋 Today** bar on the calendar opens it again. Both are gone after 2pm.
+- **Morning reminder:** from 6am, when you open the app, a pop-up shows today's events: ⭐ first up, then the rest, with today's weather. It pops up again each time you open the app until you tap **✓ Got it**; then it (and the blue **📋 Today** bar) is gone for the day. If you never tap it, both are gone after 2pm.
 - **Weather:** the chip beside the countdown (e.g. ⛈️ 30°) is the weather now where you are. Tap it to see the next 24 hours and the next 14 days, with rain chance, UV, sunrise and sunset. Month and Agenda show a weather icon on today and the coming days. It updates every 15 minutes. The phone asks once to use your location. If you say no, it shows Penang. Tap **📍 Use my location** in the weather page to try again.
 - **Show: All / 💼 Work / 🏠 Personal:** the row under the people chips. Personal = only the red events. Work = everything else (birthdays and other people's Busy blocks are left out).
 - **🤝 Together (Me + partner view):** in a "Me + someone" view there is one more button, e.g. **🤝 KJ + MJ together**. It shows only what you all have to attend: one of you invited the other, a team event none of you said no to, or the same thing at the same time in both calendars.

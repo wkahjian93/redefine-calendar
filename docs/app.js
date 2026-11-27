@@ -7,7 +7,7 @@
   var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   var MONTH = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   var DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  var APP_VERSION = '83';
+  var APP_VERSION = '84';
   var H8 = 8 * 3600e3, DAY = 864e5, SELLING = {approach: 1, open: 1, present: 1, followup: 1, close: 1, joinfield: 1, recruit: 1};
 
   /* ---------- storage (each phone) ---------- */
@@ -629,17 +629,19 @@
   }
   function firstNext(list) { var now = Date.now(); return list.filter(function (e) { return !e.allDay && eMs(e) > now; })[0] || null; }
   function morningBar() {
-    if (!morningOn() || !S.data) return '';
+    if (!morningOn() || !S.data || morningDone()) return '';
     var list = todayMine(), f = firstNext(list); if (!list.length) return '';
     return '<button class="confirm-bar today-bar" data-act="morning"><span class="tb-t">📋 Today: <b>' + list.length + '</b> event' + (list.length > 1 ? 's' : '') + (f ? ' · next <b>' + hm(sMs(f)) + '</b> ' + esc(String(f.title || 'Busy').slice(0, 28)) : '') + '</span><span>›</span></button>';
   }
+  /* Shows every time the app is opened (6am-2pm) until the agent taps "Got it"; then it is gone for the day. */
+  function morningDone() { return LS.get('morning', '') === dayKey(Date.now()); }
   function morningCheck() {
     if (!S.data || !S.token || !morningOn() || route().replace(/^[/]+/, '')) return;
-    var k = dayKey(Date.now()); if (LS.get('morning', '') === k) return;
+    if (morningDone() || S.mornShown) return;   // confirmed today, or already shown since the app was opened
     if (S.data.me.mustChange || (S.data.me.shortClash || []).length) return;   // those must be answered first
     if (document.getElementById('modal-root').className) return setTimeout(morningCheck, 2500);
     if (!wxFresh() && wxBusy && !S.mornWait) { S.mornWait = 1; return setTimeout(morningCheck, 3000); }   // give the weather a moment so it shows too
-    LS.set('morning', k); openMorning();
+    S.mornShown = true; openMorning();
   }
   function openMorning() {
     var list = todayMine(), f = firstNext(list), k = dayKey(Date.now()), w = WX && WX.daily && WX.daily[k], now = Date.now(), my = me().id;
@@ -652,7 +654,7 @@
       '<p class="muted">' + esc(dayLabel(k, true)) + (w ? ' · ' + wxIcon(w.c, 1) + ' ' + Math.round(w.min) + '–' + Math.round(w.max) + '°C' + (w.rain != null ? ' · 💧' + w.rain + '%' : '') : '') + '</p>' +
       (list.length ? (f ? '<p class="lbl">First up</p>' + row(f) : '') + (list.filter(function (e) { return !f || e.id !== f.id; }).length ? '<p class="lbl">' + (f ? 'Also today' : 'Today') + '</p>' + list.filter(function (e) { return !f || e.id !== f.id; }).map(row).join('') : '')
         : '<p class="empty">Nothing booked today.</p>') +
-      '<div class="row end sheet-btns"><button class="btn primary big" data-act="close-modal">OK</button></div></div>');
+      '<p class="tiny muted">' + (morningDone() ? 'Confirmed for today.' : 'This pops up each time you open the app until you tap Got it (or until 2pm).') + '</p><div class="row end sheet-btns"><button class="btn primary big" data-act="morning-ok">✓ Got it</button></div></div>');
     var sh = document.querySelector('#modal-root .sheet'); if (sh) sh.querySelectorAll('a.mrow').forEach(function (a) { a.addEventListener('click', function () { setTimeout(closeModal, 0); }); });
   }
   /* ---------- Live weather (Open-Meteo, free, no key). Location from the phone (rounded to about 1 km), else Penang.
@@ -2644,6 +2646,7 @@
     if (a === 'wx') return openWeather();
     if (a === 'wxloc') { LS.del('wxDenied'); WXL = null; LS.del('wxLoc'); closeModal(); toast('📍 Finding your location…'); return loadWeather(true, true); }
     if (a === 'morning') return openMorning();
+    if (a === 'morning-ok') { LS.set('morning', dayKey(Date.now())); closeModal(); return render(); }
     if (a === 'merge-keep') { var mk = keptMerges(); if (mk.indexOf(b.dataset.id) < 0) mk.push(b.dataset.id); setKept(mk); toast('Kept. It stays on your chips.', 'good'); return render(); }
     if (a === 'merge-x') { setKept(keptMerges().filter(function (x) { return x !== b.dataset.id; })); if (S.filter === 'me+' + b.dataset.id) { S.filter = 'me'; LS.set('filter', 'me'); } return render(); }
     if (a === 'merge') { closeModal(); S.filter = 'me+' + b.dataset.id; LS.set('filter', S.filter); return render(); }
@@ -2949,7 +2952,7 @@
   setInterval(fitFrame, 1000);
   setTimeout(function () { loadWeather(); morningCheck(); }, 1200);
   setInterval(function () { loadWeather(); morningCheck(); if (!route().replace(/^[/]+/, '') && !document.getElementById('modal-root').className) render(); }, 5 * 60e3);
-  document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible') setTimeout(function () { loadWeather(); morningCheck(); }, 600); });
+  document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'hidden') S.mornShown = false; if (document.visibilityState === 'visible') setTimeout(function () { loadWeather(); morningCheck(); }, 600); });
   setTimeout(function () { if (S.token && vAsks().length) openAsk(); }, 3500);
   fitFrame();
   setTimeout(function () {   // iPhone in Safari: once, suggest the Home Screen app (full screen + pop-ups)
