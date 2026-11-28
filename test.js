@@ -1055,5 +1055,21 @@ function fresh() {
   ok(CORE.loginSync(s, [AG['tok-linked'], AG['tok-old']].map(a => Object.assign({status: 'active'}, a))).removed === 1 && s.load('members').filter(m => m.central === 'L3')[0].active === 'false', 'a member made by the new sign-in is removed when terminated');
 }
 
+/* ---------- v90: a leader links their OWN member to their REDEFINE login (owner forgot the old PIN) ---------- */
+{
+  const OWNER = {id: 'LOWN', name: 'WONG KAH JIAN', phone: '60194783328', status: 'active'};
+  const s = memStore({findPhone: p => String(p).replace(/\D/g, '').replace(/^0/, '60') === '60194783328' ? OWNER : null,
+    check: t => t === 'tok-owner' ? OWNER : null});
+  s.setNow(NOW);
+  const h = q => CORE.handle(q, s);
+  const lead = h({op: 'signin', code: 'test-leader-code', name: 'Kah Jian', pin: '1234', create: true});
+  s.props.LOGIN_API = 'https://login.test';   // REDEFINE Login switched on after the leader already existed
+  const myId = h({op: 'sync', token: lead.token}).me.id;
+  const link = h({op: 'centrallink', token: lead.token, memberId: myId, phone: '019-478 3328'});
+  ok(link.linked === true, 'a leader can link their own member by their phone');
+  const r = h({op: 'rlsignin', rltoken: 'tok-owner'});
+  ok(r.me.id === myId && r.me.leader === true, 'then phone + email + PIN signs straight into their own leader account');
+}
+
 console.log(pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);

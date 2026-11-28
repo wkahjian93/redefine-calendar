@@ -7,7 +7,7 @@
   var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   var MONTH = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   var DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  var APP_VERSION = '89';
+  var APP_VERSION = '90';
   var H8 = 8 * 3600e3, DAY = 864e5, SELLING = {approach: 1, open: 1, present: 1, followup: 1, close: 1, joinfield: 1, recruit: 1};
 
   /* ---------- storage (each phone) ---------- */
@@ -2430,7 +2430,7 @@
       members().map(function (m) {
         var you = m.id === me().id;
         return '<div class="card mrow' + (m.active === false ? ' off' : '') + '">' + avatar(m, 'sm') + '<div class="grow"><b>' + esc(m.name) + '</b><small class="muted">' + (m.role === 'leader' ? '⭐ Leader' : 'Agent') + placeTxt(m) + (m.active === false ? ' · removed' : '') + ' · last seen ' + (m.seen ? ago(m.seen) : 'never') + '</small></div>' +
-          (you ? '<small class="muted">you</small>' : '<div class="mbtns">' + (m.active === false ? '<button class="btn tiny ghost" data-act="mem" data-id="' + m.id + '" data-do="back">Bring back</button>'
+          (you ? '<small class="muted">you</small>' + (CFG.loginApi && !m.linked ? ' <button class="btn tiny ghost" data-act="central-link" data-id="' + m.id + '">🔗 Link my login</button>' : '') : '<div class="mbtns">' + (m.active === false ? '<button class="btn tiny ghost" data-act="mem" data-id="' + m.id + '" data-do="back">Bring back</button>'
             : '<button class="btn tiny ghost" data-act="mem" data-id="' + m.id + '" data-do="' + (m.role === 'leader' ? 'agent' : 'leader') + '">' + (m.role === 'leader' ? 'Make agent' : 'Make leader') + '</button><button class="btn tiny danger ghost" data-act="mem" data-id="' + m.id + '" data-do="remove">Remove</button><button class="btn tiny ghost" data-act="mem" data-id="' + m.id + '" data-do="reset">🔑 Reset PIN</button>') + (m.linked || m.active === false ? '' : '<button class="btn tiny ghost" data-act="central-link" data-id="' + m.id + '">🔗 Link login</button>') + (gm && m.active !== false ? place(m) : '') + '</div>') + '</div>';
       }).join('') + '</main>';
   }
