@@ -217,6 +217,27 @@ var GAS = (function () {
     now: function () { return new Date(); },
     sleep: function (ms) { Utilities.sleep(ms); },
     fetchJson: function (url, body) { var r = UrlFetchApp.fetch(url, {method: 'post', contentType: 'text/plain', payload: JSON.stringify(body), muteHttpExceptions: true, followRedirects: true}); try { return JSON.parse(r.getContentText()); } catch (e) { return null; } },
+    // REDEFINE Login (set Script properties LOGIN_API = login service address; LOGIN_ADMIN = admin code, owner only).
+    centralCheck: function (token) {
+      var base = P.getProperty('LOGIN_API');
+      if (!token || !base) return {ok: false, error: token ? 'offline' : 'signed_out'};
+      try {
+        var r = UrlFetchApp.fetch(base + '/api/check', {method: 'post', contentType: 'application/json', headers: {authorization: 'Bearer ' + token}, payload: '{}', muteHttpExceptions: true});
+        var j = JSON.parse(r.getContentText() || '{}');
+        if (j && j.ok && j.agent) return {ok: true, agent: j.agent};
+        if (r.getResponseCode() === 401) return {ok: false, error: 'signed_out'};
+        return {ok: false, error: 'offline'};
+      } catch (e) { return {ok: false, error: 'offline'}; }
+    },
+    centralFindPhone: function (phone) {
+      var base = P.getProperty('LOGIN_API'), code = P.getProperty('LOGIN_ADMIN');
+      var d = String(phone || '').replace(/\D/g, ''); if (d.charAt(0) === '0') d = '60' + d.slice(1);
+      if (!base || !code || !/^60\d{8,10}$/.test(d)) return null;
+      var r = UrlFetchApp.fetch(base + '/admin/api/agents', {headers: {'x-admin-code': code}, muteHttpExceptions: true});
+      if (r.getResponseCode() !== 200) return null;
+      var list = (JSON.parse(r.getContentText()) || {}).agents || [];
+      return list.filter(function (a) { return a.phone === d && a.status === 'active'; })[0] || null;
+    },
     random: Math.random,
     hash: function (t) { return Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, t, Utilities.Charset.UTF_8).map(function (b) { return ('0' + (b & 255).toString(16)).slice(-2); }).join(''); },
     version: function (bump) { var v = +(P.getProperty('VER') || 1); if (bump) { v++; P.setProperty('VER', String(v)); } return v; }

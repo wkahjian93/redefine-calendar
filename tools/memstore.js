@@ -18,6 +18,9 @@ module.exports = function memStore(opts = {}) {
     now: () => clock ? new Date(clock) : new Date(),
     setNow: d => { clock = d ? new Date(d).getTime() : null; },
     random: opts.random || Math.random,
+    // REDEFINE Login stand-ins: tests set opts.central / opts.findPhone to decide the answers.
+    centralCheck: opts.central || (() => ({ok: false, error: 'offline'})),
+    centralFindPhone: opts.findPhone || (() => null),
     hash: t => crypto.createHash('sha256').update(t, 'utf8').digest('hex'),
     version: bump => (bump ? ++ver : ver),
     push: (ids, note) => { if (ids && ids.length) store.pushes.push({ids: ids.slice(), note, at: Date.now()}); },

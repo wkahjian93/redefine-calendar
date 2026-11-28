@@ -7,7 +7,7 @@
   var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   var MONTH = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   var DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  var APP_VERSION = '86';
+  var APP_VERSION = '87';
   var H8 = 8 * 3600e3, DAY = 864e5, SELLING = {approach: 1, open: 1, present: 1, followup: 1, close: 1, joinfield: 1, recruit: 1};
 
   /* ---------- storage (each phone) ---------- */
@@ -243,7 +243,7 @@
     not_an_appointment: 'That didn’t sound like an appointment. Say what, which day and what time.',
     bad_audio: 'That recording couldn’t be used. Try again (up to 60 seconds).', nothing_heard: 'Nothing was heard. Hold the phone closer and try again.', owner_only: 'Only the owner can change celebration themes.', bad_theme: 'Please pick the colours again.', bad_music: 'Use an MP3 or M4A file up to 5 MB.',
     wrong_code: 'That team code is not right.', wrong_pin: 'Wrong PIN for that name.', pin_4_digits: 'PIN must be 4–6 digits.', name_needed: 'Please type your name.',
-    too_many_tries: 'Too many wrong tries. Wait 15 minutes.', removed: 'Your leader removed this account.', signed_out: 'Please sign in again.',
+    too_many_tries: 'Too many wrong tries. Wait 15 minutes.', no_login_match: 'No login account has this phone number. Check the number.', already_linked: 'This person is already linked to a login.', leader_only: 'Only a leader can link logins.', removed: 'Your leader removed this account.', signed_out: 'Please sign in again.',
     server_not_set_up: 'The team server is not set up yet.', title_needed: 'Please add a title.', date_needed: 'Please pick a date and time.',
     not_yours: 'Only the owner can change this.', not_found: 'That was deleted.', not_yet: 'This has not happened yet.', bad_anp: 'ANP looks wrong.',
     daily_limit: 'Daily photo limit reached. Try again tomorrow.', bad_photo: 'That photo could not be read. Try a smaller or clearer one.',
@@ -2329,7 +2329,7 @@
         var you = m.id === me().id;
         return '<div class="card mrow' + (m.active === false ? ' off' : '') + '">' + avatar(m, 'sm') + '<div class="grow"><b>' + esc(m.name) + '</b><small class="muted">' + (m.role === 'leader' ? '⭐ Leader' : 'Agent') + placeTxt(m) + (m.active === false ? ' · removed' : '') + ' · last seen ' + (m.seen ? ago(m.seen) : 'never') + '</small></div>' +
           (you ? '<small class="muted">you</small>' : '<div class="mbtns">' + (m.active === false ? '<button class="btn tiny ghost" data-act="mem" data-id="' + m.id + '" data-do="back">Bring back</button>'
-            : '<button class="btn tiny ghost" data-act="mem" data-id="' + m.id + '" data-do="' + (m.role === 'leader' ? 'agent' : 'leader') + '">' + (m.role === 'leader' ? 'Make agent' : 'Make leader') + '</button><button class="btn tiny danger ghost" data-act="mem" data-id="' + m.id + '" data-do="remove">Remove</button><button class="btn tiny ghost" data-act="mem" data-id="' + m.id + '" data-do="reset">🔑 Reset PIN</button>') + (gm && m.active !== false ? place(m) : '') + '</div>') + '</div>';
+            : '<button class="btn tiny ghost" data-act="mem" data-id="' + m.id + '" data-do="' + (m.role === 'leader' ? 'agent' : 'leader') + '">' + (m.role === 'leader' ? 'Make agent' : 'Make leader') + '</button><button class="btn tiny danger ghost" data-act="mem" data-id="' + m.id + '" data-do="remove">Remove</button><button class="btn tiny ghost" data-act="mem" data-id="' + m.id + '" data-do="reset">🔑 Reset PIN</button>') + (m.linked || m.active === false ? '' : '<button class="btn tiny ghost" data-act="central-link" data-id="' + m.id + '">🔗 Link login</button>') + (gm && m.active !== false ? place(m) : '') + '</div>') + '</div>';
       }).join('') + '</main>';
   }
 
@@ -2699,6 +2699,11 @@
     }
 
     if (a === 'goalp') { S.goalP = +b.dataset.i; return render(); }
+    if (a === 'central-link') {   // owner: type the agent's phone number once; it must match the login list
+      var lp = window.prompt('Type this person\'s phone number (as in the REDEFINE login list):');
+      if (lp) send('centrallink', {memberId: b.dataset.id, phone: lp}, '🔗 Linked to login');
+      return;
+    }
     if (a === 'goalsave') { var gv = (document.getElementById('goalin') || {}).value || ''; if (gv !== '' && !(+gv >= 0)) return toast('Type the ANP goal in RM.', 'bad'); S.prog = null; return send('goal', {key: b.dataset.key, anp: gv === '' ? '' : Math.round(+gv)}, gv === '' ? 'Goal removed' : '🎯 Goal saved'); }
     if (a === 'bdaysave') { var bv = (document.getElementById('bdayin') || {}).value || ''; if (!bv) return toast('Pick your birthday first.', 'bad'); return send('profile', {bday: bv}, '🎂 Birthday saved'); }
     if (a === 'bdayclear') return send('profile', {bday: ''}, 'Removed');
@@ -3083,5 +3088,15 @@
     if (now - lastPoll >= (fast ? 6e3 : 20e3)) { lastPoll = now; quietSync(); }
     checkReminders(); runVoiceQ();
   }, 3000);
+  // REDEFINE Login: when the app opens and every 15 minutes, check that this person is still active at the login.
+  // A terminated person is signed out here (api() handles 'removed' / 'signed_out'). No connection = nothing happens.
+  function centralBeat() {
+    var t = ''; try { t = localStorage.getItem('rl.token') || ''; } catch (e) {}
+    if (!S.token || !t) return;
+    api('central', {central: t}).catch(function () {});
+  }
+  setTimeout(centralBeat, 10e3);
+  setInterval(centralBeat, 15 * 60e3);
+  document.addEventListener('visibilitychange', function () { if (!document.hidden) centralBeat(); });
   window.RCAL = {S: S, sync: sync, render: render, MUS: MUS};   // for testing in the browser console
 })();

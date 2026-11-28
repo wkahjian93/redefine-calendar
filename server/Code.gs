@@ -10,7 +10,7 @@
    transcribe(audioBase64, mime, hint) -> text, putFile(id, mime, base64) / getFile(id) -> {mime, data} / delFile(id). */
 var CORE = (function () {
   var TABLES = {
-    members: ['id', 'name', 'pin', 'role', 'color', 'created', 'active', 'partner', 'partnerReq', 'short', 'photoV', 'bday', 'pinTemp', 'feed', 'merges', 'chipOrder', 'rank', 'unit', 'prCode', 'prSince', 'bdayYear', 'msCode'],
+    members: ['id', 'name', 'pin', 'role', 'color', 'created', 'active', 'partner', 'partnerReq', 'short', 'photoV', 'bday', 'pinTemp', 'feed', 'merges', 'chipOrder', 'rank', 'unit', 'prCode', 'prSince', 'bdayYear', 'msCode', 'central'],
     photos: ['memberId', 'data', 'updated'],
     sessions: ['token', 'memberId', 'created', 'lastSeen', 'device'],
     events: ['id', 'ownerId', 'title', 'type', 'start', 'end', 'allDay', 'place', 'notes', 'vis', 'with', 'remind', 'count', 'out', 'anp', 'source', 'remSent', 'created', 'updated', 'noc', 'all', 'cases', 'rep', 'repEnd', 'jfKind', 'agentId', 'skip'],
@@ -324,7 +324,7 @@ var CORE = (function () {
       me: {id: me.id, name: me.name, prLinked: !!me.prCode, prSince: me.prSince || '', msLinked: !!me.msCode, owner: isOwner(me, store), merges: str(me.merges, 400), chipOrder: str(me.chipOrder, 1500), short: shortOf(me), bday: me.bday || '', bdayYear: me.bdayYear || '', mustChange: me.pinTemp === 'true', shortSet: !!me.short, shortClash: shortClash(me, store.load('members')), photoV: me.photoV || '', role: me.role, rank: myRank, unit: me.unit || '', color: me.color, leader: leader, devices: myDevices, partner: me.partner || '', partnerReq: me.partnerReq || '',
         partnerAsks: members.filter(function (m) { return m.partnerReq === me.id && String(m.active) !== 'false'; }).map(function (m) { return m.id; })},
       members: members.filter(function (m) { return String(m.active) !== 'false' || leader; }).map(function (m) {
-        var o = {id: m.id, name: m.name, short: shortOf(m), role: m.role, color: m.color, active: String(m.active) !== 'false', partner: m.partner || '', photoV: m.photoV || '', bday: m.bday || '', rank: rankOf(m, oid), unit: m.unit || ''}; if (seeSeen(m)) o.seen = seen[m.id] || ''; return o;
+        var o = {id: m.id, name: m.name, short: shortOf(m), role: m.role, color: m.color, active: String(m.active) !== 'false', partner: m.partner || '', photoV: m.photoV || '', bday: m.bday || '', rank: rankOf(m, oid), unit: m.unit || '', linked: !!m.central}; if (seeSeen(m)) o.seen = seen[m.id] || ''; return o;
       }),
       events: events, msgs: evc.map(function (m) { return {id: m.id, to: m.to, from: m.from, kind: m.kind, text: m.text, created: m.created}; })
     };
@@ -1574,6 +1574,37 @@ var CORE = (function () {
     }
     if (q.op === 'msunlink') return store.withLock(function () { msDrop(store, who(q, store).me.id); return {ok: true, linked: false}; });
     if (q.op === 'prunlink') return store.withLock(function () { var me1 = who(q, store).me, ms = store.load('members'), x = ms.filter(function (y) { return y.id === me1.id; })[0]; x.prCode = ''; x.prSince = ''; store.save('members', ms); return {ok: true, linked: false}; });
+    // REDEFINE Login link. 'central' = the app's 15-minute check: is this person still active at the login?
+    // A terminated person is marked removed here, so every Calendar request for them is refused.
+    if (q.op === 'central') {
+      return store.withLock(function () {
+        var me = who(q, store).me, ms = store.load('members'), m = ms.filter(function (c) { return c.id === me.id; })[0];
+        if (!m || !m.central) return {ok: true, linked: false};
+        var r = store.centralCheck(String(q.central || ''));
+        if (!r.ok) {
+          if (r.error === 'signed_out') { m.active = 'false'; store.save('members', ms); fail('removed'); }
+          return {ok: true, linked: true, checked: false};   // no connection right now: keep the person in
+        }
+        if (r.agent.id !== m.central) fail('signed_out');
+        return {ok: true, linked: true, checked: true};
+      });
+    }
+    // Owner links an existing Calendar member to a login account, once, by typing the agent's phone number.
+    if (q.op === 'centrallink') {
+      return store.withLock(function () {
+        var me = who(q, store).me;
+        if (me.role !== 'leader') fail('leader_only');
+        var ms = store.load('members'), m = ms.filter(function (c) { return c.id === String(q.memberId || ''); })[0];
+        if (!m) fail('not_found');
+        var found = store.centralFindPhone(String(q.phone || ''));
+        if (!found) fail('no_login_match');
+        if (m.central) fail('already_linked');   // one link per member; a wrong link is fixed by the owner in the data
+        if (ms.some(function (c) { return c.central === found.id; })) fail('already_linked');   // one member per login account
+        m.central = found.id;
+        store.save('members', ms);
+        return {ok: true, linked: true, name: found.name};
+      });
+    }
     if (q.op === 'signin') {
       return store.withLock(function () {
         var r = signIn(q, store);
@@ -1883,6 +1914,27 @@ var GAS = (function () {
     now: function () { return new Date(); },
     sleep: function (ms) { Utilities.sleep(ms); },
     fetchJson: function (url, body) { var r = UrlFetchApp.fetch(url, {method: 'post', contentType: 'text/plain', payload: JSON.stringify(body), muteHttpExceptions: true, followRedirects: true}); try { return JSON.parse(r.getContentText()); } catch (e) { return null; } },
+    // REDEFINE Login (set Script properties LOGIN_API = login service address; LOGIN_ADMIN = admin code, owner only).
+    centralCheck: function (token) {
+      var base = P.getProperty('LOGIN_API');
+      if (!token || !base) return {ok: false, error: token ? 'offline' : 'signed_out'};
+      try {
+        var r = UrlFetchApp.fetch(base + '/api/check', {method: 'post', contentType: 'application/json', headers: {authorization: 'Bearer ' + token}, payload: '{}', muteHttpExceptions: true});
+        var j = JSON.parse(r.getContentText() || '{}');
+        if (j && j.ok && j.agent) return {ok: true, agent: j.agent};
+        if (r.getResponseCode() === 401) return {ok: false, error: 'signed_out'};
+        return {ok: false, error: 'offline'};
+      } catch (e) { return {ok: false, error: 'offline'}; }
+    },
+    centralFindPhone: function (phone) {
+      var base = P.getProperty('LOGIN_API'), code = P.getProperty('LOGIN_ADMIN');
+      var d = String(phone || '').replace(/\D/g, ''); if (d.charAt(0) === '0') d = '60' + d.slice(1);
+      if (!base || !code || !/^60\d{8,10}$/.test(d)) return null;
+      var r = UrlFetchApp.fetch(base + '/admin/api/agents', {headers: {'x-admin-code': code}, muteHttpExceptions: true});
+      if (r.getResponseCode() !== 200) return null;
+      var list = (JSON.parse(r.getContentText()) || {}).agents || [];
+      return list.filter(function (a) { return a.phone === d && a.status === 'active'; })[0] || null;
+    },
     random: Math.random,
     hash: function (t) { return Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, t, Utilities.Charset.UTF_8).map(function (b) { return ('0' + (b & 255).toString(16)).slice(-2); }).join(''); },
     version: function (bump) { var v = +(P.getProperty('VER') || 1); if (bump) { v++; P.setProperty('VER', String(v)); } return v; }
