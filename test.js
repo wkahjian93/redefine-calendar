@@ -1019,5 +1019,41 @@ function fresh() {
   ok(CORE.loginSync(s, [A1, A2]).restored === 0 && row('Second Agent').active === false, 'a member removed by a leader is never brought back by the sync');
 }
 
+/* ---------- v89: sign in with REDEFINE Login (phone + email + PIN) ---------- */
+{
+  const AG = {'tok-linked': {id: 'L1', name: 'Lim May Jing', phone: '60165537228'}, 'tok-old': {id: 'L2', name: 'OLD TIMER', phone: '60110000002'},
+    'tok-new': {id: 'L3', name: 'NUR AINA BINTI ALI', phone: '60110000003'}, 'tok-clash': {id: 'L4', name: 'MARCUS LIM', phone: '60110000004'},
+    'tok-gone': {id: 'L5', name: 'Gone Agent', phone: '60110000005'}};
+  const s = memStore({check: t => AG[t] || null, props: {LOGIN_API: 'https://login.test'}});
+  s.setNow(NOW);
+  const h = q => CORE.handle(q, s);
+  const mk = (name, extra) => { const ms = s.load('members'); ms.push(Object.assign({id: 'x' + ms.length, name, pin: s.hash('rcal|1234|' + name.toLowerCase()), role: 'agent', color: '#000', created: '', active: 'true'}, extra || {})); s.save('members', ms); };
+  mk('Lim May Jing', {central: 'L1'}); mk('Old Timer'); mk('Marcus Lim'); mk('Gone Agent', {central: 'L5', active: 'false', centralOff: '1'});
+  mk('Boss', {role: 'leader'});
+
+  throws(() => h({op: 'rlsignin', rltoken: 'bad'}), 'login_failed', 'an unknown or cancelled login token is refused');
+  const a = h({op: 'rlsignin', rltoken: 'tok-linked'});
+  ok(a.token && a.me.name === 'Lim May Jing' && !a.created, 'a linked member signs in straight away');
+  ok(h({op: 'sync', token: a.token}).me.name === 'Lim May Jing', 'the new session works');
+  throws(() => h({op: 'rlsignin', rltoken: 'tok-gone'}), 'removed', 'a removed member cannot sign in');
+
+  throws(() => h({op: 'rlsignin', rltoken: 'tok-old'}), 'not_linked_yet', 'first time: the app is asked to choose old account or new');
+  throws(() => h({op: 'rlsignin', rltoken: 'tok-old', oldName: 'Old Timer', oldPin: '9999'}), 'wrong_old', 'wrong old PIN is refused');
+  throws(() => h({op: 'rlsignin', rltoken: 'tok-old', oldName: 'Nobody', oldPin: '1234'}), 'wrong_old', 'unknown old name is refused (same answer)');
+  const o = h({op: 'rlsignin', rltoken: 'tok-old', oldName: ' old  timer ', oldPin: '1234'});
+  ok(o.linked && o.me.name === 'Old Timer' && s.load('members').filter(m => m.name === 'Old Timer')[0].central === 'L2', 'old name + old PIN links the old account (history kept)');
+  ok(h({op: 'rlsignin', rltoken: 'tok-old'}).me.name === 'Old Timer', 'next time it signs straight in');
+  throws(() => h({op: 'rlsignin', rltoken: 'tok-new', oldName: 'Old Timer', oldPin: '1234'}), 'already_linked', 'an account linked to another login cannot be taken');
+  throws(() => h({op: 'rlsignin', rltoken: 'tok-clash', create: true}), 'name_in_use', 'cannot make a second member with an existing name');
+
+  const n = h({op: 'rlsignin', rltoken: 'tok-new', create: true});
+  ok(n.created && n.me.name === 'Nur Aina Binti Ali' && !n.me.leader, 'a new agent gets a new member, name tidied, not a leader');
+  ok(h({op: 'rlsignin', rltoken: 'tok-new', create: true}).created === false, 'signing in again never makes a duplicate');
+  ok(s.load('members').filter(m => m.central === 'L3').length === 1, 'exactly one member per login');
+  throws(() => h({op: 'signin', code: 'test-team', name: 'Brand New', pin: '1234', create: true}), 'use_login', 'old team-code sign-in can no longer create members');
+  ok(h({op: 'signin', code: 'test-team', name: 'Marcus Lim', pin: '1234'}).token, 'old sign-in still works for existing members');
+  ok(CORE.loginSync(s, [AG['tok-linked'], AG['tok-old']].map(a => Object.assign({status: 'active'}, a))).removed === 1 && s.load('members').filter(m => m.central === 'L3')[0].active === 'false', 'a member made by the new sign-in is removed when terminated');
+}
+
 console.log(pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);

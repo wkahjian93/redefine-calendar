@@ -20,6 +20,7 @@ module.exports = function memStore(opts = {}) {
     random: opts.random || Math.random,
     // REDEFINE Login stand-ins: tests set opts.findPhone to decide the answer.
     centralFindPhone: opts.findPhone || (() => null),
+    centralCheck: opts.check || (() => null),
     hash: t => crypto.createHash('sha256').update(t, 'utf8').digest('hex'),
     version: bump => (bump ? ++ver : ver),
     push: (ids, note) => { if (ids && ids.length) store.pushes.push({ids: ids.slice(), note, at: Date.now()}); },

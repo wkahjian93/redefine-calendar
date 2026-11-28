@@ -262,6 +262,43 @@ var CORE = (function () {
     log(store, me.id, 'join', name);
     return {me: me, created: true};
   }
+  // ag = {id, name, phone} from REDEFINE Login (already checked as active there).
+  // 1) a member linked to this login -> that member. 2) first time: the agent proves their OLD Calendar account
+  // (old name + old PIN) and it gets linked, keeping all history. 3) "I'm new": a new member, linked. Otherwise
+  // the app is told 'not_linked_yet' and asks which one.
+  function rlSignIn(q, store, ag) {
+    var aid = String(ag.id);
+    var members = store.load('members'), me = members.filter(function (a) { return String(a.central) === aid; })[0];
+    if (me) {
+      if (String(me.active) === 'false') fail('removed');
+      return {me: me};
+    }
+    if (q.oldName) {
+      var name = str(q.oldName, 40).replace(/\s+/g, ' '), pin = str(q.oldPin, 12);
+      if (store.fails() >= 8) fail('too_many_tries');
+      var old = members.filter(function (a) { return normName(a.name) === normName(name); })[0];
+      if (!old || old.pin !== store.hash('rcal|' + pin + '|' + normName(name))) { store.fails(1); fail('wrong_old'); }
+      if (String(old.active) === 'false') fail('removed');
+      if (old.central) fail('already_linked');
+      old.central = aid; old.centralOff = '';
+      store.save('members', members);
+      log(store, old.id, 'loginlink', ag.phone || '');
+      return {me: old, linked: true};
+    }
+    if (!q.create) fail('not_linked_yet');
+    var nm = titleName(ag.name);
+    if (members.some(function (a) { return normName(a.name) === normName(nm); })) fail('name_in_use');   // probably their old account
+    me = {id: newId(store, 8), name: nm, pin: '', role: 'agent', color: COLORS[members.length % COLORS.length], created: nowIso(store), active: 'true', central: aid};
+    members.push(me); store.save('members', members);
+    store.version(true);
+    log(store, me.id, 'join', nm);
+    return {me: me, created: true};
+  }
+  function titleName(s) {
+    s = str(s, 40).replace(/\s+/g, ' ').trim();
+    if (s !== s.toUpperCase()) return s;   // already typed with care: keep it
+    return s.toLowerCase().replace(/(^|[\s\-'(\/])([a-z])/g, function (m, a, b) { return a + b.toUpperCase(); });
+  }
   function newSession(store, me, device) {
     var token = newId(store, 40), rows = store.load('sessions'), now = nowIso(store);
     rows.push({token: store.hash('sess|' + token), memberId: me.id, created: now, lastSeen: now, device: str(device, 60)});
@@ -1620,8 +1657,19 @@ var CORE = (function () {
         return {ok: true, linked: true, name: found.name};
       });
     }
+    // REDEFINE Login sign-in (phone + email + PIN, done by the phone with the login service). The phone sends the
+    // login token; the server asks the login service who it is (outside the lock), then finds the linked member.
+    if (q.op === 'rlsignin') {
+      var ag = store.centralCheck ? store.centralCheck(str(q.rltoken, 200)) : null;
+      if (!ag || !ag.id) fail('login_failed');
+      return store.withLock(function () {
+        var r = rlSignIn(q, store, ag);
+        return {ok: true, me: {id: r.me.id, name: r.me.name, leader: r.me.role === 'leader'}, created: !!r.created, linked: !!r.linked, token: newSession(store, r.me, q.device)};
+      });
+    }
     if (q.op === 'signin') {
       return store.withLock(function () {
+        if (q.create && store.prop('LOGIN_API')) fail('use_login');   // new members join through REDEFINE Login now
         var r = signIn(q, store);
         return {ok: true, me: {id: r.me.id, name: r.me.name, leader: r.me.role === 'leader'}, created: !!r.created, mustChange: !!r.mustChange, token: newSession(store, r.me, q.device)};
       });

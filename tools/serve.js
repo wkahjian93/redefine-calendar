@@ -80,8 +80,25 @@ function seed(store, nowMs) {
   store.save('members', members); store.save('events', events); store.save('msgs', msgs);
 }
 
-const store = memStore({props: {APP_URL: 'http://localhost:' + PORT + '/'}});
+// Stand-in for REDEFINE Login (sample people only): /fake-login/api/login, /set-pin, /check.
+//  Kah Jian (linked): 012-1111111 / kj@test.my / PIN 111111
+//  New agent (first-time code): 012-2222222 / new@test.my / code 222222 -> chooses a PIN
+//  Marcus Lim (not linked yet): 012-3333333 / marcus@test.my / PIN 333333 -> old name Marcus Lim + old PIN 1234
+const FAKE = [{id: 'F1', name: 'Kah Jian', phone: '60121111111', email: 'kj@test.my', pin: '111111'},
+  {id: 'F2', name: 'NEW AGENT TAN', phone: '60122222222', email: 'new@test.my', code: '222222'},
+  {id: 'F3', name: 'MARCUS LIM', phone: '60123333333', email: 'marcus@test.my', pin: '333333'}], FAKE_TOK = {};
+function fakeLogin(p, d) {
+  if (p === '/api/check') { const x = FAKE.filter(y => y.id === FAKE_TOK[d.token])[0]; return x ? {ok: true, agent: {id: x.id, name: x.name, phone: x.phone}} : {ok: false, error: 'signed_out'}; }
+  const ph = String(d.phone || '').replace(/\D/g, '').replace(/^0/, '60'), a = FAKE.filter(x => x.phone === ph && x.email === String(d.email || '').trim().toLowerCase())[0];
+  if (!a) return {ok: false, error: 'no_match'};
+  const tok = () => { const t = 'fk' + Math.random().toString(36).slice(2); FAKE_TOK[t] = a.id; return {ok: true, token: t, agent: {id: a.id, name: a.name, phone: a.phone}}; };
+  if (p === '/api/login') { if (a.code && d.secret === a.code) return {ok: true, next: 'set_pin'}; return a.pin && d.secret === a.pin ? tok() : {ok: false, error: 'wrong', left: 4}; }
+  if (p === '/api/set-pin') { if (!a.code || d.code !== a.code) return {ok: false, error: 'wrong'}; if (!/^\d{6}$/.test(d.pin)) return {ok: false, error: 'pin_format'}; a.pin = d.pin; a.code = ''; return tok(); }
+  return {ok: false, error: 'not_found'};
+}
+const store = memStore({props: {APP_URL: 'http://localhost:' + PORT + '/', LOGIN_API: 'fake'}, check: t => (fakeLogin('/api/check', {token: t}).agent || null)});
 seed(store, Date.now());
+{ const ms = store.load('members'); ms[0].central = 'F1'; store.save('members', ms); }
 store.version(true);
 module.exports = {seed};
 
@@ -106,6 +123,11 @@ if (require.main === module) {
       });
       return;
     }
+    if (url.startsWith('/fake-login/') && req.method === 'POST') {
+      let b = ''; req.on('data', c => b += c);
+      req.on('end', () => { let d = {}; try { d = JSON.parse(b); } catch (e) {} res.writeHead(200, {'Content-Type': 'application/json'}); res.end(JSON.stringify(fakeLogin(url.slice('/fake-login'.length), d))); });
+      return;
+    }
     if (url === '/__save' && req.method === 'POST') {   // icon maker writes its PNGs here (local only)
       const name = new URL(req.url, 'http://x').searchParams.get('name'), dir = SAVE_OK[name];
       if (!dir) { res.writeHead(400); return res.end(); }
@@ -113,7 +135,7 @@ if (require.main === module) {
       req.on('end', () => { fs.writeFileSync(path.join(dir, name), Buffer.from(Buffer.concat(chunks).toString(), 'base64')); console.log('saved', name); res.end('ok'); });
       return;
     }
-    if (url === '/config.js') { res.writeHead(200, {'Content-Type': 'text/javascript'}); return res.end("self.RCAL_CONFIG={api:location.origin+'/gas',appUrl:location.origin+'/',sample:'SAMPLE TEAM · made-up people'};"); }
+    if (url === '/config.js') { res.writeHead(200, {'Content-Type': 'text/javascript'}); return res.end("self.RCAL_CONFIG={api:location.origin+'/gas',appUrl:location.origin+'/',loginApi:location.origin+'/fake-login',sample:'SAMPLE TEAM · made-up people'};"); }
     let file;
     if (url.startsWith('/tools/')) file = path.join(__dirname, path.basename(url));
     else if (url.startsWith('/fixtures/')) file = path.join(FIX, path.basename(url));

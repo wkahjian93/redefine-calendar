@@ -230,6 +230,17 @@ var GAS = (function () {
         return j && j.ok && j.agents ? j.agents : null;
       } catch (e) { console.warn('REDEFINE Login list failed: ' + e); return null; }
     },
+    // Who is this REDEFINE Login token? Returns {id, name, phone} for an active agent, else null. Needs LOGIN_API only.
+    centralCheck: function (token) {
+      var base = P.getProperty('LOGIN_API');
+      if (!base || !token) return null;
+      try {
+        var r = UrlFetchApp.fetch(base + '/api/check', {method: 'post', contentType: 'application/json', payload: JSON.stringify({token: token}), muteHttpExceptions: true});
+        if (r.getResponseCode() !== 200) return null;
+        var j = JSON.parse(r.getContentText() || '{}');
+        return j && j.ok && j.agent ? j.agent : null;
+      } catch (e) { console.warn('REDEFINE Login check failed: ' + e); return null; }
+    },
     centralFindPhone: function (phone) {
       var d = String(phone || '').replace(/\D/g, ''); if (d.charAt(0) === '0') d = '60' + d.slice(1);
       if (!/^60\d{8,10}$/.test(d)) return null;

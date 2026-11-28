@@ -7,7 +7,7 @@
   var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   var MONTH = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   var DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  var APP_VERSION = '88';
+  var APP_VERSION = '89';
   var H8 = 8 * 3600e3, DAY = 864e5, SELLING = {approach: 1, open: 1, present: 1, followup: 1, close: 1, joinfield: 1, recruit: 1};
 
   /* ---------- storage (each phone) ---------- */
@@ -264,7 +264,7 @@
       .then(function (r) { clearTimeout(timer); return r.json(); }, function () { clearTimeout(timer); S.online = false; throw {code: 'network'}; })
       .then(function (j) {
         S.online = true;
-        if (j.error) { if ((j.error === 'signed_out' || j.error === 'removed') && op !== 'signin') signOutLocal(j.error); throw {code: j.error}; }
+        if (j.error) { if ((j.error === 'signed_out' || j.error === 'removed') && op !== 'signin' && op !== 'rlsignin') signOutLocal(j.error); throw {code: j.error}; }
         return j;
       });
   }
@@ -557,6 +557,102 @@
   }
 
   /* ---------- sign in ---------- */
+  /* REDEFINE Login: the same phone + email + PIN on every REDEFINE app. The phone talks to the login service;
+     the Calendar server then checks the login token and finds (or links) the member. */
+  var RL = {step: 'login', phone: '', email: '', code: '', rltoken: '', old: false};
+  var RL_ERR = {
+    no_match: 'Phone, email or PIN is not right. 资料不对，请再试一次。', wrong: 'Wrong PIN or code. 密码或验证码不对。',
+    code_expired: 'This code has expired. Ask your leader for a new code. 验证码已过期，请向领导要新的。',
+    locked: 'Too many tries. Wait 15 minutes. 试太多次了，请等 15 分钟。', pin_format: 'PIN must be 6 digits. PIN 必须是 6 位数。',
+    pin_too_simple: 'That PIN is too easy to guess. Choose another. 这个 PIN 太容易猜，请换一个。',
+    offline: 'No connection. Check your internet. 没有网络。', login_failed: 'Please sign in again. 请重新登入。',
+    wrong_old: 'That old name or old PIN is not right. Ask a leader if you forgot. 旧名字或旧 PIN 不对。',
+    name_in_use: 'A member with your name is already in Calendar. Choose “I used Calendar before”. 日历里已有你的名字，请选“我以前用过”。',
+    already_linked: 'That old account is already linked to another login. Ask a leader. 这个旧账号已被别人连接，请问领导。',
+    removed: 'Your leader removed this account. 此账号已被移除。'
+  };
+  function rlText(e, left) { var c = e && (e.code || e.error); return (RL_ERR[c] || errText(e)) + (c === 'wrong' && left != null ? ' (' + left + ' tries left 次)' : ''); }
+  function rlStored() { try { return localStorage.getItem('rl.token') || ''; } catch (e) { return ''; } }
+  function rlStoredName() { try { return localStorage.getItem('rl.agent') || ''; } catch (e) { return ''; } }
+  function rlPost(path, data) {
+    if (!CFG.loginApi) return Promise.reject({code: 'server_not_set_up'});
+    return fetch(CFG.loginApi + path, {method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify(data || {})})
+      .then(function (r) { return r.json().catch(function () { return {ok: false, error: 'offline'}; }); }, function () { return {ok: false, error: 'offline'}; });
+  }
+  function rlScreen() {
+    var top = '<div class="signin"><div class="logo"><img class="signin-logo" src="icons/redefine-logo.png" alt="REDEFINE"></div><h1>Calendar</h1>';
+    if (RL.old && RL.step === 'login') return signInScreen();
+    if (RL.step === 'setpin') return top + '<p class="muted"><b>Choose your own 6-digit PIN.</b><br>The same PIN works on every REDEFINE app. 请设定你自己的 6 位数 PIN，所有 REDEFINE 应用都用这个。</p>' +
+      '<form id="rlpin" autocomplete="off"><label>New PIN 新 PIN<input name="p1" required inputmode="numeric" pattern="\\d{6}" maxlength="6" type="password"></label>' +
+      '<label>Type it again 再输入一次<input name="p2" required inputmode="numeric" pattern="\\d{6}" maxlength="6" type="password"></label>' +
+      '<button class="btn primary big" type="submit">Save PIN 保存</button></form></div>';
+    if (RL.step === 'choose') return top + '<p class="muted"><b>First time on Calendar with your REDEFINE login.</b><br>第一次用 REDEFINE 登入打开日历。</p>' +
+      '<button class="btn primary big wide" data-act="rl-old">I used Calendar before 我以前用过日历</button>' +
+      '<p class="tiny muted">Keeps all your events and numbers. You type your OLD Calendar name and OLD PIN once. 保留你所有的记录。只需输入一次旧名字和旧 PIN。</p>' +
+      '<button class="btn big wide" data-act="rl-new">I am new to Calendar 我是新来的</button>' +
+      '<p class="tiny muted"><a href="#" data-act="rl-restart">Back 返回</a></p></div>';
+    if (RL.step === 'oldacct') return top + '<p class="muted"><b>Your OLD Calendar sign-in</b> (one time only). 输入你以前的日历名字和 PIN（只需一次）。</p>' +
+      '<form id="rlold" autocomplete="off"><label>Old Calendar name 旧名字<input name="name" required maxlength="40" placeholder="the name you used to sign in"></label>' +
+      '<label>Old Calendar PIN 旧 PIN<input name="pin" required inputmode="numeric" pattern="\\d{4,6}" maxlength="6" type="password"></label>' +
+      '<button class="btn primary big" type="submit">Link my account 连接</button></form>' +
+      '<p class="tiny muted">Forgot it? Ask a leader to link you (Me → Manage members → 🔗 Link login). 忘记了？请领导帮你连接。</p><p class="tiny muted"><a href="#" data-act="rl-back">Back 返回</a></p></div>';
+    var have = rlStored(), nm = rlStoredName();
+    return top + '<p class="muted">Sign in with your <b>REDEFINE login</b> — the same on every REDEFINE app. You stay signed in on this phone. 用 REDEFINE 登入，所有应用都一样，登入后一直保持登入。</p>' +
+      (have ? '<button class="btn primary big wide" data-act="rl-continue">Continue as ' + esc(nm || 'me') + ' 继续</button><p class="tiny muted">or sign in below 或在下面登入</p>' : '') +
+      '<form id="rlsignin" autocomplete="on"><label>Phone number 手机号码<input name="phone" required inputmode="tel" autocomplete="tel" placeholder="e.g. 012-345 6789" value="' + esc(RL.phone) + '"></label>' +
+      '<label>Email 电邮<input name="email" required type="email" autocomplete="email" autocapitalize="off" value="' + esc(RL.email) + '"></label>' +
+      '<label>PIN, or the 6-digit code from your leader<br><span class="tiny">PIN，或领导给你的 6 位数验证码</span><input name="secret" required inputmode="numeric" pattern="\\d{6}" maxlength="6" type="password" autocomplete="current-password"></label>' +
+      '<button class="btn primary big" type="submit">Sign in 登入</button></form>' +
+      '<p class="tiny muted"><b>Forgot your PIN?</b> Ask your leader for a new code. 忘记 PIN？请向领导要新的验证码。</p>' +
+      '<p class="tiny muted"><a href="#" data-act="rl-oldway">Leader: sign in with team code</a></p></div>';
+  }
+  function rlFinish(extra) {
+    var after = /^#\/new(\?|$)/.test(location.hash) ? location.hash : '#/';
+    return api('rlsignin', Object.assign({rltoken: RL.rltoken, device: navigator.userAgent.slice(0, 60)}, extra || {})).then(function (j) {
+      S.token = j.token; LS.set('token', j.token); LS.set('since', new Date().toISOString());
+      RL = {step: 'login', phone: '', email: '', code: '', rltoken: '', old: false};
+      toast(j.created ? 'Welcome to REDEFINE Calendar, ' + j.me.name + '!' : j.linked ? 'Linked! Welcome back, ' + j.me.name : 'Welcome back, ' + j.me.name, 'good');
+      return sync(true).then(function () { location.hash = after; render(); });
+    }, function (e) {
+      if (e.code === 'not_linked_yet') { RL.step = 'choose'; return render(); }
+      if (e.code === 'login_failed') { try { localStorage.removeItem('rl.token'); } catch (x) {} RL.step = 'login'; render(); }
+      toast(rlText(e), 'bad');
+      throw e;
+    });
+  }
+  function rlGot(r) {   // a login token from the login service
+    try { localStorage.setItem('rl.token', r.token); localStorage.setItem('rl.agent', (r.agent && r.agent.name) || ''); } catch (e) {}
+    RL.rltoken = r.token; RL.code = '';
+    return rlFinish().catch(function () {});
+  }
+  function rlBusy(form, on, label) { var b = form && form.querySelector('button[type=submit]'); if (b) { b.disabled = on; if (label) b.textContent = label; } }
+  function doRlSignIn(form) {
+    var f = new FormData(form), d = {phone: String(f.get('phone') || '').trim(), email: String(f.get('email') || '').trim(), secret: String(f.get('secret') || '').trim()};
+    RL.phone = d.phone; RL.email = d.email;
+    rlBusy(form, true, 'Signing in… 登入中');
+    rlPost('/api/login', d).then(function (r) {
+      rlBusy(form, false, 'Sign in 登入');
+      if (r.ok && r.next === 'set_pin') { RL.code = d.secret; RL.step = 'setpin'; return render(); }
+      if (r.ok && r.token) return rlGot(r);
+      toast(rlText({code: r.error}, r.left), 'bad');
+    });
+  }
+  function doRlPin(form) {
+    var f = new FormData(form), a = String(f.get('p1') || ''), b = String(f.get('p2') || '');
+    if (a !== b) return toast('The two PINs are not the same. 两次 PIN 不一样。', 'bad');
+    rlBusy(form, true);
+    rlPost('/api/set-pin', {phone: RL.phone, email: RL.email, code: RL.code, pin: a}).then(function (r) {
+      rlBusy(form, false);
+      if (r.ok && r.token) return rlGot(r);
+      if (r.error === 'code_expired' || r.error === 'no_match' || r.error === 'wrong') { RL.step = 'login'; render(); }
+      toast(rlText({code: r.error}), 'bad');
+    });
+  }
+  function doRlOld(form) {
+    var f = new FormData(form);
+    rlBusy(form, true);
+    rlFinish({oldName: f.get('name'), oldPin: f.get('pin')}).catch(function () { rlBusy(form, false); });
+  }
   function signInScreen() {
     return '<div class="signin">' +
       '<div class="logo"><img class="signin-logo" src="icons/redefine-logo.png" alt="REDEFINE"></div><h1>Calendar</h1>' +
@@ -566,7 +662,8 @@
       '<label>Your name<input name="name" required maxlength="40" placeholder="e.g. Alicia Tan"></label>' +
       '<label>PIN (4–6 digits)<input name="pin" required inputmode="numeric" pattern="\\d{4,6}" maxlength="6" type="password"></label>' +
       '<button class="btn primary big" type="submit">Sign in</button></form>' +
-      '<p class="tiny muted">First time? Type your name and choose a PIN. You stay signed in on this phone, like WhatsApp.</p><p class="tiny muted"><b>Forgot your PIN or the exact name you used?</b> Ask a leader: they can see your name and give you a temporary PIN in Me → Manage members. Your calendar and data stay safe.</p></div>';
+      (CFG.loginApi ? '<p class="tiny muted">Agents: sign in with your REDEFINE login instead. <a href="#" data-act="rl-newway">Back to REDEFINE login</a></p></div>' :
+      '<p class="tiny muted">First time? Type your name and choose a PIN. You stay signed in on this phone, like WhatsApp.</p><p class="tiny muted"><b>Forgot your PIN or the exact name you used?</b> Ask a leader: they can see your name and give you a temporary PIN in Me → Manage members. Your calendar and data stay safe.</p></div>');
   }
   function doSignIn(form, create) {
     var f = new FormData(form), body = {code: f.get('code'), name: f.get('name'), pin: f.get('pin'), device: navigator.userAgent.slice(0, 60), create: !!create};
@@ -579,6 +676,7 @@
       return sync(true);
     }).then(function () { location.hash = after; render(); askNewPin(); }, function (e) {
       btn.disabled = false; btn.textContent = 'Sign in';
+      if (e.code === 'new_name' && CFG.loginApi) return toast('New agents sign in with their REDEFINE login. 新同事请用 REDEFINE 登入。', 'bad');
       if (e.code === 'new_name') return confirmBox('New member?', 'No one called "' + body.name + '" yet. Create a new member with this name and PIN?', 'Create').then(function (y) { if (y) doSignIn(form, true); });
       toast(errText(e), 'bad');
     });
@@ -1296,6 +1394,10 @@
     if (!SR.q) i.focus(); else if (!SR.res || SR.res.q !== SR.q.trim()) searchRun();
   }
   function signOutLocal(reason) {
+    if (!reason) {   // the agent pressed Sign out: also forget the REDEFINE login on this phone
+      var rt = rlStored();
+      if (rt) { rlPost('/api/logout', {token: rt}).catch(function () {}); try { localStorage.removeItem('rl.token'); localStorage.removeItem('rl.agent'); } catch (e) {} }
+    }
     S.token = ''; S.data = null; LS.del('token'); LS.del('cache'); LS.del('pushToken'); LS.del('outbox'); LS.del('vAsk');
     if (reason) toast(errText({code: reason}), 'bad');
     render();
@@ -2323,7 +2425,7 @@
       return '<label class="mplace">Unit <select data-act="place" data-id="' + m.id + '">' + o.map(function (x) { return '<option value="' + esc(x[0]) + '"' + (x[0] === v ? ' selected' : '') + '>' + esc(x[1]) + '</option>'; }).join('') + '</select></label>';
     };
     var placeTxt = function (m) { return m.rank === 'gm' ? ' · GM' : m.rank === 'um' ? ' · UM' : ' · ' + (hs.some(function (h) { return h.id === m.unit; }) ? (mem(m.unit).rank === 'gm' ? 'GM direct' : shortName(mem(m.unit)) + ' unit') : 'unit not set'); };
-    return topbar('Members', {back: '#/me'}) + '<main><p class="muted">Members join by signing in with the team code. Removing someone signs them out everywhere; their events stay.</p>' +
+    return topbar('Members', {back: '#/me'}) + '<main><p class="muted">' + (CFG.loginApi ? 'Agents join by signing in with their REDEFINE login (you add them on the login admin page). 🔗 Link login connects an existing member to their login once.' : 'Members join by signing in with the team code.') + ' Removing someone signs them out everywhere; their events stay.</p>' +
       (gm ? '<div class="card"><h4>Units</h4><p class="tiny muted">Set each person\'s unit below. In Activity, a UM sees the full numbers (ratios, last seen) of their own unit only; the GM sees the whole group and each unit.' + (unset ? ' <b>' + unset + ' member' + (unset > 1 ? 's have' : ' has') + ' no unit yet</b> (shown in Whole group only).' : '') + '</p></div>' : '') +
       members().map(function (m) {
         var you = m.id === me().id;
@@ -2603,7 +2705,7 @@
   function render() {
     catchPrLink();
     if (HOLD || (PG && PG.drag)) { S.renderLater = true; return; }   // never swap the screen while someone is holding 🎤 (their finger would lose the button)
-    if (!S.token) { $app.innerHTML = signInScreen(); return; }
+    if (!S.token) { $app.innerHTML = CFG.loginApi ? rlScreen() : signInScreen(); return; }
     if (!S.data) { $app.innerHTML = topbar('REDEFINE Calendar') + '<main><p class="empty">Loading your team…</p></main>'; return; }
     celebrate();
     var r = route(), parts = r.split('/').filter(Boolean), html;
@@ -2654,6 +2756,16 @@
     var b = ev.target.closest('[data-act]'); if (!b || b.tagName === 'FORM' || b.tagName === 'INPUT') return;
     var a = b.dataset.act, today = dayKey(Date.now());
     if (a === 'close-modal') return closeModal();
+    if (/^rl-/.test(a)) {
+      ev.preventDefault();
+      if (a === 'rl-continue') { RL.rltoken = rlStored(); b.disabled = true; return rlFinish().catch(function () { b.disabled = false; }); }
+      if (a === 'rl-old') { RL.step = 'oldacct'; return render(); }
+      if (a === 'rl-back') { RL.step = 'choose'; return render(); }
+      if (a === 'rl-restart') { RL.step = 'login'; RL.rltoken = ''; return render(); }
+      if (a === 'rl-new') { b.disabled = true; return rlFinish({create: true}).catch(function () { b.disabled = false; }); }
+      if (a === 'rl-oldway') { RL.old = true; return render(); }
+      if (a === 'rl-newway') { RL.old = false; return render(); }
+    }
     if (a === 'sclear') { SR.q = ''; SR.res = null; LS.set('searchQ', ''); var si = document.getElementById('sq'); if (si) { si.value = ''; si.focus(); } var sb = document.getElementById('sres'); if (sb) sb.innerHTML = searchResults(); return; }
     if (a === 'btquick') { var tq = dayKey(Date.now()); S.btOpt.from = tq; S.btOpt.to = addDays(tq, +b.dataset.n); return render(); }
     if (a === 'btopt') { S.btOpt[b.dataset.k] = b.dataset.k === 'when' ? b.dataset.v : +b.dataset.v; return render(); }
@@ -2783,7 +2895,7 @@
     if (a === 'install') return modal(installHelp(false));
     if (a === 'color') return send('profile', {color: b.dataset.c});
     if (a === 'short') { var sv = (document.getElementById('shortin') || {}).value || ''; if (!sv.trim()) return toast('Type a short name first.', 'bad'); return send('profile', {short: sv.trim()}, 'Saved: the team now sees you as ' + sv.trim()); }
-    if (a === 'signout') return confirmBox('Sign out?', 'You will need the team code, your name and PIN to sign in again on this phone.', 'Sign out', true).then(function (y) { if (y) api('signout', {pushToken: LS.get('pushToken', '')}).catch(function () {}).then(function () { signOutLocal(); }); });
+    if (a === 'signout') return confirmBox('Sign out?', (CFG.loginApi ? 'You will need your phone, email and REDEFINE PIN to sign in again on this phone.' : 'You will need the team code, your name and PIN to sign in again on this phone.'), 'Sign out', true).then(function (y) { if (y) api('signout', {pushToken: LS.get('pushToken', '')}).catch(function () {}).then(function () { signOutLocal(); }); });
     if (a === 'mem' && b.dataset.do === 'reset') {
       var rw = mem(b.dataset.id);
       return confirmBox('Reset PIN?', 'Give ' + rw.name + ' a temporary PIN? They choose a new one when they sign in. Phones already signed in stay signed in.', 'Reset').then(function (y) {
@@ -2842,6 +2954,9 @@
   document.addEventListener('submit', function (ev) {
     var f = ev.target;
     if (f.id === 'signin') { ev.preventDefault(); return doSignIn(f); }
+    if (f.id === 'rlsignin') { ev.preventDefault(); return doRlSignIn(f); }
+    if (f.id === 'rlpin') { ev.preventDefault(); return doRlPin(f); }
+    if (f.id === 'rlold') { ev.preventDefault(); return doRlOld(f); }
     if (f.id === 'impwords') { ev.preventDefault(); var ww = f.w.value.trim(); if (ww.length < 4) return toast('Type or paste your appointments first.', 'bad'); f.w.blur(); return readWords(ww); }
     if (f.id === 'todoform') {
       ev.preventDefault(); var txt = f.t.value.trim(); if (!txt) return toast('Type what to do.', 'bad');

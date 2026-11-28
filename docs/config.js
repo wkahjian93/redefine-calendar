@@ -4,6 +4,7 @@
 self.RCAL_CONFIG = {
   api: 'https://script.google.com/macros/s/AKfycbxNFMDYdHCtNvvK8w99FdPaStvhqU0Lb8Zi-qmQH0XwXarXZ-3UmAu75GODSoswU80/exec',
   appUrl: 'https://wkahjian93.github.io/redefine-calendar/',
+  loginApi: 'https://redefine-login.dwz-rooms-server.workers.dev',   // REDEFINE Login: same phone + email + PIN on every app
   firebase: {
     apiKey: 'AIzaSyAgImD0Ymcz2xxJqxrLAY4pWKPq5LU_s80',
     authDomain: 'redefine-calendar.firebaseapp.com',
