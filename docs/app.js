@@ -7,7 +7,7 @@
   var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   var MONTH = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   var DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  var APP_VERSION = '87';
+  var APP_VERSION = '88';
   var H8 = 8 * 3600e3, DAY = 864e5, SELLING = {approach: 1, open: 1, present: 1, followup: 1, close: 1, joinfield: 1, recruit: 1};
 
   /* ---------- storage (each phone) ---------- */
@@ -3088,15 +3088,6 @@
     if (now - lastPoll >= (fast ? 6e3 : 20e3)) { lastPoll = now; quietSync(); }
     checkReminders(); runVoiceQ();
   }, 3000);
-  // REDEFINE Login: when the app opens and every 15 minutes, check that this person is still active at the login.
-  // A terminated person is signed out here (api() handles 'removed' / 'signed_out'). No connection = nothing happens.
-  function centralBeat() {
-    var t = ''; try { t = localStorage.getItem('rl.token') || ''; } catch (e) {}
-    if (!S.token || !t) return;
-    api('central', {central: t}).catch(function () {});
-  }
-  setTimeout(centralBeat, 10e3);
-  setInterval(centralBeat, 15 * 60e3);
-  document.addEventListener('visibilitychange', function () { if (!document.hidden) centralBeat(); });
+  // REDEFINE Login: terminated people are removed by the server every 5 minutes (loginSync); the phone does not check.
   window.RCAL = {S: S, sync: sync, render: render, MUS: MUS};   // for testing in the browser console
 })();

@@ -972,49 +972,51 @@ function fresh() {
 { const fs = require('fs'), v = JSON.parse(fs.readFileSync(__dirname + '/docs/version.json', 'utf8')).v, m = /APP_VERSION = '([0-9]+)'/.exec(fs.readFileSync(__dirname + '/docs/app.js', 'utf8'));
   ok(m && m[1] === v, 'docs/version.json (' + v + ') matches APP_VERSION (' + (m && m[1]) + ')'); }
 
-/* ---------- REDEFINE Login link: owner links once; a terminated login is removed here ---------- */
+/* ---------- REDEFINE Login link: owner links once; the server's 5-minute sync removes terminated logins ---------- */
 {
-  let loginActive = true;
-  const LOGIN_AGENT = {id: 'LOGIN-1', name: 'Lim May Jing', phone: '60165537228'};
-  const s = memStore({
-    central: t => t !== 'good-token' ? {ok: false, error: 'signed_out'} : loginActive ? {ok: true, agent: LOGIN_AGENT} : {ok: false, error: 'signed_out'},
-    findPhone: p => String(p).replace(/\D/g, '') === '0165537228' ? LOGIN_AGENT : null,
-  });
+  const A1 = {id: 'LOGIN-1', name: 'Lim May Jing', phone: '60165537228', status: 'active'};
+  const A2 = {id: 'LOGIN-2', name: 'Second Agent', phone: '60112223333', status: 'active'};
+  const s = memStore({findPhone: p => { const d = String(p).replace(/\D/g, ''); return d === '0165537228' ? A1 : d === '0112223333' ? A2 : null; }});
   s.setNow(NOW);
   const h = q => CORE.handle(q, s);
   const leader = h({op: 'signin', code: 'test-leader-code', name: 'Owner Test', pin: '1234', create: true});
   const mem = h({op: 'signin', code: 'test-team', name: 'Lim May Jing', pin: '1234', create: true});
-  const memberId = h({op: 'sync', token: mem.token}).members.filter(m => m.name === 'Lim May Jing')[0].id;
+  const sec = h({op: 'signin', code: 'test-team', name: 'Second Agent', pin: '1234', create: true});
+  const loose = h({op: 'signin', code: 'test-team', name: 'Not Linked', pin: '1234', create: true});
+  const row = name => h({op: 'sync', token: leader.token}).members.filter(m => m.name === name)[0];
+  const id1 = row('Lim May Jing').id, id2 = row('Second Agent').id;
 
-  ok(h({op: 'central', token: mem.token, central: 'good-token'}).linked === false, 'not linked yet: heartbeat does nothing');
-  throws(() => h({op: 'centrallink', token: mem.token, memberId, phone: '016-5537228'}), 'leader_only', 'only a leader can link');
-  throws(() => h({op: 'centrallink', token: leader.token, memberId, phone: '019-9999999'}), 'no_login_match', 'unknown phone is refused');
-  const link = h({op: 'centrallink', token: leader.token, memberId, phone: '016-5537228'});
+  throws(() => h({op: 'centrallink', token: mem.token, memberId: id1, phone: '016-5537228'}), 'leader_only', 'only a leader can link');
+  throws(() => h({op: 'centrallink', token: leader.token, memberId: id1, phone: '019-9999999'}), 'no_login_match', 'unknown phone is refused');
+  const link = h({op: 'centrallink', token: leader.token, memberId: id1, phone: '016-5537228'});
   ok(link.linked === true && link.name === 'Lim May Jing', 'leader links the member by phone');
-  ok(h({op: 'sync', token: leader.token}).members.filter(m => m.id === memberId)[0].linked === true, 'app shows the member as linked');
-  throws(() => h({op: 'centrallink', token: leader.token, memberId, phone: '016-5537228'}), 'already_linked', 'linking twice is refused');
+  ok(row('Lim May Jing').linked === true, 'app shows the member as linked');
+  throws(() => h({op: 'centrallink', token: leader.token, memberId: id1, phone: '016-5537228'}), 'already_linked', 'linking the same member twice is refused');
+  throws(() => h({op: 'centrallink', token: leader.token, memberId: id2, phone: '016-5537228'}), 'already_linked', 'one login cannot be linked to two members');
+  h({op: 'centrallink', token: leader.token, memberId: id2, phone: '011-2223333'});
 
-  ok(h({op: 'central', token: mem.token, central: 'good-token'}).checked === true, 'active at login: heartbeat passes');
-  ok(h({op: 'sync', token: mem.token}).me.name === 'Lim May Jing', 'calendar still works while active');
+  ok(h({op: 'central', token: mem.token, central: 'cancelled-or-someone-else'}).ok === true, 'v87 phone check never changes anyone');
+  ok(h({op: 'sync', token: mem.token}).me.name === 'Lim May Jing', 'a cancelled home-page sign-in (new code, sign-out) does not remove from Calendar');
 
-  loginActive = false;   // terminate at the login
-  throws(() => h({op: 'central', token: mem.token, central: 'good-token'}), 'removed', 'terminated at login: heartbeat says removed');
-  throws(() => h({op: 'sync', token: mem.token}), 'removed', 'terminated: calendar refuses every request for them');
-  ok(h({op: 'sync', token: leader.token}).members.filter(m => m.id === memberId)[0].active === false, 'member shows as removed for the leader');
-}
-{   // login service unreachable: nobody is kicked out by mistake
-  const s = memStore({central: () => ({ok: false, error: 'offline'})});
-  s.setNow(NOW);
-  const h = q => CORE.handle(q, s);
-  const mem = h({op: 'signin', code: 'test-team', name: 'Offline Test', pin: '1234', create: true});
-  const memberId = h({op: 'sync', token: mem.token}).members.filter(m => m.name === 'Offline Test')[0].id;
-  const leader = h({op: 'signin', code: 'test-leader-code', name: 'Owner Test', pin: '1234', create: true});
-  s.props.LOGIN_API = 'x';
-  s.centralFindPhone = () => ({id: 'LOGIN-2', name: 'Offline Test', phone: '60112223333'});
-  h({op: 'centrallink', token: leader.token, memberId, phone: '011-2223333'});
-  const r = h({op: 'central', token: mem.token, central: 'anything'});
-  ok(r.checked === false && r.linked === true, 'login unreachable: heartbeat keeps the person in');
-  ok(h({op: 'sync', token: mem.token}).me.name === 'Offline Test', 'still signed in while login is unreachable');
+  ok(CORE.loginSync(s, [A1, A2]).changed === 0, 'both active at the login: no change');
+  ok(CORE.loginSync(s, null).changed === 0, 'login unreachable: no change');
+  ok(CORE.loginSync(s, []).changed === 0, 'empty list: no change');
+  ok(CORE.loginSync(s, [{id: 'SOMEONE-ELSE', status: 'active'}]).skipped === 'no_match', 'wrong key or database (no linked login found): no change');
+  ok(row('Lim May Jing').active === true && row('Second Agent').active === true, 'nobody removed by the safety cases');
+
+  const term = CORE.loginSync(s, [Object.assign({}, A1, {status: 'archived'}), A2]);
+  ok(term.removed === 1, 'terminated at the login: removed on the next sync');
+  throws(() => h({op: 'sync', token: mem.token}), 'signed_out', 'terminated person is signed out of Calendar');
+  ok(row('Lim May Jing').active === false, 'leader sees them as removed');
+  ok(h({op: 'sync', token: sec.token}).me.name === 'Second Agent', 'other linked member unaffected');
+  ok(h({op: 'sync', token: loose.token}).me.name === 'Not Linked', 'unlinked member never touched');
+
+  ok(CORE.loginSync(s, [A1, A2]).restored === 1 && row('Lim May Jing').active === true, 'restored at the login: brought back');
+  ok(CORE.loginSync(s, [A2]).removed === 1 && row('Lim May Jing').active === false, 'deleted at the login: removed');
+  CORE.loginSync(s, [A1, A2]);
+
+  const ms = s.load('members'); ms.filter(m => m.id === id2)[0].active = 'false'; s.save('members', ms);   // leader removed by hand
+  ok(CORE.loginSync(s, [A1, A2]).restored === 0 && row('Second Agent').active === false, 'a member removed by a leader is never brought back by the sync');
 }
 
 console.log(pass + ' passed, ' + fail + ' failed');

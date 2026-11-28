@@ -217,25 +217,23 @@ var GAS = (function () {
     now: function () { return new Date(); },
     sleep: function (ms) { Utilities.sleep(ms); },
     fetchJson: function (url, body) { var r = UrlFetchApp.fetch(url, {method: 'post', contentType: 'text/plain', payload: JSON.stringify(body), muteHttpExceptions: true, followRedirects: true}); try { return JSON.parse(r.getContentText()); } catch (e) { return null; } },
-    // REDEFINE Login (set Script properties LOGIN_API = login service address; LOGIN_ADMIN = admin code, owner only).
-    centralCheck: function (token) {
-      var base = P.getProperty('LOGIN_API');
-      if (!token || !base) return {ok: false, error: token ? 'offline' : 'signed_out'};
+    // REDEFINE Login. Script properties: LOGIN_API = login service address; LOGIN_KEY = its read-only service key
+    // (can only read the list of agents; it cannot add, reset or terminate anyone).
+    // Returns [{id, name, phone, status}], or null when not set up or the login cannot be reached (then nothing changes).
+    centralList: function () {
+      var base = P.getProperty('LOGIN_API'), key = P.getProperty('LOGIN_KEY');
+      if (!base || !key) return null;
       try {
-        var r = UrlFetchApp.fetch(base + '/api/check', {method: 'post', contentType: 'application/json', headers: {authorization: 'Bearer ' + token}, payload: '{}', muteHttpExceptions: true});
+        var r = UrlFetchApp.fetch(base + '/svc/agents', {headers: {'x-service-key': key}, muteHttpExceptions: true});
+        if (r.getResponseCode() !== 200) { console.warn('REDEFINE Login list: HTTP ' + r.getResponseCode()); return null; }
         var j = JSON.parse(r.getContentText() || '{}');
-        if (j && j.ok && j.agent) return {ok: true, agent: j.agent};
-        if (r.getResponseCode() === 401) return {ok: false, error: 'signed_out'};
-        return {ok: false, error: 'offline'};
-      } catch (e) { return {ok: false, error: 'offline'}; }
+        return j && j.ok && j.agents ? j.agents : null;
+      } catch (e) { console.warn('REDEFINE Login list failed: ' + e); return null; }
     },
     centralFindPhone: function (phone) {
-      var base = P.getProperty('LOGIN_API'), code = P.getProperty('LOGIN_ADMIN');
       var d = String(phone || '').replace(/\D/g, ''); if (d.charAt(0) === '0') d = '60' + d.slice(1);
-      if (!base || !code || !/^60\d{8,10}$/.test(d)) return null;
-      var r = UrlFetchApp.fetch(base + '/admin/api/agents', {headers: {'x-admin-code': code}, muteHttpExceptions: true});
-      if (r.getResponseCode() !== 200) return null;
-      var list = (JSON.parse(r.getContentText()) || {}).agents || [];
+      if (!/^60\d{8,10}$/.test(d)) return null;
+      var list = GAS.centralList() || [];
       return list.filter(function (a) { return a.phone === d && a.status === 'active'; })[0] || null;
     },
     random: Math.random,
@@ -245,7 +243,7 @@ var GAS = (function () {
 })();
 
 /* Timed jobs, installed by setup(). */
-function reminderTick() { GAS.withLock(function () { CORE.tick(GAS); }); GAS.flushPush(); try { var r = CORE.prCollectAll(GAS); if (r.changed) console.log('Prospecting: ' + r.changed + ' event change(s) for ' + r.members + ' connected agent(s)'); } catch (e) { console.warn('Prospecting collect failed: ' + e); } try { var m = CORE.msCollectAll(GAS); if (m.changed) console.log('Meeting App: ' + m.changed + ' event change(s) for ' + m.members + ' connected people'); } catch (e) { console.warn('Meeting App collect failed: ' + e); } GAS.flushPush(); }
+function reminderTick() { GAS.withLock(function () { CORE.tick(GAS); }); GAS.flushPush(); try { var r = CORE.prCollectAll(GAS); if (r.changed) console.log('Prospecting: ' + r.changed + ' event change(s) for ' + r.members + ' connected agent(s)'); } catch (e) { console.warn('Prospecting collect failed: ' + e); } try { var m = CORE.msCollectAll(GAS); if (m.changed) console.log('Meeting App: ' + m.changed + ' event change(s) for ' + m.members + ' connected people'); } catch (e) { console.warn('Meeting App collect failed: ' + e); } try { var ll = GAS.centralList(); if (ll) { var ls = GAS.withLock(function () { return CORE.loginSync(GAS, ll); }); if (ls.changed) console.log('REDEFINE Login: ' + ls.removed + ' removed, ' + ls.restored + ' brought back'); else if (ls.skipped) console.warn('REDEFINE Login sync skipped: ' + ls.skipped); } } catch (e) { console.warn('REDEFINE Login sync failed: ' + e); } GAS.flushPush(); }
 function morningDigest() { GAS.withLock(function () { CORE.morning(GAS); }); GAS.flushPush(); }
 function eveningConfirm() { GAS.withLock(function () { CORE.evening(GAS); }); GAS.flushPush(); }
 

@@ -7,7 +7,7 @@
    transcribe(audioBase64, mime, hint) -> text, putFile(id, mime, base64) / getFile(id) -> {mime, data} / delFile(id). */
 var CORE = (function () {
   var TABLES = {
-    members: ['id', 'name', 'pin', 'role', 'color', 'created', 'active', 'partner', 'partnerReq', 'short', 'photoV', 'bday', 'pinTemp', 'feed', 'merges', 'chipOrder', 'rank', 'unit', 'prCode', 'prSince', 'bdayYear', 'msCode', 'central'],
+    members: ['id', 'name', 'pin', 'role', 'color', 'created', 'active', 'partner', 'partnerReq', 'short', 'photoV', 'bday', 'pinTemp', 'feed', 'merges', 'chipOrder', 'rank', 'unit', 'prCode', 'prSince', 'bdayYear', 'msCode', 'central', 'centralOff'],
     photos: ['memberId', 'data', 'updated'],
     sessions: ['token', 'memberId', 'created', 'lastSeen', 'device'],
     events: ['id', 'ownerId', 'title', 'type', 'start', 'end', 'allDay', 'place', 'notes', 'vis', 'with', 'remind', 'count', 'out', 'anp', 'source', 'remSent', 'created', 'updated', 'noc', 'all', 'cases', 'rep', 'repEnd', 'jfKind', 'agentId', 'skip'],
@@ -1512,6 +1512,36 @@ var CORE = (function () {
     if (keep.length !== rows.length) { store.save('events', keep); store.version(true); }
   }
   /* every 5 minutes (gas reminderTick): collect for every connected person */
+  /* REDEFINE Login sync (reminderTick, every 5 minutes). list = [{id, status}] read from the login with a
+     read-only key. A linked member whose login is terminated or deleted is removed here exactly like a leader's
+     Remove (signed out, no pop-ups, partner link cleared) and marked centralOff, so a Restore at the login brings
+     them back. Members a leader removed by hand are never brought back. Only linked members are touched.
+     Safety: an empty list, or a list that contains none of the linked logins (wrong key / wrong database), changes nothing. */
+  function loginSync(store, list) {
+    var none = function (why) { return {changed: 0, removed: 0, restored: 0, skipped: why || ''}; };
+    if (!list || !list.length) return none('empty');
+    var byId = {}; list.forEach(function (a) { byId[a.id] = a; });
+    var ms = store.load('members'), linked = ms.filter(function (m) { return m.central; });
+    if (!linked.length) return none();
+    if (linked.length >= 2 && !linked.some(function (m) { return byId[m.central]; })) return none('no_match');
+    var gone = [], back = 0;
+    linked.forEach(function (m) {
+      var a = byId[m.central], on = !!a && a.status === 'active', isOn = String(m.active) !== 'false';
+      if (!on && isOn) {
+        ms.forEach(function (x) { if (x.partner === m.id) x.partner = ''; if (x.partnerReq === m.id) x.partnerReq = ''; });
+        m.partner = ''; m.partnerReq = ''; m.active = 'false'; m.centralOff = '1'; gone.push(m.id);
+      } else if (on && !isOn && m.centralOff === '1') { m.active = 'true'; m.centralOff = ''; back++; }
+    });
+    if (!gone.length && !back) return none();
+    store.save('members', ms);
+    if (gone.length) {
+      store.save('sessions', store.load('sessions').filter(function (s) { return gone.indexOf(s.memberId) < 0; }));
+      store.save('devices', store.load('devices').filter(function (d) { return gone.indexOf(d.memberId) < 0; }));
+    }
+    store.version(true);
+    return {changed: gone.length + back, removed: gone.length, restored: back};
+  }
+
   function msCollectAll(store) {
     var list = store.load('members').filter(function (m) { return m.msCode && String(m.active) !== 'false'; }), n = 0;
     list.forEach(function (m) {
@@ -1571,21 +1601,9 @@ var CORE = (function () {
     }
     if (q.op === 'msunlink') return store.withLock(function () { msDrop(store, who(q, store).me.id); return {ok: true, linked: false}; });
     if (q.op === 'prunlink') return store.withLock(function () { var me1 = who(q, store).me, ms = store.load('members'), x = ms.filter(function (y) { return y.id === me1.id; })[0]; x.prCode = ''; x.prSince = ''; store.save('members', ms); return {ok: true, linked: false}; });
-    // REDEFINE Login link. 'central' = the app's 15-minute check: is this person still active at the login?
-    // A terminated person is marked removed here, so every Calendar request for them is refused.
-    if (q.op === 'central') {
-      return store.withLock(function () {
-        var me = who(q, store).me, ms = store.load('members'), m = ms.filter(function (c) { return c.id === me.id; })[0];
-        if (!m || !m.central) return {ok: true, linked: false};
-        var r = store.centralCheck(String(q.central || ''));
-        if (!r.ok) {
-          if (r.error === 'signed_out') { m.active = 'false'; store.save('members', ms); fail('removed'); }
-          return {ok: true, linked: true, checked: false};   // no connection right now: keep the person in
-        }
-        if (r.agent.id !== m.central) fail('signed_out');
-        return {ok: true, linked: true, checked: true};
-      });
-    }
+    // Phones on app v87 still send 'central' every 15 minutes. The login check now runs on the server
+    // (loginSync, every 5 minutes), so this only answers and never changes anyone.
+    if (q.op === 'central') return {ok: true};
     // Owner links an existing Calendar member to a login account, once, by typing the agent's phone number.
     if (q.op === 'centrallink') {
       return store.withLock(function () {
@@ -1687,7 +1705,7 @@ var CORE = (function () {
   }
 
   return {TABLES: TABLES, TYPES: TYPES, TYPE_ORDER: TYPE_ORDER, PROSPECT: PROSPECT, COLORS: COLORS, REMIND: REMIND,
-    handle: handle, searchHit: searchHit, prApply: prApply, prCollectAll: prCollectAll, msApply: msApply, msCollectAll: msCollectAll, voiceToEvent: voiceToEvent, feedIcs: feedIcs, parseVoice: parseVoice, voicePrompt: voicePrompt, parseThemeAI: parseThemeAI, isOwner: isOwner, rankOf: rankOf, mytDay: mytDay, todoWhen: todoWhen, salesKind: salesKind, ONFIELD_URL: ONFIELD_URL, prospectReminders: prospectReminders, OCCASIONS: OCCASIONS, ANIMS: ANIMS, tick: tick, occurrences: occurrences, holidaysOn: holidaysOn, schoolHoliday: schoolHoliday, HOLIDAYS: HOLIDAYS, defaultShort: defaultShort, answers: answers, attendance: attendance, TEAM_REMIND: TEAM_REMIND, cents: cents, MODES: MODES, casesOf: casesOf, commentTargets: commentTargets, isAll: isAll, MAX_NOC: MAX_NOC, morning: morning, evening: evening, detectType: detectType, stats: stats, addStats: addStats,
+    handle: handle, searchHit: searchHit, prApply: prApply, prCollectAll: prCollectAll, msApply: msApply, msCollectAll: msCollectAll, loginSync: loginSync, voiceToEvent: voiceToEvent, feedIcs: feedIcs, parseVoice: parseVoice, voicePrompt: voicePrompt, parseThemeAI: parseThemeAI, isOwner: isOwner, rankOf: rankOf, mytDay: mytDay, todoWhen: todoWhen, salesKind: salesKind, ONFIELD_URL: ONFIELD_URL, prospectReminders: prospectReminders, OCCASIONS: OCCASIONS, ANIMS: ANIMS, tick: tick, occurrences: occurrences, holidaysOn: holidaysOn, schoolHoliday: schoolHoliday, HOLIDAYS: HOLIDAYS, defaultShort: defaultShort, answers: answers, attendance: attendance, TEAM_REMIND: TEAM_REMIND, cents: cents, MODES: MODES, casesOf: casesOf, commentTargets: commentTargets, isAll: isAll, MAX_NOC: MAX_NOC, morning: morning, evening: evening, detectType: detectType, stats: stats, addStats: addStats,
     ratios: ratios, parseRead: parseRead, parseICS: parseICS, similarTitle: similarTitle, textPrompt: textPrompt, creditId: creditId, jfKindOf: jfKindOf, readPrompt: readPrompt, startMs: startMs, endMs: endMs, myt: myt, whenText: whenText};
 })();
 if (typeof module !== 'undefined') module.exports = CORE;
